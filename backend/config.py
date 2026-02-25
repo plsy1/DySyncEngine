@@ -10,6 +10,7 @@ class Config:
     def __init__(self):
         # 默认值
         self.SAVE_DIR = "videos"
+        self.PORT = 8000
         self.DOWNLOAD_API = "http://10.1.1.6/api/download"
         self.FETCH_USER_POST_API = "http://10.1.1.6/api/douyin/web/fetch_user_post_videos"
         self.USER_PROFILE_API = "http://10.1.1.6/api/douyin/web/handler_user_profile"
@@ -22,6 +23,7 @@ class Config:
                     yaml_config = yaml.safe_load(f)
                     if yaml_config:
                         self.SAVE_DIR = yaml_config.get("save_dir", self.SAVE_DIR)
+                        self.PORT = int(yaml_config.get("port", self.PORT))
                         self.DOWNLOAD_API = yaml_config.get("download_api", self.DOWNLOAD_API)
                         self.FETCH_USER_POST_API = yaml_config.get("fetch_user_post_api", self.FETCH_USER_POST_API)
                         self.USER_PROFILE_API = yaml_config.get("user_profile_api", self.USER_PROFILE_API)
@@ -31,6 +33,7 @@ class Config:
 
         # 2. 从环境变量加载 (覆盖)
         self.SAVE_DIR = os.getenv("SAVE_DIR", self.SAVE_DIR)
+        self.PORT = int(os.getenv("PORT", self.PORT))
         self.DOWNLOAD_API = os.getenv("DOWNLOAD_API", self.DOWNLOAD_API)
         self.FETCH_USER_POST_API = os.getenv("FETCH_USER_POST_API", self.FETCH_USER_POST_API)
         self.USER_PROFILE_API = os.getenv("USER_PROFILE_API", self.USER_PROFILE_API)

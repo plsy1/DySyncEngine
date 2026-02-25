@@ -16,6 +16,6 @@ export PYTHONPATH=$PYTHONPATH:$(pwd)/backend
 # Start uvicorn
 # --app-dir backend: look for main:app inside the backend folder
 # --host 0.0.0.0: listen on all interfaces
-# --port 8000: default port
+# --port ${PORT:-8000}: default port
 # --reload: auto-restart on code changes
-uvicorn main:app --app-dir ./backend --host 0.0.0.0 --port 8000 --reload
+uvicorn main:app --app-dir ./backend --host 0.0.0.0 --port ${PORT:-8000} --reload

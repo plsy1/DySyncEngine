@@ -4,7 +4,7 @@ services:
     image: dysyncengine:latest
     container_name: dysyncengine
     ports:
-      - "8000:8000"
+      - "80:80"
     volumes:
       # Persistent database folder
       - ./data:/app/backend/data
@@ -13,6 +13,7 @@ services:
       # Custom config (optional, can also use env vars)
       # - ./config.yaml:/app/config.yaml
     environment:
+      - PORT=80
       - PYTHONUNBUFFERED=1
       # Example ENV overrides for config.yaml
       - SAVE_DIR=videos

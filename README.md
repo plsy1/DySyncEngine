@@ -40,7 +40,8 @@
 docker compose up -d
 
 # 2. 访问地址
-# http://localhost:8000
+# 默认映射到宿主机的 80 端口 (可在 docker-compose.yaml 修改)
+http://localhost
 ```
 
 ### 🐍 本地开发环境
@@ -52,11 +53,12 @@ docker compose up -d
 # 安装依赖
 pip install -r backend/requirements.txt
 
-# 使用一键脚本启动 (推荐)
+# 使用一键脚本启动 (默认 8000 端口，支持 PORT 环境变量)
+# export PORT=8001
 ./dev.sh
 
 # 手动启动命令 (若 ./dev.sh 不可用)
-PYTHONPATH=./backend uvicorn main:app --app-dir ./backend --host 0.0.0.0 --port 8000 --reload
+PYTHONPATH=./backend uvicorn main:app --app-dir ./backend --host 0.0.0.0 --port ${PORT:-8000} --reload
 ```
 
 #### 2. 前端开发

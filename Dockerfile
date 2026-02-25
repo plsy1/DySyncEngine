@@ -25,7 +25,8 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app/backend
 
-EXPOSE 8000
+ENV PORT=8000
+EXPOSE ${PORT}
 
 # Start server
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT}"]
