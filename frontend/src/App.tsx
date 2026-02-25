@@ -9,6 +9,7 @@ import { Modal } from './components/Modal';
 import { SingleDownload } from './components/SingleDownload';
 import { Login } from './pages/Login';
 import { Settings } from './pages/Settings';
+import ReloadPrompt from './components/ReloadPrompt';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
@@ -291,6 +292,7 @@ function App() {
         onClose={() => setModal({ isOpen: false, user: null })}
         onConfirm={confirmDelete}
       />
+      <ReloadPrompt />
     </div>
   );
 }

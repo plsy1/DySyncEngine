@@ -11,10 +11,7 @@ class Config:
         # 默认值
         self.SAVE_DIR = "videos"
         self.PORT = 8000
-        self.DOWNLOAD_API = "http://10.1.1.6/api/download"
-        self.FETCH_USER_POST_API = "http://10.1.1.6/api/douyin/web/fetch_user_post_videos"
-        self.USER_PROFILE_API = "http://10.1.1.6/api/douyin/web/handler_user_profile"
-        self.VIDEO_DATA_API = "http://10.1.1.6/api/hybrid/video_data"
+        self.BASE_API_URL = "http://10.1.1.6"
 
         # 1. 从 YAML 加载
         if CONFIG_PATH.exists():
@@ -24,20 +21,22 @@ class Config:
                     if yaml_config:
                         self.SAVE_DIR = yaml_config.get("save_dir", self.SAVE_DIR)
                         self.PORT = int(yaml_config.get("port", self.PORT))
-                        self.DOWNLOAD_API = yaml_config.get("download_api", self.DOWNLOAD_API)
-                        self.FETCH_USER_POST_API = yaml_config.get("fetch_user_post_api", self.FETCH_USER_POST_API)
-                        self.USER_PROFILE_API = yaml_config.get("user_profile_api", self.USER_PROFILE_API)
-                        self.VIDEO_DATA_API = yaml_config.get("video_data_api", self.VIDEO_DATA_API)
+                        self.BASE_API_URL = yaml_config.get("base_api_url", self.BASE_API_URL)
             except Exception as e:
                 print(f"警告: 无法加载配置文件 {CONFIG_PATH}: {e}")
 
         # 2. 从环境变量加载 (覆盖)
         self.SAVE_DIR = os.getenv("SAVE_DIR", self.SAVE_DIR)
         self.PORT = int(os.getenv("PORT", self.PORT))
-        self.DOWNLOAD_API = os.getenv("DOWNLOAD_API", self.DOWNLOAD_API)
-        self.FETCH_USER_POST_API = os.getenv("FETCH_USER_POST_API", self.FETCH_USER_POST_API)
-        self.USER_PROFILE_API = os.getenv("USER_PROFILE_API", self.USER_PROFILE_API)
-        self.VIDEO_DATA_API = os.getenv("VIDEO_DATA_API", self.VIDEO_DATA_API)
+        self.BASE_API_URL = os.getenv("BASE_API_URL", self.BASE_API_URL)
+
+        # 3. 派生具体 API 地址
+        # 去除末尾斜杠
+        base = self.BASE_API_URL.rstrip("/")
+        self.DOWNLOAD_API = f"{base}/api/download"
+        self.FETCH_USER_POST_API = f"{base}/api/douyin/web/fetch_user_post_videos"
+        self.USER_PROFILE_API = f"{base}/api/douyin/web/handler_user_profile"
+        self.VIDEO_DATA_API = f"{base}/api/hybrid/video_data"
 
 # 全局单例
 config = Config()

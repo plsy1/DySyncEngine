@@ -2,6 +2,7 @@ from fastapi import APIRouter, Query, BackgroundTasks, Depends, HTTPException, s
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from datetime import datetime, timedelta
 from typing import Any
 from db import (
     get_session,
@@ -450,7 +451,11 @@ def login(req: LoginRequest, session: Session = Depends(get_session)):
     if not account or not verify_password(req.password, account.password_hash):
         throw_auth_error()
     
-    access_token = create_access_token(data={"sub": account.username})
+    from auth import ACCESS_TOKEN_EXPIRE_MINUTES, create_access_token
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": account.username}, expires_delta=access_token_expires
+    )
     return {"access_token": access_token, "token_type": "bearer"}
 
 @router.get("/login/status")
