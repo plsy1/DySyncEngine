@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+:root {
+  --primary: #fe2c55;
+  --bg: #0b0b0b;
+  --card-bg: #1a1a1a;
+  --glass: rgba(255, 255, 255, 0.05);
+}
+
+@theme {
+  --color-primary: var(--primary);
+  --color-bg: var(--bg);
+  --color-card: var(--card-bg);
+}
+
+@layer base {
+  body {
+    @apply bg-bg text-white font-sans antialiased;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-card border border-white/5 rounded-2xl p-6 transition-all duration-300 hover:border-primary/50 hover:-translate-y-1;
+  }
+  
+  .btn-primary {
+    @apply bg-primary hover:opacity-90 text-white font-semibold py-2 px-6 rounded-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply bg-white/5 border border-white/10 hover:bg-white/10 text-white font-semibold py-2 px-6 rounded-lg transition-all active:scale-95;
+  }
+}

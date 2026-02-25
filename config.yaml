@@ -1,0 +1,10 @@
+# DySyncEngine Configuration
+
+# Directory to save downloaded videos and assets
+save_dir: "videos"
+
+# External API Endpoints
+download_api: "http://10.1.1.6/api/download"
+fetch_user_post_api: "http://10.1.1.6/api/douyin/web/fetch_user_post_videos"
+user_profile_api: "http://10.1.1.6/api/douyin/web/handler_user_profile"
+video_data_api: "http://10.1.1.6/api/hybrid/video_data"

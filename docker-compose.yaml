@@ -1,0 +1,23 @@
+services:
+  dysyncengine:
+    build: .
+    image: dysyncengine:latest
+    container_name: dysyncengine
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persistent database folder
+      - ./data:/app/backend/data
+      # Downloaded videos/assets
+      - ./videos:/app/videos
+      # Custom config (optional, can also use env vars)
+      # - ./config.yaml:/app/config.yaml
+    environment:
+      - PYTHONUNBUFFERED=1
+      # Example ENV overrides for config.yaml
+      - SAVE_DIR=videos
+      - DOWNLOAD_API=http://10.1.1.6/api/download
+      - FETCH_USER_POST_API=http://10.1.1.6/api/douyin/web/fetch_user_post_videos
+      - USER_PROFILE_API=http://10.1.1.6/api/douyin/web/handler_user_profile
+      - VIDEO_DATA_API=http://10.1.1.6/api/hybrid/video_data
+    restart: unless-stopped
