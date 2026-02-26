@@ -1,7 +1,7 @@
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from api import router, sync_user_videos
 from db import get_session, get_auto_update_users
 import os
@@ -15,7 +15,7 @@ logger.add(sys.stderr, format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <leve
 
 app = FastAPI(title="Douyin 视频抓取与下载")
 
-app.include_router(router)
+app.include_router(router, prefix="/api")
 
 
 async def auto_update_task():
@@ -55,18 +55,55 @@ async def startup_event():
     asyncio.create_task(auto_update_task())
 
 
-# 挂载现代前端
-frontend_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
-if os.path.exists(frontend_path):
-    app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
-else:
-    # 兼容开发环境或旧静态目录
-    static_path = os.path.join(os.path.dirname(__file__), "static")
-    os.makedirs(static_path, exist_ok=True)
-    app.mount("/static", StaticFiles(directory=static_path), name="static")
-    @app.get("/")
-    async def read_index():
-        return FileResponse(os.path.join(static_path, "index.html"))
+# --- 前端服务逻辑 ---
+FRONTEND_DIST = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
+
+@app.exception_handler(404)
+async def spa_handler(request: Request, exc):
+    """
+    处理 404 异常：
+    1. 如果是常规文件（并在 dist 中存在），则返回该文件
+    2. 如果不是 API/Docs 路径，则返回 index.html 以支持 SPA
+    3. 否则返回 404 JSON
+    """
+    path = request.url.path
+    
+    # 排除系统级路径和 API，避免它们被 SPA 逻辑捕获
+    if path.startswith("/api") or path.startswith(("/docs", "/openapi.json", "/redoc")):
+        return JSONResponse(status_code=404, content={"detail": f"Not Found: {path}"})
+
+    if os.path.exists(FRONTEND_DIST):
+        # 尝试查找磁盘上的静态文件
+        file_path = path.lstrip("/")
+        full_path = os.path.join(FRONTEND_DIST, file_path)
+        if os.path.exists(full_path) and os.path.isfile(full_path):
+            return FileResponse(full_path)
+        
+        # 对于 SPA，未知路径返回 index.html
+        index_path = os.path.join(FRONTEND_DIST, "index.html")
+        if os.path.exists(index_path):
+            return FileResponse(index_path)
+
+    return JSONResponse(status_code=404, content={"detail": "Not Found"})
+
+
+@app.get("/", include_in_schema=False)
+async def read_index():
+    index_path = os.path.join(FRONTEND_DIST, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    # 兼容没有 dist 的情况（开发环境）
+    static_index = os.path.join(os.path.dirname(__file__), "static", "index.html")
+    if os.path.exists(static_index):
+        return FileResponse(static_index)
+    return JSONResponse(status_code=404, content={"detail": "Frontend not found"})
+
+
+# 挂载 assets 资源
+assets_path = os.path.join(FRONTEND_DIST, "assets")
+if os.path.exists(assets_path):
+    app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
+# --- End ---
 
 
 if __name__ == "__main__":

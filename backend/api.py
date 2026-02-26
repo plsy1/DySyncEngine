@@ -26,7 +26,7 @@ from db import (
 from fetch import fetch_all_awemes, fetch_user_profile, fetch_video_profile
 from downloader import download_video, DOWNLOAD_API
 from auth import create_access_token, verify_password, get_password_hash, get_current_user
-from utils import extract_douyin_url
+from utils import extract_douyin_url, resolve_redirect, extract_sec_user_id, sanitize_filename
 import re
 import httpx
 import uuid
@@ -43,42 +43,6 @@ class DownloadResult(BaseModel):
     filename: str
     downloaded: bool
 
-
-def extract_sec_user_id(url: str) -> str:
-    match = re.search(r"/user/([^/?]+)", url)
-    if match:
-        return match.group(1)
-    raise ValueError("无法从 URL 提取 sec_user_id")
-
-
-def resolve_redirect(url: str, max_redirects=5, timeout=10) -> str:
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
-
-    with httpx.Client(
-        follow_redirects=False,
-        timeout=timeout,
-        headers=headers
-    ) as client:
-        current_url = url
-
-        for _ in range(max_redirects):
-            resp = client.get(current_url)
-
-            if resp.status_code in (301, 302, 303, 307, 308):
-                location = resp.headers.get("Location")
-                if not location:
-                    raise ValueError("30x 但没有 Location")
-
-                # 处理相对跳转
-                current_url = str(resp.url.join(location))
-                continue
-
-            # 已经不是跳转
-            return str(resp.url)
-
-        raise ValueError("跳转次数超过限制")
 
 
 def sync_user_videos(session, sec_user_id: str, task_id: str = None):
@@ -323,6 +287,7 @@ def parse_video_api(share_url: str = Query(..., description="抖音分享链接"
     解析单个视频信息，返回直链及元数据
     """
     share_url = extract_douyin_url(share_url)
+    share_url = resolve_redirect(share_url)
     video_data = fetch_video_profile(share_url, minimal=False)
     
     author = video_data.get("author", {})
@@ -344,6 +309,9 @@ async def download_proxy_api(share_url: str = Query(..., description="抖音分�
     """
     代理下载：通过服务器请求 DOWNLOAD_API 并直接流式返回给客户端，实现浏览器本地下载
     """
+    share_url = extract_douyin_url(share_url)
+    share_url = resolve_redirect(share_url)
+    
     params = {
         "url": share_url,
         "prefix": "false",
@@ -367,7 +335,9 @@ async def download_proxy_api(share_url: str = Query(..., description="抖音分�
     if "application/zip" in content_type or ".zip" in disposition.lower():
         ext = ".zip"
         
-    encoded_filename = quote(filename)
+    # 清理文件名防止 header 报错
+    clean_filename = sanitize_filename(filename)
+    encoded_filename = quote(clean_filename)
     
     return StreamingResponse(
         io.BytesIO(resp.content),
@@ -383,6 +353,7 @@ def download_from_share_url(share_url: str = Query(..., description="抖音分�
     """
 
     share_url = extract_douyin_url(share_url)
+    share_url = resolve_redirect(share_url)
     video_data = fetch_video_profile(share_url)
 
     aweme_id = video_data.get("aweme_id")

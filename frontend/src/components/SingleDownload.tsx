@@ -45,7 +45,7 @@ export const SingleDownload = ({ onNotify }: SingleDownloadProps) => {
     const handleLocalDownload = () => {
         if (!url) return;
         const filename = videoData?.desc || videoData?.aweme_id || 'video';
-        window.location.href = `/download_proxy?share_url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`;
+        window.location.href = `/api/download_proxy?share_url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`;
         onNotify('正在准备下载，请稍候...', 'success');
     };
 

@@ -4,6 +4,7 @@ import re
 import time
 from pathlib import Path
 from loguru import logger
+from utils import sanitize_filename
 
 from config import config
 
@@ -13,13 +14,7 @@ DOWNLOAD_API = config.DOWNLOAD_API
 Path(SAVE_DIR).mkdir(parents=True, exist_ok=True)
 
 
-def sanitize_filename(name: str) -> str:
-    """去除非法文件名字符"""
-    name = re.sub(r'[\\/:*?"<>|]', "_", name)
-    name = name.strip()
-    if len(name) > 100:
-        name = name[:100]
-    return name
+
 
 
 import zipfile

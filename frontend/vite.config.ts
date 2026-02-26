@@ -9,6 +9,9 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
+      workbox: {
+        navigateFallbackDenylist: [/^\/docs/, /^\/openapi.json/, /^\/redoc/, /^\/api/],
+      },
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
       manifest: {
