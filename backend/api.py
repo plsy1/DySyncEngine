@@ -26,6 +26,7 @@ from db import (
 from fetch import fetch_all_awemes, fetch_user_profile, fetch_video_profile
 from downloader import download_video, DOWNLOAD_API
 from auth import create_access_token, verify_password, get_password_hash, get_current_user
+from utils import extract_douyin_url
 import re
 import httpx
 import uuid
@@ -209,6 +210,7 @@ def download_user_videos_api(
     with next(get_session()) as session:
         create_task(session, task_id, target_id=url)
         
+    url = extract_douyin_url(url)
     background_tasks.add_task(download_user_videos_task, url, task_id)
     return {"started": True, "task_id": task_id}
 
@@ -320,6 +322,7 @@ def parse_video_api(share_url: str = Query(..., description="抖音分享链接"
     """
     解析单个视频信息，返回直链及元数据
     """
+    share_url = extract_douyin_url(share_url)
     video_data = fetch_video_profile(share_url, minimal=False)
     
     author = video_data.get("author", {})
@@ -379,6 +382,7 @@ def download_from_share_url(share_url: str = Query(..., description="抖音分�
     直接下载单个抖音分享链接视频
     """
 
+    share_url = extract_douyin_url(share_url)
     video_data = fetch_video_profile(share_url)
 
     aweme_id = video_data.get("aweme_id")
