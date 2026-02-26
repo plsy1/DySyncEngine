@@ -33,7 +33,7 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
 
             <div className="flex items-center gap-4 mb-6">
                 <a
-                    href={`https://www.douyin.com/user/${user.sec_user_id}`}
+                    href={user.platform === 'tiktok' ? `https://www.tiktok.com/@${user.uid}` : `https://www.douyin.com/user/${user.sec_user_id}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="relative block h-16 w-16"
@@ -51,7 +51,12 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
                     )}
                 </a>
                 <div className="flex-1 min-w-0">
-                    <h3 className="text-lg font-bold truncate pr-8">{user.nickname || '未命名'}</h3>
+                    <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-lg font-bold truncate pr-2">{user.nickname || '未命名'}</h3>
+                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${user.platform === 'tiktok' ? 'bg-black text-white border border-white/20' : 'bg-red-500/20 text-red-500'}`}>
+                            {user.platform === 'tiktok' ? 'TikTok' : 'Douyin'}
+                        </span>
+                    </div>
                     <p className="text-sm text-white/40 truncate">UID: {user.uid}</p>
                 </div>
             </div>

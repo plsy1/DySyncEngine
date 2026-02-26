@@ -101,6 +101,9 @@ export const SingleDownload = ({ onNotify }: SingleDownloadProps) => {
                                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${videoData.aweme_type === 68 ? 'bg-amber-500/20 text-amber-500' : 'bg-blue-500/20 text-blue-500'}`}>
                                             {videoData.aweme_type === 68 ? '图文 / Note' : '视频 / Video'}
                                         </span>
+                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${videoData.platform === 'tiktok' ? 'bg-black text-white border border-white/20' : 'bg-red-500/20 text-red-500'}`}>
+                                            {videoData.platform === 'tiktok' ? 'TikTok' : 'Douyin'}
+                                        </span>
                                     </div>
                                     <h3 className="text-lg font-bold mb-2 line-clamp-3">{videoData.desc || '（暂无描述）'}</h3>
                                     <div className="flex items-center gap-2 text-white/40 text-sm">

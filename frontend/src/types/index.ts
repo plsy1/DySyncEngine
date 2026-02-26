@@ -11,6 +11,7 @@ export interface User {
   download_note_override: boolean | null;
   updated_at: number;
   created_at: number;
+  platform: string;
 }
 
 export interface GlobalSettings {
@@ -53,6 +54,7 @@ export interface VideoParseInfo {
   cover_url: string | null;
   author_name: string | null;
   author_avatar: string | null;
+  platform: string;
 }
 
 export interface ApiResponse<T = any> {

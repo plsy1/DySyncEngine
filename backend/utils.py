@@ -1,18 +1,27 @@
 import re
 import httpx
+from loguru import logger
+from config import config
 
-def extract_douyin_url(text: str) -> str:
+def extract_share_url(text: str) -> str:
     """
-    从一段文字中提取出抖音的 URL
-    支持 v.douyin.com, www.douyin.com, iesdouyin.com 等
+    从一段文字中提取出抖音或 TikTok 的 URL
+    支持 douyin.com, tiktok.com 相关的域名
     """
-    # 匹配 http/https 开头，后面跟着 douyin.com 相关的域名及其路径
-    # [^\s]+ 匹配非空字符，直到遇到空格或结尾
-    pattern = r'https?://(?:[a-zA-Z0-9-]+\.)?douyin\.com/[^\s#?]+'
+    # 匹配 douyin.com 或 tiktok.com 相关的域名及其路径
+    pattern = r'https?://(?:[a-zA-Z0-9-]+\.)?(?:douyin\.com|tiktok\.com)/[^\s#?]+'
     match = re.search(pattern, text)
     if match:
         return match.group(0)
-    return text  # 如果没找到，原样返回，由后续逻辑进一步处理或报错
+    return text
+
+def get_url_platform(url: str) -> str:
+    """
+    识别链接所属平台
+    """
+    if "tiktok.com" in url:
+        return "tiktok"
+    return "douyin"
 
 def resolve_redirect(url: str, max_redirects=5, timeout=10) -> str:
     """
@@ -53,11 +62,28 @@ def resolve_redirect(url: str, max_redirects=5, timeout=10) -> str:
 def extract_sec_user_id(url: str) -> str:
     """
     从跳转后的主页 URL 中提取 sec_user_id
+    支持抖音 (正则) 和 TikTok (API 接口)
     """
-    match = re.search(r"/user/([^/?]+)", url)
-    if match:
-        return match.group(1)
-    raise ValueError("无法从 URL 提取 sec_user_id")
+    platform = get_url_platform(url)
+    
+    if platform == "tiktok":
+        # 对于 TikTok，调用专用 API 获取 sec_user_id
+        try:
+            with httpx.Client(timeout=10) as client:
+                resp = client.get(config.TIKTOK_SEC_USER_ID_API, params={"url": url})
+                resp.raise_for_status()
+                data = resp.json()
+                if data.get("code") == 200:
+                    return data.get("data")
+        except Exception as e:
+            logger.error(f"获取 TikTok sec_user_id 失败: {e}")
+        raise ValueError("无法获取 TikTok sec_user_id")
+    else:
+        # 对于抖音，使用常规正则提取
+        match = re.search(r"/user/([^/?]+)", url)
+        if match:
+            return match.group(1)
+        raise ValueError("无法从 URL 提取抖音 sec_user_id")
 
 def sanitize_filename(name: str) -> str:
     """去除非法文件名字符并限制长度"""

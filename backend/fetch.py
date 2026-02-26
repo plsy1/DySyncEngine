@@ -8,28 +8,64 @@ API_URL = config.FETCH_USER_POST_API
 PROFILE_API = config.USER_PROFILE_API
 HYBRID_VIDEO_API = config.VIDEO_DATA_API
 
-def fetch_user_profile(sec_user_id: str) -> dict:
+def fetch_user_profile(sec_user_id: str, platform: str = "douyin") -> dict:
     """
-    获取用户信息
+    获取用户信息，支持 Douyin 和 TikTok
     """
     headers = {"accept": "application/json"}
+    
+    if platform == "tiktok":
+        # 对于 TikTok，如果没有专门的 profile 接口，可以从 fetch_user_post 中获取第一个作品的作者信息
+        try:
+            params = {
+                "secUid": sec_user_id,
+                "cursor": "0",
+                "count": 1,
+                "coverFormat": 2
+            }
+            with httpx.Client(timeout=30) as client:
+                resp = client.get(config.TIKTOK_USER_POST_API, params=params, headers=headers)
+                resp.raise_for_status()
+                data = resp.json().get("data", {})
+                item_list = data.get("itemList", [])
+                if item_list:
+                    author = item_list[0].get("author", {})
+                    # 构造与抖音类似的结构供下游使用
+                    return {
+                        "user": {
+                            "uid": author.get("id"), # 使用数字 ID 确保唯一性
+                            "nickname": author.get("nickname"),
+                            "avatar_thumb": {"url_list": [author.get("avatarThumb")]},
+                            "signature": author.get("signature"),
+                            "unique_id": author.get("uniqueId"), # 保存 username 备用
+                        }
+                    }
+        except httpx.TimeoutException:
+            logger.error(f"获取 TikTok 用户信息超时 (sec_user_id: {sec_user_id})")
+            raise Exception("获取 TikTok 用户信息超时，请稍后重试")
+        except Exception as e:
+            logger.error(f"获取 TikTok 用户信息失败: {e}")
+            raise Exception(f"获取 TikTok 用户信息失败: {str(e)}")
+    
+    # 抖音逻辑
     params = {"sec_user_id": sec_user_id}
-
     with httpx.Client(timeout=10) as client:
         resp = client.get(PROFILE_API, params=params, headers=headers)
         resp.raise_for_status()
         data = resp.json().get("data", {})
         return data
 
-def fetch_all_awemes(sec_user_id: str, latest_create_time: int = 0, count: int = 20):
+def fetch_all_awemes(sec_user_id: str, platform: str = "douyin", latest_create_time: int = 0, count: int = 20):
     """
-    抓取用户作品，增量抓取优化：
-    - 只返回 create_time > latest_create_time 的作品
-    - 如果本页存在 create_time <= latest_create_time 的作品，则停止抓取
+    抓取用户作品，支持 Douyin 和 TikTok
     """
+    if platform == "tiktok":
+        return fetch_tiktok_all_awemes(sec_user_id, latest_create_time, count)
+    
+    # 以下为 Douyin 逻辑 (原逻辑)
     max_cursor = 0
     all_awemes = []
-
+    author_profile = {}
     headers = {"accept": "application/json"}
 
     with httpx.Client(timeout=10) as client:
@@ -39,65 +75,109 @@ def fetch_all_awemes(sec_user_id: str, latest_create_time: int = 0, count: int =
                 "max_cursor": max_cursor,
                 "count": count,
             }
-
             resp = client.get(API_URL, params=params, headers=headers)
             resp.raise_for_status()
-
             data = resp.json().get("data", {})
             aweme_list = data.get("aweme_list", [])
-
             if not aweme_list:
-                logger.info("aweme_list 为空，已拉取完毕")
                 break
-
-            # 本页筛选出最新作品
+            
             page_new_awemes = [item for item in aweme_list if item.get("create_time", 0) > latest_create_time]
-
-            # 将筛选后的作品格式化
-            formatted_new_awemes = []
             for item in page_new_awemes:
                 aweme_id = item.get("aweme_id")
-                desc = item.get("desc", "")
-                share_url = f"https://www.iesdouyin.com/share/video/{aweme_id}"
                 author = item.get("author", {})
-                nickname = author.get("nickname", "")
-                uid = author.get("uid", "")
-                create_time = item.get("create_time", 0)
-
-                formatted_new_awemes.append({
+                all_awemes.append({
                     "aweme_id": aweme_id,
-                    "desc": desc,
-                    "share_url": share_url,
-                    "nickname": nickname,
-                    "uid": uid,
-                    "create_time": create_time,
+                    "desc": item.get("desc", ""),
+                    "share_url": f"https://www.iesdouyin.com/share/video/{aweme_id}",
+                    "nickname": author.get("nickname", ""),
+                    "uid": author.get("uid", ""),
+                    "create_time": item.get("create_time", 0),
                     "aweme_type": item.get("aweme_type", 0)
                 })
-
-            all_awemes.extend(formatted_new_awemes)
-
-            logger.info(
-                f"本页抓取 {len(aweme_list)} 条作品 | "
-                f"筛选出 {len(formatted_new_awemes)} 条新作品 | "
-                f"max_cursor={data.get('max_cursor')} | "
-                f"has_more={data.get('has_more')}"
-            )
-
-            # 如果本页存在任何历史作品，则停止分页
+            
             if any(item.get("create_time", 0) <= latest_create_time for item in aweme_list):
-                logger.info("本页存在历史作品，停止抓取后续分页")
                 break
-
-            # 翻页
+            
+            # 记录作者信息（通过第一页的第一个作品）
+            if not author_profile and aweme_list:
+                author = aweme_list[0].get("author", {})
+                author_profile = {
+                    "uid": author.get("uid"),
+                    "nickname": author.get("nickname"),
+                    "avatar_thumb": author.get("avatar_thumb"),
+                    "signature": author.get("signature"),
+                }
+            
             next_cursor = data.get("max_cursor")
             if not next_cursor or next_cursor == max_cursor:
-                logger.info("max_cursor 无效或未变化，停止翻页")
                 break
-
             max_cursor = next_cursor
             time.sleep(0.3)
+    return {"awemes": all_awemes, "author": author_profile}
 
-    return all_awemes
+def fetch_tiktok_all_awemes(sec_user_id: str, latest_create_time: int = 0, count: int = 35):
+    """
+    抓取 TikTok 用户作品
+    """
+    cursor = "0"
+    all_awemes = []
+    author_profile = {}
+    headers = {"accept": "application/json"}
+
+    with httpx.Client(timeout=60) as client:
+        while True:
+            params = {
+                "secUid": sec_user_id,
+                "cursor": cursor,
+                "count": count,
+                "coverFormat": 2
+            }
+            resp = client.get(config.TIKTOK_USER_POST_API, params=params, headers=headers)
+            resp.raise_for_status()
+            
+            data = resp.json().get("data", {})
+            item_list = data.get("itemList", [])
+            if not item_list:
+                break
+            
+            page_new_awemes = [item for item in item_list if item.get("createTime", 0) > latest_create_time]
+            for item in page_new_awemes:
+                aweme_id = item.get("id")
+                author = item.get("author", {})
+                unique_id = author.get("uniqueId", "")
+                all_awemes.append({
+                    "aweme_id": aweme_id,
+                    "desc": item.get("desc", ""),
+                    "share_url": f"https://www.tiktok.com/@{unique_id}/video/{aweme_id}",
+                    "nickname": author.get("nickname", ""),
+                    "uid": author.get("id"), # 使用数字 ID 确保唯一性
+                    "unique_id": unique_id,
+                    "create_time": item.get("createTime", 0),
+                    "aweme_type": item.get("aweme_type", 0)
+                })
+            
+            if any(item.get("createTime", 0) <= latest_create_time for item in item_list):
+                break
+            
+            # 记录作者信息（通过第一页的第一个作品）
+            if not author_profile and item_list:
+                author = item_list[0].get("author", {})
+                author_profile = {
+                    "uid": author.get("id"),
+                    "nickname": author.get("nickname"),
+                    "avatar_thumb": {"url_list": [author.get("avatarThumb")]},
+                    "signature": author.get("signature"),
+                    "unique_id": author.get("uniqueId"),
+                }
+
+            if not data.get("hasMore"):
+                break
+                
+            cursor = data.get("cursor")
+            time.sleep(0.5)
+            
+    return {"awemes": all_awemes, "author": author_profile}
 
 
 def fetch_video_profile(share_url: str, minimal: bool = True) -> dict:

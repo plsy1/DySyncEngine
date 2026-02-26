@@ -26,7 +26,7 @@ from db import (
 from fetch import fetch_all_awemes, fetch_user_profile, fetch_video_profile
 from downloader import download_video, DOWNLOAD_API
 from auth import create_access_token, verify_password, get_password_hash, get_current_user
-from utils import extract_douyin_url, resolve_redirect, extract_sec_user_id, sanitize_filename
+from utils import extract_share_url, get_url_platform, resolve_redirect, extract_sec_user_id, sanitize_filename
 import re
 import httpx
 import uuid
@@ -45,21 +45,40 @@ class DownloadResult(BaseModel):
 
 
 
-def sync_user_videos(session, sec_user_id: str, task_id: str = None):
+def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_id: str = None):
     """
     同步指定用户的视频：拉取 Profile、增量抓取 Awemes、下载未下载的视频
     """
     if task_id:
         update_task_progress(session, task_id, 5, message="正在获取用户信息...")
         
-    # 获取用户信息
-    profile = fetch_user_profile(sec_user_id)
-    user_info = profile.get("user", {})
-    uid = user_info.get("uid")
+    # 尝试从数据库获取已存在的 UID，以支持增量同步
+    from db import User
+    user = session.query(User).filter_by(sec_user_id=sec_user_id).first()
+    uid = user.uid if user else None
+        
+    # 获取作者最新作品时间
+    last_create_time = get_latest_create_time(session, uid) if uid else 0
+    
+    if task_id:
+        update_task_progress(session, task_id, 20, message="正在抓取视频列表...")
 
-    if task_id and uid:
-        # 立即更新 target_id 为 uid，这样前端就能把进度条挂载到新生成的卡片上了
-        update_task_progress(session, task_id, 10, message="正在初始化用户信息...", target_id=uid)
+    # 执行抓取
+    result = fetch_all_awemes(sec_user_id, platform=platform, latest_create_time=last_create_time, count=20)
+    new_data = result.get("awemes", [])
+    author_info = result.get("author", {})
+
+    # 如果抓取到了作者信息（特别是 TikTok），更新/初始化用户信息
+    if author_info:
+        uid = author_info.get("uid") or uid
+        add_or_update_user(session, {
+            "uid": uid,
+            "sec_user_id": sec_user_id,
+            "nickname": author_info.get("nickname"),
+            "avatar_url": author_info.get("avatar_thumb", {}).get("url_list", [None])[0] if isinstance(author_info.get("avatar_thumb"), dict) else author_info.get("avatar_thumb"),
+            "signature": author_info.get("signature"),
+            "platform": platform
+        })
 
     if not uid:
         if task_id:
@@ -67,25 +86,16 @@ def sync_user_videos(session, sec_user_id: str, task_id: str = None):
         logger.error(f"无法获取 UID: {sec_user_id}")
         return
 
-    # 存储或更新用户信息
-    add_or_update_user(session, {
-        "uid": uid,
-        "sec_user_id": sec_user_id,
-        "nickname": user_info.get("nickname"),
-        "avatar_url": user_info.get("avatar_thumb", {}).get("url_list", [None])[0],
-        "signature": user_info.get("signature"),
-    })
-
     if task_id:
-        update_task_progress(session, task_id, 20, message="正在抓取视频列表...")
+        # 更新 target_id 为 uid 以便前端展示
+        update_task_progress(session, task_id, 30, message="正在处理抓取结果...", target_id=uid)
 
-    # 查询该用户最新作品时间，实现增量抓取
-    last_create_time = get_latest_create_time(session, uid)
-    new_data = fetch_all_awemes(sec_user_id, last_create_time, count=20)
-
-    # 写入数据库
+    # 为每条作品打上平台标记并保存
     for item in new_data:
+        item["platform"] = platform
         add_aweme(session, item)
+
+    # 写入数据库 (已在上方循环中处理)
 
     # 获取未下载作品
     undownloaded_awemes = get_undownloaded_awemes_by_uid(session, uid)
@@ -154,8 +164,9 @@ def download_user_videos_task(url: str, task_id: str):
         with next(get_session()) as session:
             update_task_progress(session, task_id, 2, message="解析 URL 中...")
             final_url = resolve_redirect(url)
+            platform = get_url_platform(final_url)
             sec_user_id = extract_sec_user_id(final_url)
-            sync_user_videos(session, sec_user_id, task_id)
+            sync_user_videos(session, sec_user_id, platform=platform, task_id=task_id)
     except Exception as e:
         with next(get_session()) as session:
             update_task_progress(session, task_id, 100, status="failed", message=str(e))
@@ -174,7 +185,7 @@ def download_user_videos_api(
     with next(get_session()) as session:
         create_task(session, task_id, target_id=url)
         
-    url = extract_douyin_url(url)
+    url = extract_share_url(url)
     background_tasks.add_task(download_user_videos_task, url, task_id)
     return {"started": True, "task_id": task_id}
 
@@ -189,17 +200,18 @@ def refresh_user_videos_api(
     """
     task_id = str(uuid.uuid4())
     
-    def task_wrapper(sec_user_id: str, task_id: str):
+    def task_wrapper(sec_user_id: str, platform: str, task_id: str):
         with next(get_session()) as session:
-            sync_user_videos(session, sec_user_id, task_id)
+            sync_user_videos(session, sec_user_id, platform=platform, task_id=task_id)
 
     with next(get_session()) as session:
         # 获取 uid (从 db 查，如果查不到就用 sec_user_id 占位)
         user = session.query(User).filter_by(sec_user_id=sec_user_id).first()
         target_id = user.uid if user else sec_user_id
+        platform = user.platform if user else "douyin"
         create_task(session, task_id, target_id=target_id)
 
-    background_tasks.add_task(task_wrapper, sec_user_id, task_id)
+    background_tasks.add_task(task_wrapper, sec_user_id, platform, task_id)
     return {"started": True, "task_id": task_id}
 
 
@@ -254,6 +266,7 @@ class UserInfo(BaseModel):
     signature: str | None
     auto_update: bool
     updated_at: int
+    platform: str = "douyin"
 
 
 @router.get("/users", response_model=list[UserInfo])
@@ -279,15 +292,17 @@ class VideoParseInfo(BaseModel):
     cover_url: str | None
     author_name: str | None
     author_avatar: str | None
+    platform: str = "douyin"
 
 
 @router.post("/parse_video", response_model=VideoParseInfo)
-def parse_video_api(share_url: str = Query(..., description="抖音分享链接")):
+def parse_video_api(share_url: str = Query(..., description="分享链接")):
     """
     解析单个视频信息，返回直链及元数据
     """
-    share_url = extract_douyin_url(share_url)
+    share_url = extract_share_url(share_url)
     share_url = resolve_redirect(share_url)
+    platform = get_url_platform(share_url)
     video_data = fetch_video_profile(share_url, minimal=False)
     
     author = video_data.get("author", {})
@@ -300,7 +315,8 @@ def parse_video_api(share_url: str = Query(..., description="抖音分享链接"
         video_url=video.get("play_addr", {}).get("url_list", [None])[0],
         cover_url=video.get("origin_cover", {}).get("url_list", [None])[0],
         author_name=author.get("nickname"),
-        author_avatar=author.get("avatar_thumb", {}).get("url_list", [None])[0]
+        author_avatar=author.get("avatar_thumb", {}).get("url_list", [None])[0],
+        platform=platform
     )
 
 
@@ -309,7 +325,7 @@ async def download_proxy_api(share_url: str = Query(..., description="抖音分�
     """
     代理下载：通过服务器请求 DOWNLOAD_API 并直接流式返回给客户端，实现浏览器本地下载
     """
-    share_url = extract_douyin_url(share_url)
+    share_url = extract_share_url(share_url)
     share_url = resolve_redirect(share_url)
     
     params = {
@@ -352,7 +368,7 @@ def download_from_share_url(share_url: str = Query(..., description="抖音分�
     直接下载单个抖音分享链接视频
     """
 
-    share_url = extract_douyin_url(share_url)
+    share_url = extract_share_url(share_url)
     share_url = resolve_redirect(share_url)
     video_data = fetch_video_profile(share_url)
 
@@ -364,11 +380,9 @@ def download_from_share_url(share_url: str = Query(..., description="抖音分�
     nickname = video_data.get("author", {}).get("nickname")
     uid = video_data.get("author", {}).get("uid")
 
-    # 存储或更新用户信息
+    # 抓取完整 Profile 以获取最新的 nickname 用于文件夹名
     author_info = video_data.get("author", {})
     sec_user_id = author_info.get("sec_uid")
-    
-    # 如果有 sec_uid，则抓取完整 Profile 以获取签名等完整字段
     if sec_user_id:
         try:
             profile = fetch_user_profile(sec_user_id)
@@ -377,15 +391,6 @@ def download_from_share_url(share_url: str = Query(..., description="抖音分�
                 author_info.update(full_user_info)
         except Exception as e:
             logger.error(f"enrichment 失败: {e}")
-
-    with next(get_session()) as session:
-        add_or_update_user(session, {
-            "uid": uid,
-            "sec_user_id": sec_user_id,
-            "nickname": author_info.get("nickname"),
-            "avatar_url": author_info.get("avatar_thumb", {}).get("url_list", [None])[0],
-            "signature": author_info.get("signature"),
-        })
 
     # 重新获取最新的 nickname 以构建文件夹名（如果 enrichment 更新了它）
     final_nickname = author_info.get("nickname", nickname)

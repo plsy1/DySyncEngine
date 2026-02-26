@@ -51,6 +51,7 @@ class Aweme(Base):
     uid = Column(String)
     create_time = Column(Integer)
     aweme_type = Column(Integer, default=0)  # 0: 视频, 68: 图文
+    platform = Column(String, default="douyin")
     downloaded = Column(Boolean, default=False)
 
 
@@ -69,6 +70,7 @@ class User(Base):
     download_note_override = Column(Boolean, nullable=True)
     created_at = Column(Integer, default=lambda: int(time.time()))
     updated_at = Column(Integer, default=lambda: int(time.time()))
+    platform = Column(String, default="douyin")
 
 
 class Account(Base):
@@ -136,7 +138,8 @@ def add_aweme(session: Session, item: dict):
         nickname=item.get("nickname", ""),
         uid=item.get("uid", ""),
         create_time=item.get("create_time", 0),
-        aweme_type=item.get("aweme_type", 0)
+        aweme_type=item.get("aweme_type", 0),
+        platform=item.get("platform", "douyin")
     )
     session.add(aweme)
     session.commit()
@@ -164,6 +167,8 @@ def add_or_update_user(session: Session, user_data: dict):
         user.avatar_url = user_data["avatar_url"]
     if user_data.get("signature"):
         user.signature = user_data["signature"]
+    if user_data.get("platform"):
+        user.platform = user_data["platform"]
 
     user.updated_at = int(time.time())
     session.commit()

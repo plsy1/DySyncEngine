@@ -37,6 +37,8 @@ class Config:
         self.FETCH_USER_POST_API = f"{base}/api/douyin/web/fetch_user_post_videos"
         self.USER_PROFILE_API = f"{base}/api/douyin/web/handler_user_profile"
         self.VIDEO_DATA_API = f"{base}/api/hybrid/video_data"
+        self.TIKTOK_SEC_USER_ID_API = f"{base}/api/tiktok/web/get_sec_user_id"
+        self.TIKTOK_USER_POST_API = f"{base}/api/tiktok/web/fetch_user_post"
 
 # 全局单例
 config = Config()
