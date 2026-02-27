@@ -166,13 +166,12 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
         update_task_progress(session, task_id, 100, status="completed", message="同步完成")
 
 
-def download_user_videos_task(url: str, task_id: str):
+def download_user_videos_task(sec_user_id: str, platform: str, task_id: str):
+    """
+    后台抓取用户视频任务
+    """
     try:
         with next(get_session()) as session:
-            update_task_progress(session, task_id, 2, message="解析 URL 中...")
-            final_url = resolve_redirect(url)
-            platform = get_url_platform(final_url)
-            sec_user_id = extract_sec_user_id(final_url)
             sync_user_videos(session, sec_user_id, platform=platform, task_id=task_id)
     except Exception as e:
         with next(get_session()) as session:
@@ -231,13 +230,40 @@ def download_user_videos_api(
     触发后台下载用户所有视频（通过 URL）
     """
     task_id = str(uuid.uuid4())
-    # 我们暂时不知道 uid，所以 target_id 传 url 或空
-    with next(get_session()) as session:
-        create_task(session, task_id, target_id=url)
+    
+    # 为了让前端立即看到卡片，我们在同步请求里先完成基础信息的解析和 User 记录创建
+    try:
+        url = extract_share_url(url)
+        final_url = resolve_redirect(url)
+        platform = get_url_platform(final_url)
+        sec_user_id = extract_sec_user_id(final_url)
         
-    url = extract_share_url(url)
-    background_tasks.add_task(download_user_videos_task, url, task_id)
-    return {"started": True, "task_id": task_id}
+        # 尝试抓取基本资料
+        profile = fetch_user_profile(sec_user_id, platform=platform)
+        author_info = profile.get("user", {})
+        
+        uid = author_info.get("uid") or sec_user_id
+        
+        with next(get_session()) as session:
+            # 创建用户记录
+            add_or_update_user(session, {
+                "uid": uid,
+                "sec_user_id": sec_user_id,
+                "nickname": author_info.get("nickname"),
+                "avatar_url": author_info.get("avatar_thumb", {}).get("url_list", [None])[0] if isinstance(author_info.get("avatar_thumb"), dict) else author_info.get("avatar_thumb"),
+                "signature": author_info.get("signature"),
+                "platform": platform
+            })
+            # 创建任务记录
+            create_task(session, task_id, target_id=uid)
+            
+        background_tasks.add_task(download_user_videos_task, sec_user_id, platform, task_id)
+        return {"started": True, "task_id": task_id}
+        
+    except Exception as e:
+        logger.error(f"即时解析用户失败: {e}")
+        # 如果解析失败，可能是网络问题，直接返回错误，不开启后台任务
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/refresh_user_videos")
@@ -540,6 +566,24 @@ def run_scheduler_now():
     from scheduler import scheduler_manager
     scheduler_manager.trigger_now()
     return {"success": True}
+
+
+@router.get("/logs")
+def get_logs_api(lines: int = Query(1000, description="读取日志的行数")):
+    """
+    读取后端日志文件内容
+    """
+    log_path = os.path.join(os.path.dirname(__file__), "data", "app.log")
+    if not os.path.exists(log_path):
+        return {"logs": ["日志文件尚未生成"]}
+    
+    try:
+        with open(log_path, "r", encoding="utf-8") as f:
+            # 简单的读取末尾 N 行逻辑
+            all_lines = f.readlines()
+            return {"logs": all_lines[-lines:] if len(all_lines) > lines else all_lines}
+    except Exception as e:
+        return {"logs": [f"读取日志失败: {str(e)}"]}
 
 
 def throw_auth_error(detail="用户名或密码错误"):

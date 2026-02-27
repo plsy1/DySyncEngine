@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Search, RefreshCw, LogOut, Settings as SettingsIcon, Loader2, Activity } from 'lucide-react';
+import { Plus, Search, RefreshCw, LogOut, Settings as SettingsIcon, Loader2, Activity, Terminal } from 'lucide-react';
 import type { User, ToastType, Task } from './types';
 import * as api from './api';
 import { UserCard } from './components/UserCard';
@@ -10,11 +10,12 @@ import { SingleDownload } from './components/SingleDownload';
 import { Login } from './pages/Login';
 import { Settings } from './pages/Settings';
 import { Tasks } from './pages/Tasks';
+import { Logs } from './pages/Logs';
 import ReloadPrompt from './components/ReloadPrompt';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
-  const [view, setView] = useState<'dashboard' | 'settings' | 'tasks'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'settings' | 'tasks' | 'logs'>('dashboard');
   const [users, setUsers] = useState<User[]>([]);
   const [activeTasks, setActiveTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -93,8 +94,8 @@ function App() {
       await api.downloadUserVideos(newUserUrl);
       showToast('已加入后台下载队列');
       setNewUserUrl('');
-      // Poll for users after a delay
-      setTimeout(loadUsers, 3000);
+      // 立即拉取一次列表，以便看到新创建的“占位”卡片
+      loadUsers();
     } catch (err) {
       showToast('任务开启失败', 'error');
     }
@@ -184,6 +185,13 @@ function App() {
               <Activity size={20} />
             </button>
             <button
+              onClick={() => setView(v => v === 'logs' ? 'dashboard' : 'logs')}
+              className={`p-3 rounded-xl transition-all ${view === 'logs' ? 'bg-primary text-white' : 'bg-white/5 text-white/60 hover:bg-white/10'}`}
+              title="运行日志"
+            >
+              <Terminal size={20} />
+            </button>
+            <button
               onClick={() => setView(v => v === 'settings' ? 'dashboard' : 'settings')}
               className={`p-3 rounded-xl transition-all ${view === 'settings' ? 'bg-primary text-white' : 'bg-white/5 text-white/60 hover:bg-white/10'}`}
               title="设置"
@@ -206,6 +214,10 @@ function App() {
       ) : view === 'tasks' ? (
         <main className="max-w-7xl mx-auto px-6 pt-12">
           <Tasks onNotify={showToast} activeTasks={activeTasks} />
+        </main>
+      ) : view === 'logs' ? (
+        <main className="max-w-7xl mx-auto px-6 pt-12">
+          <Logs />
         </main>
       ) : (
         <main className="max-w-7xl mx-auto px-6 pt-12">

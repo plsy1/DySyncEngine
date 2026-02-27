@@ -109,3 +109,8 @@ export const parseVideo = async (shareUrl: string): Promise<VideoParseInfo> => {
   const { data } = await api.post<VideoParseInfo>(`parse_video?share_url=${encodeURIComponent(shareUrl)}`);
   return data;
 };
+
+export const getLogs = async (): Promise<{ logs: string[] }> => {
+  const { data } = await api.get<{ logs: string[] }>('logs');
+  return data;
+};

@@ -7,11 +7,41 @@ from db import get_session, get_auto_update_users
 import os
 import asyncio
 from loguru import logger
+import logging
 import sys
 
-# 配置 Loguru
+# 配置 Loguru 拦截标准库日志
+class InterceptHandler(logging.Handler):
+    def emit(self, record):
+        # Get corresponding Loguru level if it exists
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+
+        # Find caller from where originated the logged message
+        frame, depth = sys._getframe(6), 6
+        while frame and frame.f_code.co_filename == logging.__file__:
+            frame = frame.f_back
+            depth += 1
+
+        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+
+# 基础输出配置
 logger.remove()
+# 终端输出 (带颜色)
 logger.add(sys.stderr, format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>")
+
+# 文件持久化输出 (位于 /app/backend/data，确保 Volume 映射能看到)
+log_path = os.path.join(os.path.dirname(__file__), "data", "app.log")
+logger.add(log_path, rotation="10 MB", retention="1 week", enqueue=True, format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}")
+
+# 拦截 uvicorn 等日志
+logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+for _log in ["uvicorn", "uvicorn.error", "uvicorn.access", "fastapi"]:
+    _logger = logging.getLogger(_log)
+    _logger.handlers = [InterceptHandler()]
+    _logger.propagate = False
 
 app = FastAPI(title="Douyin 视频抓取与下载")
 
