@@ -315,6 +315,8 @@ class UserInfo(BaseModel):
     avatar_url: str | None
     signature: str | None
     auto_update: bool
+    download_video_override: bool | None
+    download_note_override: bool | None
     updated_at: int
     platform: str = "douyin"
 

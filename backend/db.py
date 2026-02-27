@@ -257,6 +257,23 @@ def get_all_active_tasks(session: Session):
     return session.query(Task).filter(Task.status == "running").all()
 
 
+def mark_interrupted_tasks_as_failed(session: Session):
+    """
+    在启动时调用，将所有处于 running 或 pending 状态的任务标记为失败（中断）
+    """
+    stale_tasks = session.query(Task).filter(
+        Task.status.in_(["running", "pending"])
+    ).all()
+    
+    if stale_tasks:
+        logger.info(f"清理遗留任务，共发现 {len(stale_tasks)} 个中断的任务")
+        for task in stale_tasks:
+            task.status = "failed"
+            task.message = "任务因系统重启或意外终止而被中断"
+            task.updated_at = int(time.time())
+        session.commit()
+
+
 # ----------------------------
 # 查询示例：按作者获取作品
 # ----------------------------
@@ -341,10 +358,9 @@ def update_account_password(session: Session, username: str, new_password_hash: 
 def update_user_preference(session: Session, uid: str, video_pref: bool = None, note_pref: bool = None):
     user = session.query(User).filter_by(uid=uid).first()
     if user:
-        if video_pref is not None:
-            user.download_video_override = video_pref
-        if note_pref is not None:
-            user.download_note_override = note_pref
+        # 允许设置为 None (跟随默认)
+        user.download_video_override = video_pref
+        user.download_note_override = note_pref
         user.updated_at = int(time.time())
         session.commit()
         return True

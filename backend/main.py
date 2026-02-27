@@ -23,6 +23,11 @@ from scheduler import scheduler_manager
 
 @app.on_event("startup")
 async def startup_event():
+    # 清理遗留任务
+    from db import mark_interrupted_tasks_as_failed
+    with next(get_session()) as session:
+        mark_interrupted_tasks_as_failed(session)
+        
     # 启动后台任务调度器
     asyncio.create_task(scheduler_manager.run())
 
