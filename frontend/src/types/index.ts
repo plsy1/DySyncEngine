@@ -46,6 +46,12 @@ export interface Task {
   updated_at: number;
 }
 
+export interface SchedulerStatus {
+  last_run: number | null;
+  next_run: number | null;
+  is_running: boolean;
+}
+
 export interface VideoParseInfo {
   aweme_id: string;
   aweme_type: number;

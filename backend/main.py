@@ -18,41 +18,13 @@ app = FastAPI(title="Douyin 视频抓取与下载")
 app.include_router(router, prefix="/api")
 
 
-async def auto_update_task():
-    """
-    后台定时任务：每 2 小时检查一次需要自动更新的用户
-    """
-    logger.info("后台自动更新任务已启动")
-    while True:
-        try:
-            with next(get_session()) as session:
-                # 这里的间隔从数据库获取
-                from db import get_config
-                interval_mins = int(get_config(session, "auto_update_interval", "120"))
-                interval = interval_mins * 60
-                
-                users = get_auto_update_users(session)
-                if users:
-                    logger.info(f"开始自动更新 {len(users)} 个用户的视频...")
-                    for user in users:
-                        try:
-                            logger.info(f"正在自动更新用户: {user.nickname} ({user.uid})")
-                            sync_user_videos(session, user.sec_user_id)
-                        except Exception as e:
-                            logger.error(f"更新用户 {user.uid} 失败: {e}")
-                else:
-                    logger.info("没有需要自动更新的用户")
-            
-            await asyncio.sleep(interval)
-        except Exception as e:
-            logger.error(f"自动更新任务循环出错: {e}")
-            await asyncio.sleep(60)
+from scheduler import scheduler_manager
 
 
 @app.on_event("startup")
 async def startup_event():
-    # 启动后台任务
-    asyncio.create_task(auto_update_task())
+    # 启动后台任务调度器
+    asyncio.create_task(scheduler_manager.run())
 
 
 # --- 前端服务逻辑 ---

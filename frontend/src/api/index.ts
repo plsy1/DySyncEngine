@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { User, ApiResponse, ShareDownloadResult, Task, GlobalSettings, AuthResponse, VideoParseInfo } from '../types';
+import type { User, ApiResponse, ShareDownloadResult, Task, GlobalSettings, AuthResponse, VideoParseInfo, SchedulerStatus } from '../types';
 
 const api = axios.create({
   baseURL: '/api/', // Standard API prefix with trailing slash
@@ -87,6 +87,21 @@ export const downloadShareUrl = async (shareUrl: string): Promise<ShareDownloadR
 
 export const getActiveTasks = async (): Promise<Task[]> => {
   const { data } = await api.get<Task[]>('tasks/active');
+  return data;
+};
+
+export const getSchedulerStatus = async (): Promise<SchedulerStatus> => {
+  const { data } = await api.get<SchedulerStatus>('scheduler/status');
+  return data;
+};
+
+export const runSchedulerNow = async (): Promise<ApiResponse> => {
+  const { data } = await api.post<ApiResponse>('scheduler/run_now');
+  return data;
+};
+
+export const checkUndownloaded = async (): Promise<ApiResponse> => {
+  const { data } = await api.post<ApiResponse>('tasks/check_undownloaded');
   return data;
 };
 

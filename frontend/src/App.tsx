@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Search, RefreshCw, LogOut, Settings as SettingsIcon, Loader2 } from 'lucide-react';
+import { Plus, Search, RefreshCw, LogOut, Settings as SettingsIcon, Loader2, Activity } from 'lucide-react';
 import type { User, ToastType, Task } from './types';
 import * as api from './api';
 import { UserCard } from './components/UserCard';
@@ -9,11 +9,12 @@ import { Modal } from './components/Modal';
 import { SingleDownload } from './components/SingleDownload';
 import { Login } from './pages/Login';
 import { Settings } from './pages/Settings';
+import { Tasks } from './pages/Tasks';
 import ReloadPrompt from './components/ReloadPrompt';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
-  const [view, setView] = useState<'dashboard' | 'settings'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'settings' | 'tasks'>('dashboard');
   const [users, setUsers] = useState<User[]>([]);
   const [activeTasks, setActiveTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -176,7 +177,14 @@ function App() {
 
           <div className="flex items-center gap-4">
             <button
-              onClick={() => setView(v => v === 'dashboard' ? 'settings' : 'dashboard')}
+              onClick={() => setView(v => v === 'tasks' ? 'dashboard' : 'tasks')}
+              className={`p-3 rounded-xl transition-all ${view === 'tasks' ? 'bg-primary text-white' : 'bg-white/5 text-white/60 hover:bg-white/10'}`}
+              title="任务管理"
+            >
+              <Activity size={20} />
+            </button>
+            <button
+              onClick={() => setView(v => v === 'settings' ? 'dashboard' : 'settings')}
               className={`p-3 rounded-xl transition-all ${view === 'settings' ? 'bg-primary text-white' : 'bg-white/5 text-white/60 hover:bg-white/10'}`}
               title="设置"
             >
@@ -195,6 +203,10 @@ function App() {
 
       {view === 'settings' ? (
         <Settings onBack={() => setView('dashboard')} onNotify={showToast} />
+      ) : view === 'tasks' ? (
+        <main className="max-w-7xl mx-auto px-6 pt-12">
+          <Tasks onNotify={showToast} activeTasks={activeTasks} />
+        </main>
       ) : (
         <main className="max-w-7xl mx-auto px-6 pt-12">
           {/* Single Video Download Section */}

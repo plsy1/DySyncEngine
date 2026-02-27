@@ -45,6 +45,50 @@ class DownloadResult(BaseModel):
 
 
 
+def process_single_aweme_download(session: Session, aweme: Any) -> bool:
+    """
+    处理单个 Aweme 的下载逻辑，包括检查偏好设置和执行下载。
+    """
+    # 获取用户信息以检查偏好设置
+    from db import User
+    user = session.query(User).filter_by(uid=aweme.uid).first()
+    global_download_video = get_config(session, "download_video", "true") == "true"
+    global_download_note = get_config(session, "download_note", "true") == "true"
+
+    should_download = True
+    if aweme.aweme_type == 68: # 图文
+        # 优先级：个人覆盖 > 全局设定
+        override = user.download_note_override if user else None
+        should_download = override if override is not None else global_download_note
+    else: # 视频
+        override = user.download_video_override if user else None
+        should_download = override if override is not None else global_download_video
+
+    if not should_download:
+        logger.info(f"根据设置跳过下载: {aweme.aweme_id} (Type: {aweme.aweme_type})")
+        return False
+
+    filename = aweme.desc if aweme.desc else aweme.aweme_id
+    type_folder = "notes" if aweme.aweme_type == 68 else "videos"
+    author_folder = os.path.join(f"{aweme.nickname}_{aweme.uid}", type_folder)
+    
+    try:
+        success = download_video(
+            aweme.share_url, author_folder, filename, aweme.aweme_id
+        )
+        if success:
+            aweme.downloaded = True
+            logger.info(f"下载成功: {aweme.aweme_id}")
+            session.commit()
+            return True
+        else:
+            logger.error(f"下载失败: {aweme.aweme_id}")
+            return False
+    except Exception as e:
+        logger.error(f"下载过程中遇到错误: {e}")
+        return False
+
+
 def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_id: str = None):
     """
     同步指定用户的视频：拉取 Profile、增量抓取 Awemes、下载未下载的视频
@@ -108,13 +152,7 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
 
     logger.info(f"开始同步用户 {uid}，发现 {total_new} 个新作品")
     
-    # 获取用户信息以检查偏好设置
-    user = session.query(User).filter_by(uid=uid).first()
-    global_download_video = get_config(session, "download_video", "true") == "true"
-    global_download_note = get_config(session, "download_note", "true") == "true"
-
     for i, aweme in enumerate(undownloaded_awemes):
-        # 此时 aweme 可能因为之前的 commit 而失效，虽然 enumerate 保持了引用，但属性访问可能触发 fetch
         msg = f"正在下载第 {i+1}/{total_new}: {aweme.desc[:20] if aweme.desc else aweme.aweme_id}"
         logger.info(msg)
         
@@ -122,38 +160,7 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
         if task_id:
             update_task_progress(session, task_id, progress, message=msg)
             
-        should_download = True
-        if aweme.aweme_type == 68: # 图文
-            # 优先级：个人覆盖 > 全局设定
-            override = user.download_note_override if user else None
-            should_download = override if override is not None else global_download_note
-        else: # 视频
-            override = user.download_video_override if user else None
-            should_download = override if override is not None else global_download_video
-
-        if not should_download:
-            logger.info(f"根据设置跳过下载: {aweme.aweme_id} (Type: {aweme.aweme_type})")
-            aweme.downloaded = True # 标记为已处理以避免下次再扫到（视需求而定，或者不标记）
-            session.commit()
-            continue
-
-        filename = aweme.desc if aweme.desc else aweme.aweme_id
-        type_folder = "notes" if aweme.aweme_type == 68 else "videos"
-        author_folder = os.path.join(f"{aweme.nickname}_{aweme.uid}", type_folder)
-        
-        try:
-            success = download_video(
-                aweme.share_url, author_folder, filename, aweme.aweme_id
-            )
-            if success:
-                aweme.downloaded = True
-                logger.info(f"下载成功: {aweme.aweme_id}")
-            else:
-                logger.error(f"下载失败: {aweme.aweme_id}")
-        except Exception as e:
-            logger.error(f"同步循环中遇到错误: {e}")
-            
-        session.commit()
+        process_single_aweme_download(session, aweme)
 
     if task_id:
         update_task_progress(session, task_id, 100, status="completed", message="同步完成")
@@ -170,6 +177,49 @@ def download_user_videos_task(url: str, task_id: str):
     except Exception as e:
         with next(get_session()) as session:
             update_task_progress(session, task_id, 100, status="failed", message=str(e))
+
+
+def download_undownloaded_task(task_id: str):
+    """
+    检查数据库中未标记为下载的内容并尝试下载
+    """
+    try:
+        from db import get_undownloaded_awemes
+        with next(get_session()) as session:
+            update_task_progress(session, task_id, 10, message="正在查询未下载作品...")
+            undownloaded_awemes = get_undownloaded_awemes(session)
+            total = len(undownloaded_awemes)
+            
+            if total == 0:
+                update_task_progress(session, task_id, 100, status="completed", message="没有未下载的作品")
+                return
+
+            logger.info(f"开启全局补漏下载，发现 {total} 个作品")
+            for i, aweme in enumerate(undownloaded_awemes):
+                msg = f"正在补漏下载 {i+1}/{total}: {aweme.desc[:20] if aweme.desc else aweme.aweme_id}"
+                progress = 10 + int((i / total) * 90)
+                update_task_progress(session, task_id, progress, message=msg)
+                
+                process_single_aweme_download(session, aweme)
+            
+            update_task_progress(session, task_id, 100, status="completed", message=f"补漏完成，共处理 {total} 个作品")
+    except Exception as e:
+        logger.error(f"补漏任务失败: {e}")
+        with next(get_session()) as session:
+            update_task_progress(session, task_id, 100, status="failed", message=str(e))
+
+
+@router.post("/tasks/check_undownloaded")
+def check_undownloaded_api(background_tasks: BackgroundTasks):
+    """
+    触发后台任务：检查并下载数据库中所有未下载的作品
+    """
+    task_id = str(uuid.uuid4())
+    with next(get_session()) as session:
+        create_task(session, task_id, target_id="global_check")
+    
+    background_tasks.add_task(download_undownloaded_task, task_id)
+    return {"started": True, "task_id": task_id}
 
 
 @router.post("/download_user_videos")
@@ -470,6 +520,25 @@ def change_password_api(req: PasswordChangeRequest, session: Session = Depends(g
 def update_user_pref_api(req: UserPreferenceRequest, session: Session = Depends(get_session), _ = Depends(get_current_user)):
     success = update_user_preference(session, req.uid, req.video_pref, req.note_pref)
     return {"success": success}
+
+@router.get("/scheduler/status")
+def get_scheduler_status():
+    """
+    获取后台调度器的运行状态
+    """
+    from scheduler import scheduler_manager
+    return scheduler_manager.get_status()
+
+
+@router.post("/scheduler/run_now")
+def run_scheduler_now():
+    """
+    立即触发一次后台自动更新
+    """
+    from scheduler import scheduler_manager
+    scheduler_manager.trigger_now()
+    return {"success": True}
+
 
 def throw_auth_error(detail="用户名或密码错误"):
     raise HTTPException(
