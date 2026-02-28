@@ -91,6 +91,6 @@ def sanitize_filename(name: str) -> str:
     name = re.sub(r'[\\/:*?"<>|]', "_", name)
     name = name.replace("\n", " ").replace("\r", " ")
     name = name.strip()
-    if len(name) > 100:
-        name = name[:100]
+    if len(name) > 50:
+        name = name[:50]
     return name or "downloaded_video"

@@ -13,6 +13,11 @@ import sys
 # 配置 Loguru 拦截标准库日志
 class InterceptHandler(logging.Handler):
     def emit(self, record):
+        # 过滤掉高频轮询的 API 日志，减少干扰
+        msg = record.getMessage()
+        if '"GET /api/tasks/active' in msg or '"GET /api/logs' in msg:
+            return
+
         # Get corresponding Loguru level if it exists
         try:
             level = logger.level(record.levelname).name
@@ -25,7 +30,7 @@ class InterceptHandler(logging.Handler):
             frame = frame.f_back
             depth += 1
 
-        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+        logger.opt(depth=depth, exception=record.exc_info).log(level, msg)
 
 # 基础输出配置
 logger.remove()

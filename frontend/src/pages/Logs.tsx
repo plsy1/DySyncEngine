@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import * as api from '../api';
-import { RefreshCw, Terminal, Search, ArrowDown } from 'lucide-react';
+import { RefreshCw, Terminal, Search, ArrowDown, Filter } from 'lucide-react';
 
 export const Logs = () => {
     const [logs, setLogs] = useState<string[]>([]);
     const [loading, setLoading] = useState(false);
     const [filter, setFilter] = useState('');
+    const [logLevel, setLogLevel] = useState('ALL');
     const [autoScroll, setAutoScroll] = useState(true);
     const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -33,9 +34,11 @@ export const Logs = () => {
         }
     }, [logs, autoScroll]);
 
-    const filteredLogs = logs.filter(log =>
-        log.toLowerCase().includes(filter.toLowerCase())
-    );
+    const filteredLogs = logs.filter(log => {
+        const matchesFilter = log.toLowerCase().includes(filter.toLowerCase());
+        const matchesLevel = logLevel === 'ALL' || log.includes(`| ${logLevel.padEnd(8)} |`);
+        return matchesFilter && matchesLevel;
+    });
 
     return (
         <div className="max-w-6xl mx-auto space-y-6">
@@ -57,6 +60,21 @@ export const Logs = () => {
                             onChange={(e) => setFilter(e.target.value)}
                             className="pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-primary/50 text-sm transition-all w-48"
                         />
+                    </div>
+
+                    <div className="relative">
+                        <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" size={16} />
+                        <select
+                            value={logLevel}
+                            onChange={(e) => setLogLevel(e.target.value)}
+                            className="pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-primary/50 text-sm transition-all cursor-pointer appearance-none hover:bg-white/10 w-32"
+                        >
+                            <option value="ALL" className="bg-[#1a1a1a]">ALL</option>
+                            <option value="INFO" className="bg-[#1a1a1a]">INFO</option>
+                            <option value="SUCCESS" className="bg-[#1a1a1a]">SUCCESS</option>
+                            <option value="WARNING" className="bg-[#1a1a1a]">WARNING</option>
+                            <option value="ERROR" className="bg-[#1a1a1a]">ERROR</option>
+                        </select>
                     </div>
 
                     <button
