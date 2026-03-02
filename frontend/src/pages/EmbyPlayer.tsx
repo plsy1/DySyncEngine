@@ -52,6 +52,8 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     const [loadingMore, setLoadingMore] = useState(false);
     const [isUserPaused, setIsUserPaused] = useState(false);
     const [isMuted, setIsMuted] = useState(true);
+    const [isFastForwarding, setIsFastForwarding] = useState(false);
+    const longPressTimerRef = useRef<any>(null);
     const [hasStarted, setHasStarted] = useState<{ [key: string]: boolean }>({});
     const [hasManualSeek, setHasManualSeek] = useState<{ [key: string]: boolean }>({});
     const [displayMode, setDisplayMode] = useState<'smart' | 'cover' | 'contain'>('smart');
@@ -259,14 +261,34 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         setHasManualSeek(prev => ({ ...prev, [itemId]: true }));
     };
 
-    const handleGlobalTouchStart = (e: React.TouchEvent) => {
+    const handleGlobalTouchStart = (index: number, e: React.TouchEvent) => {
         setTouchStartX(e.touches[0].clientX);
         setTouchStartY(e.touches[0].clientY);
+
+        // Long press detection for 2x speed
+        if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = setTimeout(() => {
+            const video = videoRefs.current[index];
+            if (video && !video.paused) {
+                video.playbackRate = 2.0;
+                setIsFastForwarding(true);
+                if (window.navigator.vibrate) window.navigator.vibrate(60);
+            }
+        }, 500);
     };
 
     const handleGlobalTouchMove = (itemId: string, index: number, e: React.TouchEvent) => {
         if (touchStartX === 0) return;
         const deltaX = e.touches[0].clientX - touchStartX;
+        const deltaY = e.touches[0].clientY - touchStartY;
+
+        // Cancel long press if moved significantly
+        if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
+            if (longPressTimerRef.current) {
+                clearTimeout(longPressTimerRef.current);
+                longPressTimerRef.current = null;
+            }
+        }
 
         // Only trigger seek if horizontal movement is significant
         if (Math.abs(deltaX) > 10) {
@@ -289,6 +311,24 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         const deltaX = e.changedTouches[0].clientX - touchStartX;
         const deltaY = e.changedTouches[0].clientY - touchStartY;
         const displacement = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+        // Clean up long press timer
+        if (longPressTimerRef.current) {
+            clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
+        }
+
+        // If we were fast forwarding, just stop it and ignore the rest of the gesture
+        if (isFastForwarding) {
+            const video = videoRefs.current[index];
+            if (video) video.playbackRate = 1.0;
+            setIsFastForwarding(false);
+            setIsDragging(false);
+            setTouchStartX(0);
+            setTouchStartY(0);
+            setSeekPreviewTime(null);
+            return;
+        }
 
         // If it's a tap (minimal movement) - increase threshold slightly for robustness
         if (displacement < 25 && !isDragging) {
@@ -320,13 +360,28 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         setTouchStartY(0);
         setSeekPreviewTime(null);
 
-        // EXTRA: If we swiped to a new video, ensure we try to play it immediately
-        // This links the "user gesture" (touch release) to the play command, helping iOS auto-play
-        setTimeout(() => {
-            if (videoRefs.current[activeVideoIndex]) {
-                safePlay(activeVideoIndex);
-            }
-        }, 50);
+        // SYNC GESTURE BINDING: Unmute and prime adjacent videos immediately
+        // This links the "Unmute" action to the user's swipe gesture
+        if (!isMuted) {
+            [index, index + 1, index - 1].forEach(idx => {
+                const v = videoRefs.current[idx];
+                if (v) {
+                    v.muted = false;
+                    // Trigger a micro play-then-pause to 'unlock' audio context for this element
+                    if (idx !== activeVideoIndex) {
+                        const playPromise = v.play();
+                        if (playPromise !== undefined) {
+                            playPromise.then(() => v.pause()).catch(() => { });
+                        }
+                    }
+                }
+            });
+        }
+
+        // Call safePlay immediately without setTimeout
+        if (displacement >= 25 && videoRefs.current[activeVideoIndex]) {
+            safePlay(activeVideoIndex);
+        }
     };
 
     // Handle scroll to play/pause using Intersection Observer
@@ -453,7 +508,11 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     };
 
     return (
-        <div className="fixed inset-0 bg-black z-[100] overflow-hidden flex flex-col">
+        <div
+            className="fixed inset-0 bg-black z-[100] overflow-hidden flex flex-col select-none"
+            onContextMenu={(e) => e.preventDefault()}
+            style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none' } as any}
+        >
             {/* Top Navigation Bar - Douyin Style */}
             <div className="absolute top-0 left-0 right-0 z-50 flex items-center justify-center p-6 bg-gradient-to-b from-black/60 to-transparent pointer-events-none"
                 style={{ paddingTop: 'calc(env(safe-area-inset-top) + 24px)' }}>
@@ -505,7 +564,27 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                     >
                         {displayMode === 'smart' ? <Monitor size={24} /> : displayMode === 'cover' ? <Maximize2 size={24} /> : <Minimize2 size={24} />}
                     </button>
-                    <button onClick={() => setIsMuted(!isMuted)} className="p-3 text-white transition-all hover:opacity-100 hover:bg-white/10 rounded-full">
+                    <button
+                        onClick={() => {
+                            const nextMuted = !isMuted;
+                            setIsMuted(nextMuted);
+
+                            // WARM UP: If unmuting, try to play/pause adjacent videos
+                            // This signals to iOS that these videos are allowed to have sound
+                            if (!nextMuted) {
+                                [activeVideoIndex, activeVideoIndex + 1, activeVideoIndex - 1].forEach(idx => {
+                                    const v = videoRefs.current[idx];
+                                    if (v) {
+                                        v.muted = false;
+                                        // A quick play/pause can sometimes 'unlock' the audio context for that element
+                                        const p = v.play();
+                                        if (p) p.then(() => { if (idx !== activeVideoIndex) v.pause(); }).catch(() => { });
+                                    }
+                                });
+                            }
+                        }}
+                        className="p-3 text-white transition-all hover:opacity-100 hover:bg-white/10 rounded-full"
+                    >
                         {isMuted ? <VolumeX size={24} className="text-red-500" /> : <Volume2 size={24} />}
                     </button>
                     <button onClick={handleOpenSidebar} className="p-3 text-white transition-all hover:opacity-100 hover:bg-white/10 rounded-full">
@@ -526,7 +605,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                         ref={(el) => { itemRefs.current[index] = el; }}
                         className="relative w-full h-[100dvh] snap-start snap-always flex bg-black overflow-hidden group"
                         data-index={index}
-                        onTouchStart={handleGlobalTouchStart}
+                        onTouchStart={(e) => handleGlobalTouchStart(index, e)}
                         onTouchMove={(e) => handleGlobalTouchMove(item.Id, index, e)}
                         onTouchEnd={(e) => handleGlobalTouchEnd(item.Id, index, e)}
                         onClick={() => {
@@ -579,8 +658,8 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                         if (playbackMode === 'next' && activeVideoIndex < items.length - 1) {
                                             const nextIndex = activeVideoIndex + 1;
                                             itemRefs.current[nextIndex]?.scrollIntoView({ behavior: 'smooth' });
-                                            // Pre-trigger play for the next one to prepare activation
-                                            setTimeout(() => safePlay(nextIndex), 100);
+                                            // Trigger play immediately. onEnded is also a valid user-originated activation point in some browsers
+                                            safePlay(nextIndex);
                                         }
                                     }}
                                     onTimeUpdate={(e) => handleTimeUpdate(item.Id, e)}
@@ -603,6 +682,22 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
                         {/* Video Controls Overlay */}
                         <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-30">
+                            {isFastForwarding && activeVideoIndex === index && (
+                                <div className="absolute top-24 left-1/2 -translate-x-1/2 z-50">
+                                    <motion.div
+                                        initial={{ opacity: 0, y: -20 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        className="flex items-center gap-2 bg-black/40 backdrop-blur-md px-4 py-2 rounded-full border border-white/10"
+                                    >
+                                        <div className="flex gap-0.5">
+                                            <Play size={14} className="fill-white text-white" />
+                                            <Play size={14} className="fill-white text-white" />
+                                        </div>
+                                        <span className="text-white font-bold text-sm tracking-widest">2.0X 倍速播放中</span>
+                                    </motion.div>
+                                </div>
+                            )}
+
                             {(activeVideoIndex === index && isUserPaused) && (
                                 <motion.div
                                     initial={{ scale: 0.8, opacity: 0 }}
