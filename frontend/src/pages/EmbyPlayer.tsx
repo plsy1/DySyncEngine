@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Loader2, Play, AlertCircle, Menu, X, Folder, Volume2, VolumeX, Maximize2, Minimize2, Monitor, Repeat, ArrowRightCircle, Clock, Shuffle } from 'lucide-react';
+import { ArrowLeft, Loader2, Play, AlertCircle, Menu, X, Folder, Volume2, VolumeX, Maximize2, Minimize2, Monitor, Repeat, ArrowRightCircle, Clock, Shuffle, Forward } from 'lucide-react';
 import * as api from '../api';
 import type { GlobalSettings } from '../types';
 import axios from 'axios';
@@ -58,6 +58,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     const [hasManualSeek, setHasManualSeek] = useState<{ [key: string]: boolean }>({});
     const [displayMode, setDisplayMode] = useState<'smart' | 'cover' | 'contain'>('smart');
     const [playbackMode, setPlaybackMode] = useState<'loop' | 'next'>('loop');
+    const [sharingId, setSharingId] = useState<string | null>(null);
     const [isScreenLandscape, setIsScreenLandscape] = useState(
         typeof window !== 'undefined' ? window.innerWidth > window.innerHeight : false
     );
@@ -259,6 +260,44 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         video.currentTime = newTime;
         setCurrentTime(prev => ({ ...prev, [itemId]: newTime }));
         setHasManualSeek(prev => ({ ...prev, [itemId]: true }));
+    };
+
+    const handleShare = async (item: EmbyItem) => {
+        if (sharingId) return;
+        const url = getVideoUrl(item);
+        if (!url) return;
+
+        setSharingId(item.Id);
+        try {
+            const response = await fetch(url);
+            const blob = await response.blob();
+            const fileName = `${item.Name || 'video'}.mp4`;
+            const file = new File([blob], fileName, { type: 'video/mp4' });
+
+            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                await navigator.share({
+                    files: [file],
+                    title: item.Name,
+                    text: item.Overview
+                });
+            } else {
+                // Fallback for browsers that don't support file sharing
+                const downloadUrl = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(downloadUrl);
+                onNotify('浏览器不支持直接分享，已尝试开启下载', 'success');
+            }
+        } catch (err) {
+            console.error('Sharing failed', err);
+            onNotify('准备视频失败，请重试', 'error');
+        } finally {
+            setSharingId(null);
+        }
     };
 
     const handleGlobalTouchStart = (index: number, e: React.TouchEvent) => {
@@ -707,6 +746,29 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                     <Play size={40} className="ml-2" />
                                 </motion.div>
                             )}
+
+                            {/* Right Action Buttons */}
+                            <div className="absolute right-4 bottom-32 flex flex-col gap-8 items-center pointer-events-auto z-40">
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation(); // Prevent accidental video toggle on desktop
+                                        handleShare(item);
+                                    }}
+                                    onTouchStart={(e) => e.stopPropagation()}
+                                    onTouchMove={(e) => e.stopPropagation()}
+                                    onTouchEnd={(e) => e.stopPropagation()}
+                                    disabled={sharingId === item.Id}
+                                    className="flex flex-col items-center group relative p-4 -m-4" // Large hit area using negative margin
+                                >
+                                    <div className="flex items-center justify-center text-white transition-all group-active:scale-95 drop-shadow-lg">
+                                        {sharingId === item.Id ? (
+                                            <Loader2 size={36} className="animate-spin opacity-80" />
+                                        ) : (
+                                            <Forward size={36} className="fill-white/10" />
+                                        )}
+                                    </div>
+                                </button>
+                            </div>
                         </div>
 
                         {/* Video Info Overlay */}
