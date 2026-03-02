@@ -20,6 +20,7 @@ interface EmbyItem {
     Container?: string;
     Width?: number;
     Height?: number;
+    DateCreated?: string;
     ImageTags?: {
         Primary?: string;
     };
@@ -37,10 +38,14 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     // Sidebar & Folders State
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [folders, setFolders] = useState<EmbyItem[]>([]);
-    const [selectedFolderId, setSelectedFolderId] = useState<string | null>(() => {
-        return localStorage.getItem('emby_player_folder_id');
+    const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
+    const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>(() => {
+        const saved = localStorage.getItem('emby_player_folder_ids');
+        return saved ? saved.split(',') : [];
     });
+    const [sidebarPath, setSidebarPath] = useState<{ id: string, name: string }[]>([]);
     const [foldersLoading, setFoldersLoading] = useState(false);
+    const [isMuted, setIsMuted] = useState(true);
 
     // Progress State
     const [currentTime, setCurrentTime] = useState<{ [key: string]: number }>({});
@@ -51,7 +56,6 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     const [seekPreviewTime, setSeekPreviewTime] = useState<number | null>(null);
     const [loadingMore, setLoadingMore] = useState(false);
     const [isUserPaused, setIsUserPaused] = useState(false);
-    const [isMuted, setIsMuted] = useState(true);
     const [isFastForwarding, setIsFastForwarding] = useState(false);
     const longPressTimerRef = useRef<any>(null);
     const [hasStarted, setHasStarted] = useState<{ [key: string]: boolean }>({});
@@ -79,13 +83,9 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
 
     useEffect(() => {
-        if (selectedFolderId) {
-            localStorage.setItem('emby_player_folder_id', selectedFolderId);
-        } else {
-            localStorage.removeItem('emby_player_folder_id');
-        }
-        loadSettingsAndVideos(tab, selectedFolderId);
-    }, [tab, selectedFolderId]);
+        localStorage.setItem('emby_player_folder_ids', selectedFolderIds.join(','));
+        loadSettingsAndVideos(tab, selectedFolderIds.length > 0 ? selectedFolderIds.join(',') : null);
+    }, [tab, selectedFolderIds]);
 
     const loadSettingsAndVideos = async (currentTab: 'latest' | 'random', folderId: string | null) => {
         setLoading(true);
@@ -106,32 +106,55 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                 timeout: 10000,
             });
 
-            // Fetch Videos, Episodes, Movies from Emby
-            const params: any = {
-                api_key: data.emby_api_key,
-                IncludeItemTypes: 'Video,Movie,Episode',
-                Recursive: 'true',
-                SortBy: currentTab === 'latest' ? 'DateCreated' : 'Random',
-                SortOrder: currentTab === 'latest' ? 'Descending' : undefined,
-                Limit: 30, // Get 30 videos
-                Fields: 'Overview,Path,PrimaryImageAspectRatio,ImageTags,Width,Height'
-            };
+            const folderIds = folderId ? folderId.split(',') : [null];
 
-            if (folderId) {
-                params.ParentId = folderId;
+            // Fetch from each folder in parallel
+            const fetchPromises = folderIds.map(fid => {
+                const params: any = {
+                    api_key: data.emby_api_key,
+                    IncludeItemTypes: 'Video,Movie,Episode',
+                    Recursive: 'true',
+                    SortBy: currentTab === 'latest' ? 'DateCreated' : 'Random',
+                    SortOrder: currentTab === 'latest' ? 'Descending' : undefined,
+                    Limit: folderIds.length > 1 ? Math.max(10, Math.floor(40 / folderIds.length)) : 40,
+                    Fields: 'Overview,Path,PrimaryImageAspectRatio,ImageTags,Width,Height,DateCreated'
+                };
+                if (fid) params.ParentId = fid;
+                return embyApi.get('/emby/Items', { params });
+            });
+
+            const responses = await Promise.all(fetchPromises);
+            let allItems: EmbyItem[] = [];
+
+            responses.forEach(response => {
+                if (response.data && response.data.Items) {
+                    allItems = [...allItems, ...response.data.Items];
+                }
+            });
+
+            // Filter duplicates and only keep Videos
+            const uniqueItems = Array.from(new Map(
+                allItems
+                    .filter(i => i.MediaType === 'Video')
+                    .map(item => [item.Id, item])
+            ).values());
+
+            // Sort by date if latest tab
+            if (currentTab === 'latest') {
+                uniqueItems.sort((a, b) => {
+                    const dateA = new Date(a.DateCreated || 0).getTime();
+                    const dateB = new Date(b.DateCreated || 0).getTime();
+                    return dateB - dateA;
+                });
+            } else {
+                // Shuffle for random tab
+                uniqueItems.sort(() => Math.random() - 0.5);
             }
 
-            const response = await embyApi.get('/emby/Items', { params });
+            setItems(uniqueItems);
 
-            if (response.data && response.data.Items) {
-                // Filter out items that are not streamable video types (just to be safe)
-                const videoItems = response.data.Items.filter((i: EmbyItem) => i.MediaType === 'Video');
-                setItems(videoItems);
-                if (videoItems.length === 0) {
-                    setError('在指定的 Emby 服务器中没有找到视频内容');
-                }
-            } else {
-                setError('无法读取 Emby 数据格式');
+            if (uniqueItems.length === 0) {
+                setError('在指定的 Emby 服务器中没有找到视频内容');
             }
         } catch (err: any) {
             const msg = err.message || '连接 Emby 服务器失败，请检查配置或网络';
@@ -151,32 +174,53 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                 timeout: 15000,
             });
 
-            // Fetch Videos, Episodes, Movies from Emby
-            const params: any = {
-                api_key: settings.emby_api_key,
-                IncludeItemTypes: 'Video,Movie,Episode',
-                Recursive: 'true',
-                SortBy: tab === 'latest' ? 'DateCreated' : 'Random',
-                SortOrder: tab === 'latest' ? 'Descending' : undefined,
-                Limit: 20,
-                Fields: 'Overview,Path,PrimaryImageAspectRatio,ImageTags,Width,Height',
-                StartIndex: tab === 'latest' ? items.length : 0
-            };
+            const folderIds = selectedFolderIds.length > 0 ? selectedFolderIds : [null];
 
-            if (selectedFolderId) {
-                params.ParentId = selectedFolderId;
-            }
+            // For multi-folder, we fetch a small batch from each to merge
+            // This is a simplified pagination strategy for merged results
+            const fetchPromises = folderIds.map(fid => {
+                const params: any = {
+                    api_key: settings.emby_api_key,
+                    IncludeItemTypes: 'Video,Movie,Episode',
+                    Recursive: 'true',
+                    SortBy: tab === 'latest' ? 'DateCreated' : 'Random',
+                    SortOrder: tab === 'latest' ? 'Descending' : undefined,
+                    Limit: folderIds.length > 1 ? 10 : 20,
+                    Fields: 'Overview,Path,PrimaryImageAspectRatio,ImageTags,Width,Height,DateCreated',
+                    StartIndex: folderIds.length === 1 ? items.length : undefined
+                };
 
-            const response = await embyApi.get('/emby/Items', { params });
+                // If multi-select, we can't easily use StartIndex without tracking per-folder counts.
+                // Instead, we rely on the deduplication logic.
+                if (fid) params.ParentId = fid;
+                return embyApi.get('/emby/Items', { params });
+            });
 
-            if (response.data && response.data.Items) {
-                const videoItems = response.data.Items.filter((i: EmbyItem) =>
-                    i.MediaType === 'Video' && !items.some(existing => existing.Id === i.Id)
-                );
+            const responses = await Promise.all(fetchPromises);
+            let newItems: EmbyItem[] = [];
 
-                if (videoItems.length > 0) {
-                    setItems(prev => [...prev, ...videoItems]);
+            responses.forEach(response => {
+                if (response.data && response.data.Items) {
+                    newItems = [...newItems, ...response.data.Items];
                 }
+            });
+
+            // Filter out existing items and non-videos
+            const uniqueNewItems = newItems.filter((i: EmbyItem) =>
+                i.MediaType === 'Video' && !items.some(existing => existing.Id === i.Id)
+            );
+
+            if (uniqueNewItems.length > 0) {
+                // Merged sort if latest
+                let nextList = [...items, ...uniqueNewItems];
+                if (tab === 'latest') {
+                    nextList.sort((a, b) => {
+                        const dateA = new Date(a.DateCreated || 0).getTime();
+                        const dateB = new Date(b.DateCreated || 0).getTime();
+                        return dateB - dateA;
+                    });
+                }
+                setItems(nextList);
             }
         } catch (err) {
             console.error('Failed to load more videos:', err);
@@ -185,8 +229,8 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         }
     };
 
-    const fetchFolders = async () => {
-        if (!settings || !settings.emby_server_url || !settings.emby_api_key || folders.length > 0) return;
+    const fetchFolders = async (parentId?: string) => {
+        if (!settings || !settings.emby_server_url || !settings.emby_api_key) return;
         setFoldersLoading(true);
         try {
             const embyApi = axios.create({
@@ -196,10 +240,12 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
             const response = await embyApi.get('/emby/Items', {
                 params: {
                     api_key: settings.emby_api_key,
+                    ParentId: parentId,
                     Recursive: 'false',
                     IsFolder: 'true',
                     SortBy: 'SortName',
-                    SortOrder: 'Ascending'
+                    SortOrder: 'Ascending',
+                    Fields: 'ImageTags' // Get image tags for folder icons if available
                 }
             });
             if (response.data && response.data.Items) {
@@ -207,14 +253,53 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
             }
         } catch (err) {
             console.error('获取媒体库失败', err);
+            onNotify('获取目录失败', 'error');
         } finally {
             setFoldersLoading(false);
         }
     };
 
+    const handleFolderClick = (folder: EmbyItem) => {
+        setSidebarPath(prev => [...prev, { id: folder.Id, name: folder.Name }]);
+        fetchFolders(folder.Id);
+    };
+
+    const handleBackFolder = () => {
+        setSidebarPath(prev => {
+            const newPath = prev.slice(0, -1);
+            const parentId = newPath.length > 0 ? newPath[newPath.length - 1].id : undefined;
+            fetchFolders(parentId);
+            return newPath;
+        });
+    };
+
+    const handleSelectFolder = (folderId: string | null) => {
+        if (folderId === null) {
+            setSelectedFolderIds([]);
+            setIsSidebarOpen(false);
+            return;
+        }
+
+        if (isMultiSelectMode) {
+            setSelectedFolderIds(prev =>
+                prev.includes(folderId)
+                    ? prev.filter(id => id !== folderId)
+                    : [...prev, folderId]
+            );
+        } else {
+            setSelectedFolderIds([folderId]);
+            setIsSidebarOpen(false);
+        }
+    };
+
     const handleOpenSidebar = () => {
         setIsSidebarOpen(true);
-        fetchFolders();
+        // Only fetch if empty or we are at root
+        if (sidebarPath.length === 0) {
+            fetchFolders();
+        } else {
+            fetchFolders(sidebarPath[sidebarPath.length - 1].id);
+        }
     };
 
     const safePlay = async (index: number) => {
@@ -517,23 +602,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         );
     }
 
-    if (error) {
-        return (
-            <div className="fixed inset-0 z-[100] bg-black flex flex-col">
-                <button
-                    onClick={onBack}
-                    className="absolute top-6 left-6 z-50 p-3 flex items-center justify-center text-white transition-all drop-shadow-lg opacity-80 hover:opacity-100"
-                >
-                    <ArrowLeft size={28} />
-                </button>
-                <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-                    <AlertCircle size={48} className="text-red-500 mb-4" />
-                    <h2 className="text-xl font-bold text-white mb-2">出错了</h2>
-                    <p className="text-white/60 max-w-md">{error}</p>
-                </div>
-            </div>
-        );
-    }
+    // Error handling moved to main return to allow sidebar access
 
     const getVideoUrl = (item: EmbyItem) => {
         if (!settings) return '';
@@ -633,231 +702,250 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
             </div>
 
             {/* Scrolling Container */}
-            <div
-                ref={containerRef}
-                className="flex-1 overflow-y-scroll snap-y snap-mandatory bg-black no-scrollbar scroll-smooth"
-                style={{ scrollBehavior: 'smooth' }}
-            >
-                {items.map((item, index) => (
+            {/* Main Content Area */}
+            <div className="flex-1 relative overflow-hidden">
+                {error ? (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center z-10 bg-black">
+                        <AlertCircle size={48} className="text-red-500/80 mb-4" />
+                        <h2 className="text-xl font-bold text-white mb-2">出错了</h2>
+                        <p className="text-white/60 max-w-sm mb-8">{error}</p>
+                        <button
+                            onClick={handleOpenSidebar}
+                            className="px-8 py-3 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all border border-white/10 active:scale-95 flex items-center gap-2"
+                        >
+                            <Menu size={20} />
+                            打开侧边栏选择目录
+                        </button>
+                    </div>
+                ) : (
                     <div
-                        key={item.Id}
-                        ref={(el) => { itemRefs.current[index] = el; }}
-                        className="relative w-full h-[100dvh] snap-start snap-always flex bg-black overflow-hidden group"
-                        data-index={index}
-                        onTouchStart={(e) => handleGlobalTouchStart(index, e)}
-                        onTouchMove={(e) => handleGlobalTouchMove(item.Id, index, e)}
-                        onTouchEnd={(e) => handleGlobalTouchEnd(item.Id, index, e)}
-                        onClick={() => {
-                            // For desktop mouse clicks
-                            const video = videoRefs.current[index];
-                            if (video) {
-                                if (video.paused) {
-                                    video.play();
-                                    setIsUserPaused(false);
-                                } else {
-                                    video.pause();
-                                    setIsUserPaused(true);
-                                }
-                            }
-                        }}
+                        ref={containerRef}
+                        className="h-full overflow-y-scroll snap-y snap-mandatory no-scrollbar scroll-smooth"
                     >
-                        {Math.abs(activeVideoIndex - index) <= 1 ? (
-                            <>
-                                {/* Blurred Background for Landscape videos */}
-                                {((item.Width || 0) > (item.Height || 0)) && getPosterUrl(item) && (
-                                    <div className="absolute inset-0 w-full h-full overflow-hidden">
-                                        <img
-                                            src={getPosterUrl(item)}
-                                            className="w-full h-full object-cover blur-2xl opacity-40 scale-110"
-                                            alt=""
-                                        />
-                                        <div className="absolute inset-0 bg-black/30" />
-                                    </div>
-                                )}
-
-                                <video
-                                    ref={(el) => {
-                                        videoRefs.current[index] = el;
-                                        // Try to play immediately if it's the active one that just mounted
-                                        if (el && activeVideoIndex === index && el.paused && !isUserPaused) {
-                                            safePlay(index);
+                        <div className="min-h-full">
+                            {items.map((item, index) => (
+                                <div
+                                    key={item.Id}
+                                    ref={(el) => { itemRefs.current[index] = el; }}
+                                    className="h-screen w-full snap-start relative flex items-center justify-center overflow-hidden bg-black"
+                                    data-index={index}
+                                    onTouchStart={(e) => handleGlobalTouchStart(index, e)}
+                                    onTouchMove={(e) => handleGlobalTouchMove(item.Id, index, e)}
+                                    onTouchEnd={(e) => handleGlobalTouchEnd(item.Id, index, e)}
+                                    onClick={() => {
+                                        // For desktop mouse clicks
+                                        const video = videoRefs.current[index];
+                                        if (video) {
+                                            if (video.paused) {
+                                                video.play();
+                                                setIsUserPaused(false);
+                                            } else {
+                                                video.pause();
+                                                setIsUserPaused(true);
+                                            }
                                         }
                                     }}
-                                    src={getVideoUrl(item)}
-                                    className={`relative z-10 w-full h-full pointer-events-auto bg-transparent ${displayMode === 'cover' ? 'object-cover' :
-                                        displayMode === 'contain' ? 'object-contain' :
-                                            (isScreenLandscape || (item.Width || 0) > (item.Height || 0)) ? 'object-contain' : 'object-cover'
-                                        }`}
-                                    autoPlay={activeVideoIndex === index}
-                                    loop={playbackMode === 'loop'}
-                                    muted={isMuted}
-                                    playsInline
-                                    onPlaying={() => handlePlaying(item.Id)}
-                                    onEnded={() => {
-                                        if (playbackMode === 'next' && activeVideoIndex < items.length - 1) {
-                                            const nextIndex = activeVideoIndex + 1;
-                                            itemRefs.current[nextIndex]?.scrollIntoView({ behavior: 'smooth' });
-                                            // Trigger play immediately. onEnded is also a valid user-originated activation point in some browsers
-                                            safePlay(nextIndex);
-                                        }
-                                    }}
-                                    onTimeUpdate={(e) => handleTimeUpdate(item.Id, e)}
-                                    onLoadedMetadata={(e) => handleLoadedMetadata(item.Id, e)}
-                                />
-                                {getPosterUrl(item) && !hasStarted[item.Id] && (
-                                    <img
-                                        src={getPosterUrl(item)}
-                                        className={`absolute inset-0 w-full h-full z-20 pointer-events-none ${displayMode === 'cover' ? 'object-cover' :
-                                            displayMode === 'contain' ? 'object-contain' :
-                                                (isScreenLandscape || (item.Width || 0) > (item.Height || 0)) ? 'object-contain' : 'object-cover'
-                                            }`}
-                                        alt=""
-                                    />
-                                )}
-                            </>
-                        ) : (
-                            <div className="w-full h-full bg-black pointer-events-auto" />
-                        )}
+                                >
+                                    {Math.abs(activeVideoIndex - index) <= 1 ? (
+                                        <>
+                                            {/* Blurred Background for Landscape videos */}
+                                            {((item.Width || 0) > (item.Height || 0)) && getPosterUrl(item) && (
+                                                <div className="absolute inset-0 w-full h-full overflow-hidden">
+                                                    <img
+                                                        src={getPosterUrl(item)}
+                                                        className="w-full h-full object-cover blur-2xl opacity-40 scale-110"
+                                                        alt=""
+                                                    />
+                                                    <div className="absolute inset-0 bg-black/30" />
+                                                </div>
+                                            )}
 
-                        {/* Video Controls Overlay */}
-                        <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-30">
-                            {isFastForwarding && activeVideoIndex === index && (
-                                <div className="absolute top-24 left-1/2 -translate-x-1/2 z-50">
-                                    <motion.div
-                                        initial={{ opacity: 0, y: -20 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        className="flex items-center gap-2 bg-black/40 backdrop-blur-md px-4 py-2 rounded-full border border-white/10"
-                                    >
-                                        <div className="flex gap-0.5">
-                                            <Play size={14} className="fill-white text-white" />
-                                            <Play size={14} className="fill-white text-white" />
+                                            <video
+                                                ref={(el) => {
+                                                    videoRefs.current[index] = el;
+                                                    // Try to play immediately if it's the active one that just mounted
+                                                    if (el && activeVideoIndex === index && el.paused && !isUserPaused) {
+                                                        safePlay(index);
+                                                    }
+                                                }}
+                                                src={getVideoUrl(item)}
+                                                className={`relative z-10 w-full h-full pointer-events-auto bg-transparent ${displayMode === 'cover' ? 'object-cover' :
+                                                    displayMode === 'contain' ? 'object-contain' :
+                                                        (isScreenLandscape || (item.Width || 0) > (item.Height || 0)) ? 'object-contain' : 'object-cover'
+                                                    }`}
+                                                autoPlay={activeVideoIndex === index}
+                                                loop={playbackMode === 'loop'}
+                                                muted={isMuted}
+                                                playsInline
+                                                onPlaying={() => handlePlaying(item.Id)}
+                                                onEnded={() => {
+                                                    if (playbackMode === 'next' && activeVideoIndex < items.length - 1) {
+                                                        const nextIndex = activeVideoIndex + 1;
+                                                        itemRefs.current[nextIndex]?.scrollIntoView({ behavior: 'smooth' });
+                                                        // Trigger play immediately. onEnded is also a valid user-originated activation point in some browsers
+                                                        safePlay(nextIndex);
+                                                    }
+                                                }}
+                                                onTimeUpdate={(e) => handleTimeUpdate(item.Id, e)}
+                                                onLoadedMetadata={(e) => handleLoadedMetadata(item.Id, e)}
+                                            />
+                                            {getPosterUrl(item) && !hasStarted[item.Id] && (
+                                                <img
+                                                    src={getPosterUrl(item)}
+                                                    className={`absolute inset-0 w-full h-full z-20 pointer-events-none ${displayMode === 'cover' ? 'object-cover' :
+                                                        displayMode === 'contain' ? 'object-contain' :
+                                                            (isScreenLandscape || (item.Width || 0) > (item.Height || 0)) ? 'object-contain' : 'object-cover'
+                                                        }`}
+                                                    alt=""
+                                                />
+                                            )}
+                                        </>
+                                    ) : (
+                                        <div className="w-full h-full bg-black pointer-events-auto" />
+                                    )}
+
+                                    {/* Video Controls Overlay */}
+                                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-30">
+                                        {isFastForwarding && activeVideoIndex === index && (
+                                            <div className="absolute top-24 left-1/2 -translate-x-1/2 z-50">
+                                                <motion.div
+                                                    initial={{ opacity: 0, y: -20 }}
+                                                    animate={{ opacity: 1, y: 0 }}
+                                                    className="flex items-center gap-2 bg-black/40 backdrop-blur-md px-4 py-2 rounded-full border border-white/10"
+                                                >
+                                                    <div className="flex gap-0.5">
+                                                        <Play size={14} className="fill-white text-white" />
+                                                        <Play size={14} className="fill-white text-white" />
+                                                    </div>
+                                                    <span className="text-white font-bold text-sm tracking-widest">2.0X 倍速播放中</span>
+                                                </motion.div>
+                                            </div>
+                                        )}
+
+                                        {(activeVideoIndex === index && isUserPaused) && (
+                                            <motion.div
+                                                initial={{ scale: 0.8, opacity: 0 }}
+                                                animate={{ scale: 1, opacity: 1 }}
+                                                className="w-20 h-20 bg-black/40 backdrop-blur-md rounded-full flex items-center justify-center text-white/80"
+                                            >
+                                                <Play size={40} className="ml-2" />
+                                            </motion.div>
+                                        )}
+
+                                        {/* Right Action Buttons */}
+                                        <div className="absolute right-4 bottom-32 flex flex-col gap-8 items-center pointer-events-auto z-40">
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation(); // Prevent accidental video toggle on desktop
+                                                    handleShare(item);
+                                                }}
+                                                onTouchStart={(e) => e.stopPropagation()}
+                                                onTouchMove={(e) => e.stopPropagation()}
+                                                onTouchEnd={(e) => e.stopPropagation()}
+                                                disabled={sharingId === item.Id}
+                                                className="flex flex-col items-center group relative p-4 -m-4" // Large hit area using negative margin
+                                            >
+                                                <div className="flex items-center justify-center text-white transition-all group-active:scale-95 drop-shadow-lg">
+                                                    {sharingId === item.Id ? (
+                                                        <Loader2 size={36} className="animate-spin opacity-80" />
+                                                    ) : (
+                                                        <Forward size={36} className="fill-white/10" />
+                                                    )}
+                                                </div>
+                                            </button>
                                         </div>
-                                        <span className="text-white font-bold text-sm tracking-widest">2.0X 倍速播放中</span>
-                                    </motion.div>
-                                </div>
-                            )}
+                                    </div>
 
-                            {(activeVideoIndex === index && isUserPaused) && (
-                                <motion.div
-                                    initial={{ scale: 0.8, opacity: 0 }}
-                                    animate={{ scale: 1, opacity: 1 }}
-                                    className="w-20 h-20 bg-black/40 backdrop-blur-md rounded-full flex items-center justify-center text-white/80"
-                                >
-                                    <Play size={40} className="ml-2" />
-                                </motion.div>
-                            )}
-
-                            {/* Right Action Buttons */}
-                            <div className="absolute right-4 bottom-32 flex flex-col gap-8 items-center pointer-events-auto z-40">
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation(); // Prevent accidental video toggle on desktop
-                                        handleShare(item);
-                                    }}
-                                    onTouchStart={(e) => e.stopPropagation()}
-                                    onTouchMove={(e) => e.stopPropagation()}
-                                    onTouchEnd={(e) => e.stopPropagation()}
-                                    disabled={sharingId === item.Id}
-                                    className="flex flex-col items-center group relative p-4 -m-4" // Large hit area using negative margin
-                                >
-                                    <div className="flex items-center justify-center text-white transition-all group-active:scale-95 drop-shadow-lg">
-                                        {sharingId === item.Id ? (
-                                            <Loader2 size={36} className="animate-spin opacity-80" />
-                                        ) : (
-                                            <Forward size={36} className="fill-white/10" />
+                                    {/* Video Info Overlay */}
+                                    <div className="absolute bottom-0 left-0 right-0 p-6 pb-12 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none flex flex-col justify-end z-30">
+                                        <h2 className="text-white text-xl font-bold mb-2 drop-shadow-lg leading-tight line-clamp-2">
+                                            {item.Name}
+                                        </h2>
+                                        {item.Overview && (
+                                            <p className="text-white/80 text-sm line-clamp-3 drop-shadow-md">
+                                                {item.Overview}
+                                            </p>
                                         )}
                                     </div>
-                                </button>
-                            </div>
-                        </div>
 
-                        {/* Video Info Overlay */}
-                        <div className="absolute bottom-0 left-0 right-0 p-6 pb-12 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none flex flex-col justify-end z-30">
-                            <h2 className="text-white text-xl font-bold mb-2 drop-shadow-lg leading-tight line-clamp-2">
-                                {item.Name}
-                            </h2>
-                            {item.Overview && (
-                                <p className="text-white/80 text-sm line-clamp-3 drop-shadow-md">
-                                    {item.Overview}
-                                </p>
-                            )}
-                        </div>
+                                    {/* Progress Bar - Bottom (Douyin Style) */}
+                                    {activeVideoIndex === index && (
+                                        <>
+                                            <div
+                                                className="absolute left-0 right-0 cursor-pointer pointer-events-auto z-[50] flex items-end"
+                                                style={{ bottom: 'calc(env(safe-area-inset-bottom) + 12px)', height: '24px' }}
+                                                onMouseDown={() => setIsDragging(true)}
+                                                onMouseUp={() => setIsDragging(false)}
+                                                onClick={(e) => handleSeek(item.Id, index, e)}
+                                                onTouchStart={() => setIsDragging(true)}
+                                                onTouchEnd={() => setIsDragging(false)}
+                                                onTouchMove={(e) => handleSeek(item.Id, index, e)}
+                                            >
+                                                <motion.div
+                                                    className="w-full bg-white/20 overflow-hidden relative"
+                                                    initial={{ height: 2, opacity: 0 }}
+                                                    animate={{
+                                                        height: isDragging ? 4 : 1,
+                                                        opacity: (isDragging || hasManualSeek[item.Id]) ? 0.8 : 0,
+                                                        translateY: (isDragging || hasManualSeek[item.Id]) ? 0 : 2
+                                                    }}
+                                                    transition={{ duration: 0.2 }}
+                                                >
+                                                    <motion.div
+                                                        className="h-full bg-white relative"
+                                                        style={{ width: `${(((isDragging && seekPreviewTime !== null ? seekPreviewTime : currentTime[item.Id]) || 0) / (duration[item.Id] || 1)) * 100}%` }}
+                                                    />
+                                                </motion.div>
 
-                        {/* Progress Bar - Bottom (Douyin Style) */}
-                        {activeVideoIndex === index && (
-                            <>
-                                <div
-                                    className="absolute left-0 right-0 cursor-pointer pointer-events-auto z-[50] flex items-end"
-                                    style={{ bottom: 'calc(env(safe-area-inset-bottom) + 12px)', height: '24px' }}
-                                    onMouseDown={() => setIsDragging(true)}
-                                    onMouseUp={() => setIsDragging(false)}
-                                    onClick={(e) => handleSeek(item.Id, index, e)}
-                                    onTouchStart={() => setIsDragging(true)}
-                                    onTouchEnd={() => setIsDragging(false)}
-                                    onTouchMove={(e) => handleSeek(item.Id, index, e)}
-                                >
-                                    <motion.div
-                                        className="w-full bg-white/20 overflow-hidden relative"
-                                        initial={{ height: 2, opacity: 0 }}
-                                        animate={{
-                                            height: isDragging ? 4 : 1,
-                                            opacity: (isDragging || hasManualSeek[item.Id]) ? 0.8 : 0,
-                                            translateY: (isDragging || hasManualSeek[item.Id]) ? 0 : 2
-                                        }}
-                                        transition={{ duration: 0.2 }}
-                                    >
-                                        <motion.div
-                                            className="h-full bg-white relative"
-                                            style={{ width: `${(((isDragging && seekPreviewTime !== null ? seekPreviewTime : currentTime[item.Id]) || 0) / (duration[item.Id] || 1)) * 100}%` }}
-                                        />
-                                    </motion.div>
+                                                {/* Visual Thumb for dragging */}
+                                                {isDragging && (
+                                                    <motion.div
+                                                        className="absolute w-4 h-4 bg-white rounded-full shadow-lg pointer-events-none"
+                                                        style={{
+                                                            left: `${(((isDragging && seekPreviewTime !== null ? seekPreviewTime : currentTime[item.Id]) || 0) / (duration[item.Id] || 1)) * 100}%`,
+                                                            bottom: '2px',
+                                                            transform: 'translateX(-50%)'
+                                                        }}
+                                                    />
+                                                )}
+                                            </div>
 
-                                    {/* Visual Thumb for dragging */}
-                                    {isDragging && (
-                                        <motion.div
-                                            className="absolute w-4 h-4 bg-white rounded-full shadow-lg pointer-events-none"
-                                            style={{
-                                                left: `${(((isDragging && seekPreviewTime !== null ? seekPreviewTime : currentTime[item.Id]) || 0) / (duration[item.Id] || 1)) * 100}%`,
-                                                bottom: '2px',
-                                                transform: 'translateX(-50%)'
-                                            }}
-                                        />
+                                            {/* Seek Preview Time Label */}
+                                            <AnimatePresence>
+                                                {isDragging && seekPreviewTime !== null && (
+                                                    <motion.div
+                                                        initial={{ opacity: 0, scale: 0.5, y: 20 }}
+                                                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                                                        exit={{ opacity: 0, scale: 0.5, y: 20 }}
+                                                        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/60 backdrop-blur-md px-6 py-3 rounded-2xl border border-white/10 flex flex-col items-center pointer-events-none z-[100]"
+                                                    >
+                                                        <div className="text-white text-2xl font-bold tracking-widest tabular-nums">
+                                                            {Math.floor(seekPreviewTime / 60)}:{(Math.floor(seekPreviewTime % 60)).toString().padStart(2, '0')}
+                                                            <span className="text-white/40 text-lg mx-1">/</span>
+                                                            <span className="text-white/40 text-lg">
+                                                                {Math.floor((duration[item.Id] || 0) / 60)}:{(Math.floor((duration[item.Id] || 0) % 60)).toString().padStart(2, '0')}
+                                                            </span>
+                                                        </div>
+                                                        <div className="w-40 h-1 bg-white/20 mt-3 rounded-full overflow-hidden">
+                                                            <div
+                                                                className="h-full bg-primary"
+                                                                style={{ width: `${(seekPreviewTime / (duration[item.Id] || 1)) * 100}%` }}
+                                                            />
+                                                        </div>
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
+                                        </>
                                     )}
                                 </div>
+                            ))}
+                        </div>
 
-                                {/* Seek Preview Time Label */}
-                                <AnimatePresence>
-                                    {isDragging && seekPreviewTime !== null && (
-                                        <motion.div
-                                            initial={{ opacity: 0, scale: 0.5, y: 20 }}
-                                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                                            exit={{ opacity: 0, scale: 0.5, y: 20 }}
-                                            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/60 backdrop-blur-md px-6 py-3 rounded-2xl border border-white/10 flex flex-col items-center pointer-events-none z-[100]"
-                                        >
-                                            <div className="text-white text-2xl font-bold tracking-widest tabular-nums">
-                                                {Math.floor(seekPreviewTime / 60)}:{(Math.floor(seekPreviewTime % 60)).toString().padStart(2, '0')}
-                                                <span className="text-white/40 text-lg mx-1">/</span>
-                                                <span className="text-white/40 text-lg">
-                                                    {Math.floor((duration[item.Id] || 0) / 60)}:{(Math.floor((duration[item.Id] || 0) % 60)).toString().padStart(2, '0')}
-                                                </span>
-                                            </div>
-                                            <div className="w-40 h-1 bg-white/20 mt-3 rounded-full overflow-hidden">
-                                                <div
-                                                    className="h-full bg-primary"
-                                                    style={{ width: `${(seekPreviewTime / (duration[item.Id] || 1)) * 100}%` }}
-                                                />
-                                            </div>
-                                        </motion.div>
-                                    )}
-                                </AnimatePresence>
-                            </>
+                        {items.length === 0 && !loading && !error && (
+                            <div className="flex h-full items-center justify-center text-white/50">
+                                暂无视频内容
+                            </div>
                         )}
-                    </div>
-                ))}
-
-                {items.length === 0 && !loading && !error && (
-                    <div className="flex h-full items-center justify-center text-white/50">
-                        暂无视频内容
                     </div>
                 )}
             </div>
@@ -890,51 +978,166 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
                             className="absolute top-0 bottom-0 right-0 w-80 max-w-[80vw] bg-[#111] z-[70] shadow-2xl flex flex-col border-l border-white/10"
                         >
-                            <div className="flex items-center justify-between p-6 border-b border-white/10"
-                                style={{ paddingTop: 'calc(env(safe-area-inset-top) + 24px)' }}>
-                                <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                                    <Folder size={20} className="text-primary" />
-                                    选择媒体库
-                                </h2>
-                                <button onClick={() => setIsSidebarOpen(false)} className="p-2 -mr-2 text-white/60 hover:text-white transition-colors">
-                                    <X size={24} />
-                                </button>
-                            </div>
-
-                            <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                                <button
-                                    onClick={() => {
-                                        setSelectedFolderId(null);
-                                        setIsSidebarOpen(false);
-                                    }}
-                                    className={`w-full text-left px-4 py-3 rounded-xl transition-all flex items-center gap-3 ${selectedFolderId === null ? 'bg-primary/20 text-primary border border-primary/30' : 'text-white/80 hover:bg-white/5 border border-transparent'}`}
-                                >
-                                    全部媒体
-                                </button>
-
-                                {foldersLoading ? (
-                                    <div className="flex items-center justify-center p-8 text-white/40">
-                                        <Loader2 className="animate-spin mr-2" size={20} /> 加载中...
-                                    </div>
-                                ) : (
-                                    folders.map(folder => (
+                            <div className="flex flex-col h-full">
+                                <div className="p-6 border-b border-white/10">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h2 className="text-xl font-bold text-white">选择目录</h2>
                                         <button
-                                            key={folder.Id}
-                                            onClick={() => {
-                                                setSelectedFolderId(folder.Id);
-                                                setIsSidebarOpen(false);
-                                            }}
-                                            className={`w-full text-left px-4 py-3 rounded-xl transition-all flex items-center justify-between ${selectedFolderId === folder.Id ? 'bg-primary/20 text-primary border border-primary/30' : 'text-white/80 hover:bg-white/5 border border-transparent'}`}
+                                            onClick={() => setIsSidebarOpen(false)}
+                                            className="p-2 hover:bg-white/10 rounded-full transition-colors text-white"
                                         >
-                                            <span className="truncate flex-1">{folder.Name}</span>
-                                            {selectedFolderId === folder.Id && <div className="w-2 h-2 rounded-full bg-primary" />}
+                                            <X size={24} />
                                         </button>
-                                    ))
-                                )}
+                                    </div>
 
-                                {!foldersLoading && folders.length === 0 && (
-                                    <div className="text-center p-8 text-white/40 text-sm">
-                                        未能获取到媒体库信息
+                                    {/* Breadcrumbs for folder navigation */}
+                                    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+                                        <button
+                                            onClick={() => {
+                                                setSidebarPath([]);
+                                                fetchFolders();
+                                            }}
+                                            className={`text-sm whitespace-nowrap px-2 py-1 rounded transition-colors ${sidebarPath.length === 0 ? 'bg-white/20 text-white font-bold' : 'text-white/60 hover:text-white'}`}
+                                        >
+                                            媒体库
+                                        </button>
+                                        {sidebarPath.map((path, idx) => (
+                                            <div key={path.id} className="flex items-center gap-2">
+                                                <span className="text-white/30">/</span>
+                                                <button
+                                                    onClick={() => {
+                                                        const newPath = sidebarPath.slice(0, idx + 1);
+                                                        setSidebarPath(newPath);
+                                                        fetchFolders(path.id);
+                                                    }}
+                                                    className={`text-sm whitespace-nowrap px-2 py-1 rounded transition-colors ${idx === sidebarPath.length - 1 ? 'bg-white/20 text-white font-bold' : 'text-white/60 hover:text-white'}`}
+                                                >
+                                                    {path.name}
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="flex-1 overflow-y-auto no-scrollbar p-2">
+                                    <div className="p-2 space-y-2">
+                                        <div className="flex items-center justify-between px-2 mb-2">
+                                            <span className="text-white/40 text-xs font-medium uppercase tracking-wider">
+                                                {sidebarPath.length > 0 ? sidebarPath[sidebarPath.length - 1].name : '根目录'}
+                                            </span>
+                                            <button
+                                                onClick={() => setIsMultiSelectMode(!isMultiSelectMode)}
+                                                className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all uppercase tracking-tighter ${isMultiSelectMode
+                                                    ? 'bg-primary text-white scale-105'
+                                                    : 'bg-white/5 text-white/40 hover:bg-white/10'
+                                                    }`}
+                                            >
+                                                {isMultiSelectMode ? '多选模式已开启' : '多选模式'}
+                                            </button>
+                                        </div>
+
+                                        {foldersLoading ? (
+                                            <div className="flex flex-col items-center justify-center h-40 gap-3">
+                                                <Loader2 className="animate-spin text-white/20" size={32} />
+                                                <span className="text-sm text-white/20">加载中...</span>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-1">
+                                                {/* All Videos Option (only at root) */}
+                                                {sidebarPath.length === 0 && (
+                                                    <button
+                                                        onClick={() => handleSelectFolder(null)}
+                                                        className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all ${selectedFolderIds.length === 0
+                                                            ? 'bg-white/10 ring-1 ring-white/20'
+                                                            : 'text-white/80 hover:bg-white/5 active:scale-95'
+                                                            }`}
+                                                    >
+                                                        <div className="p-2 bg-white/5 rounded-xl">
+                                                            <Monitor size={20} className="text-white/60" />
+                                                        </div>
+                                                        <span className="flex-1 text-left text-white/80">全部媒体库</span>
+                                                    </button>
+                                                )}
+
+                                                {/* Back Button (if not at root) */}
+                                                {sidebarPath.length > 0 && (
+                                                    <button
+                                                        onClick={handleBackFolder}
+                                                        className="w-full flex items-center gap-4 p-4 rounded-2xl text-white/40 hover:bg-white/5 active:scale-95 transition-all mb-2 border border-dashed border-white/5"
+                                                    >
+                                                        <div className="p-2">
+                                                            <ArrowLeft size={18} />
+                                                        </div>
+                                                        <span className="text-sm">返回上一级</span>
+                                                    </button>
+                                                )}
+
+                                                {folders.map((folder: EmbyItem) => {
+                                                    const isSelected = selectedFolderIds.includes(folder.Id);
+                                                    return (
+                                                        <div
+                                                            key={folder.Id}
+                                                            className={`group flex items-center gap-1 rounded-2xl transition-all ${isSelected
+                                                                ? 'bg-white/10 ring-1 ring-white/20'
+                                                                : 'hover:bg-white/5'
+                                                                }`}
+                                                        >
+                                                            <button
+                                                                onClick={() => handleFolderClick(folder)}
+                                                                className="flex-1 flex items-center gap-4 p-4 rounded-l-2xl overflow-hidden"
+                                                            >
+                                                                <div className={`p-2 rounded-xl transition-colors shrink-0 ${isSelected ? 'bg-primary/20 text-primary' : 'bg-white/5 group-hover:bg-white/10'}`}>
+                                                                    <Folder size={20} className={isSelected ? 'fill-primary/20' : ''} />
+                                                                </div>
+                                                                <span className={`flex-1 text-left line-clamp-1 text-sm ${isSelected ? 'text-white font-bold' : 'text-white/70'}`}>
+                                                                    {folder.Name}
+                                                                </span>
+                                                            </button>
+
+                                                            <button
+                                                                onClick={() => handleSelectFolder(folder.Id)}
+                                                                className={`p-4 rounded-r-2xl border-l border-white/5 hover:bg-white/10 transition-all ${isSelected ? 'text-primary' : 'text-white/20'}`}
+                                                            >
+                                                                {isMultiSelectMode ? (
+                                                                    <div className={`w-5 h-5 rounded-md border-2 transition-all flex items-center justify-center ${isSelected ? 'bg-primary border-primary' : 'border-white/20'}`}>
+                                                                        {isSelected && <div className="w-2 h-2 bg-white rounded-full" />}
+                                                                    </div>
+                                                                ) : (
+                                                                    <Play size={18} className={isSelected ? 'fill-primary text-primary' : 'fill-white/20'} />
+                                                                )}
+                                                            </button>
+                                                        </div>
+                                                    );
+                                                })}
+
+                                                {folders.length === 0 && !foldersLoading && (
+                                                    <div className="p-8 text-center">
+                                                        <p className="text-white/40 text-sm">该目录下没有文件夹</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {selectedFolderIds.length > 0 && (
+                                    <div className="p-4 border-t border-white/10 bg-black/40 backdrop-blur-md">
+                                        <div className="flex items-center justify-between mb-4 px-2">
+                                            <span className="text-white/60 text-xs">已选择 {selectedFolderIds.length} 个目录</span>
+                                            <button
+                                                onClick={() => setSelectedFolderIds([])}
+                                                className="text-primary text-xs font-bold hover:underline"
+                                            >
+                                                清除全部
+                                            </button>
+                                        </div>
+                                        <button
+                                            onClick={() => setIsSidebarOpen(false)}
+                                            className="w-full py-4 bg-primary text-white font-bold rounded-2xl flex items-center justify-center gap-2 hover:bg-primary/90 active:scale-95 transition-all shadow-xl shadow-primary/20"
+                                        >
+                                            <Play size={20} fill="white" />
+                                            立即播放选定内容
+                                        </button>
                                     </div>
                                 )}
                             </div>
