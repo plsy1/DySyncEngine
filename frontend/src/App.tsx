@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Search, RefreshCw, LogOut, Settings as SettingsIcon, Loader2, Activity, Terminal } from 'lucide-react';
+import { Plus, Search, RefreshCw, LogOut, Settings as SettingsIcon, Loader2, Activity, Terminal, Play } from 'lucide-react';
 import type { User, ToastType, Task } from './types';
 import * as api from './api';
 import { UserCard } from './components/UserCard';
@@ -11,11 +11,12 @@ import { Login } from './pages/Login';
 import { Settings } from './pages/Settings';
 import { Tasks } from './pages/Tasks';
 import { Logs } from './pages/Logs';
+import { EmbyPlayer } from './pages/EmbyPlayer';
 import ReloadPrompt from './components/ReloadPrompt';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
-  const [view, setView] = useState<'dashboard' | 'settings' | 'tasks' | 'logs'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'settings' | 'tasks' | 'logs' | 'player'>('dashboard');
   const [users, setUsers] = useState<User[]>([]);
   const [activeTasks, setActiveTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -164,7 +165,8 @@ function App() {
   return (
     <div className="min-h-screen bg-[#060606] text-white selection:bg-primary/30">
       {/* Navigation */}
-      <nav className="sticky top-0 z-50 border-b border-white/5 bg-black/50 backdrop-blur-xl">
+      <nav className="sticky top-0 z-50 border-b border-white/5 bg-black/50 backdrop-blur-xl transition-all">
+        <div style={{ height: 'env(safe-area-inset-top)' }} />
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-black border border-primary/20 flex items-center justify-center shadow-lg shadow-primary/10 overflow-hidden">
@@ -177,6 +179,13 @@ function App() {
           </div>
 
           <div className="flex items-center gap-4">
+            <button
+              onClick={() => setView(v => v === 'player' ? 'dashboard' : 'player')}
+              className={`p-3 rounded-xl transition-all ${view === 'player' ? 'bg-primary text-white' : 'bg-white/5 text-white/60 hover:bg-white/10'}`}
+              title="Emby 播放器"
+            >
+              <Play size={20} />
+            </button>
             <button
               onClick={() => setView(v => v === 'tasks' ? 'dashboard' : 'tasks')}
               className={`p-3 rounded-xl transition-all ${view === 'tasks' ? 'bg-primary text-white' : 'bg-white/5 text-white/60 hover:bg-white/10'}`}
@@ -210,17 +219,21 @@ function App() {
       </nav>
 
       {view === 'settings' ? (
-        <Settings onBack={() => setView('dashboard')} onNotify={showToast} />
+        <main className="max-w-4xl mx-auto pt-10">
+          <Settings onBack={() => setView('dashboard')} onNotify={showToast} />
+        </main>
+      ) : view === 'player' ? (
+        <EmbyPlayer onBack={() => setView('dashboard')} onNotify={showToast} />
       ) : view === 'tasks' ? (
-        <main className="max-w-7xl mx-auto px-6 pt-12">
+        <main className="max-w-7xl mx-auto px-6 pt-10">
           <Tasks onNotify={showToast} activeTasks={activeTasks} />
         </main>
       ) : view === 'logs' ? (
-        <main className="max-w-7xl mx-auto px-6 pt-12">
+        <main className="max-w-7xl mx-auto px-6 pt-10">
           <Logs />
         </main>
       ) : (
-        <main className="max-w-7xl mx-auto px-6 pt-12">
+        <main className="max-w-7xl mx-auto px-6 pt-10">
           {/* Single Video Download Section */}
           <SingleDownload onNotify={showToast} />
 

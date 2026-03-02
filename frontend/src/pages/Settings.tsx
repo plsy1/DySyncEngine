@@ -14,6 +14,8 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
         download_video: true,
         download_note: true,
         auto_update_interval: 120,
+        emby_server_url: '',
+        emby_api_key: '',
     });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -159,6 +161,50 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                         >
                             {saving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
                             保存默认设置
+                        </button>
+                    </div>
+                </motion.div>
+
+                {/* Emby Integration Settings */}
+                <motion.div
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="glass-card p-8 space-y-8"
+                >
+                    <div className="flex items-center gap-3 border-b border-white/5 pb-4">
+                        <Save className="text-primary" size={20} />
+                        <h2 className="text-xl font-bold text-white">Emby 集成配置</h2>
+                    </div>
+
+                    <div className="space-y-6">
+                        <div>
+                            <label className="block text-sm font-medium text-white/60 mb-2">Emby 服务器地址 (例如: http://192.168.1.100:8096)</label>
+                            <input
+                                type="text"
+                                value={settings.emby_server_url || ''}
+                                onChange={(e) => setSettings(s => ({ ...s, emby_server_url: e.target.value }))}
+                                className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 outline-none focus:border-primary/50 transition-all text-white text-sm"
+                                placeholder="http://..."
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-white/60 mb-2">Emby API Key</label>
+                            <input
+                                type="password"
+                                value={settings.emby_api_key || ''}
+                                onChange={(e) => setSettings(s => ({ ...s, emby_api_key: e.target.value }))}
+                                className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 outline-none focus:border-primary/50 transition-all text-white text-sm"
+                                placeholder="输入您的 API Key"
+                            />
+                        </div>
+
+                        <button
+                            onClick={handleSaveSettings}
+                            disabled={saving}
+                            className="w-full btn-primary py-4 mt-4 flex items-center justify-center gap-2"
+                        >
+                            {saving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
+                            保存 Emby 设置
                         </button>
                     </div>
                 </motion.div>

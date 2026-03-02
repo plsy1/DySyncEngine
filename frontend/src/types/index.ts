@@ -18,6 +18,8 @@ export interface GlobalSettings {
   download_video: boolean;
   download_note: boolean;
   auto_update_interval: number;
+  emby_server_url?: string;
+  emby_api_key?: string;
 }
 
 export interface AuthResponse {

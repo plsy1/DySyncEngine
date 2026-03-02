@@ -496,6 +496,8 @@ class GlobalSettings(BaseModel):
     download_video: bool
     download_note: bool
     auto_update_interval: int
+    emby_server_url: str | None = None
+    emby_api_key: str | None = None
 
 class UserPreferenceRequest(BaseModel):
     uid: str
@@ -525,7 +527,9 @@ def get_settings_api(session: Session = Depends(get_session), _ = Depends(get_cu
     return GlobalSettings(
         download_video=get_config(session, "download_video", "true") == "true",
         download_note=get_config(session, "download_note", "true") == "true",
-        auto_update_interval=int(get_config(session, "auto_update_interval", "120"))
+        auto_update_interval=int(get_config(session, "auto_update_interval", "120")),
+        emby_server_url=get_config(session, "emby_server_url", ""),
+        emby_api_key=get_config(session, "emby_api_key", "")
     )
 
 @router.post("/settings")
@@ -533,6 +537,10 @@ def update_settings_api(req: GlobalSettings, session: Session = Depends(get_sess
     set_config(session, "download_video", "true" if req.download_video else "false")
     set_config(session, "download_note", "true" if req.download_note else "false")
     set_config(session, "auto_update_interval", str(req.auto_update_interval))
+    if req.emby_server_url is not None:
+        set_config(session, "emby_server_url", req.emby_server_url)
+    if req.emby_api_key is not None:
+        set_config(session, "emby_api_key", req.emby_api_key)
     return {"success": True}
 
 @router.post("/change_password")
