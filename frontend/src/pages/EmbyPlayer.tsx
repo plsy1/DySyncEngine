@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Loader2, Play, AlertCircle, Menu, X, Folder, Volume2, VolumeX, Maximize2, Minimize2, Monitor, Repeat, ArrowRightCircle, Clock, Shuffle, Forward } from 'lucide-react';
+import { ArrowLeft, Loader2, Play, AlertCircle, Menu, X, Folder, Volume2, VolumeX, Maximize2, Minimize2, Monitor, Repeat, ArrowRightCircle, Clock, Shuffle, Trash2 } from 'lucide-react';
 import * as api from '../api';
 import type { GlobalSettings } from '../types';
 import axios from 'axios';
@@ -63,6 +63,8 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     const [displayMode, setDisplayMode] = useState<'smart' | 'cover' | 'contain'>('smart');
     const [playbackMode, setPlaybackMode] = useState<'loop' | 'next'>('loop');
     const [sharingId, setSharingId] = useState<string | null>(null);
+    const [deleteConfirmItem, setDeleteConfirmItem] = useState<EmbyItem | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
     const [isScreenLandscape, setIsScreenLandscape] = useState(
         typeof window !== 'undefined' ? window.innerWidth > window.innerHeight : false
     );
@@ -382,6 +384,36 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
             onNotify('准备视频失败，请重试', 'error');
         } finally {
             setSharingId(null);
+        }
+    };
+
+    const handleDelete = async (item: EmbyItem) => {
+        if (!settings || isDeleting) return;
+        setIsDeleting(true);
+        try {
+            const embyApi = axios.create({
+                baseURL: settings.emby_server_url,
+                timeout: 10000,
+            });
+            await embyApi.delete(`/emby/Items/${item.Id}`, {
+                params: { api_key: settings.emby_api_key }
+            });
+            // Remove deleted item from list
+            setItems(prev => {
+                const newItems = prev.filter(i => i.Id !== item.Id);
+                // Adjust active index if needed
+                if (activeVideoIndex >= newItems.length && newItems.length > 0) {
+                    setActiveVideoIndex(newItems.length - 1);
+                }
+                return newItems;
+            });
+            onNotify('视频已删除', 'success');
+        } catch (err: any) {
+            console.error('Delete failed:', err);
+            onNotify('删除失败，请检查权限或重试', 'error');
+        } finally {
+            setIsDeleting(false);
+            setDeleteConfirmItem(null);
         }
     };
 
@@ -836,21 +868,39 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                         <div className="absolute right-4 bottom-32 flex flex-col gap-8 items-center pointer-events-auto z-40">
                                             <button
                                                 onClick={(e) => {
-                                                    e.stopPropagation(); // Prevent accidental video toggle on desktop
+                                                    e.stopPropagation();
                                                     handleShare(item);
                                                 }}
                                                 onTouchStart={(e) => e.stopPropagation()}
                                                 onTouchMove={(e) => e.stopPropagation()}
                                                 onTouchEnd={(e) => e.stopPropagation()}
                                                 disabled={sharingId === item.Id}
-                                                className="flex flex-col items-center group relative p-4 -m-4" // Large hit area using negative margin
+                                                className="flex flex-col items-center group relative p-4 -m-4"
                                             >
                                                 <div className="flex items-center justify-center text-white transition-all group-active:scale-95 drop-shadow-lg">
                                                     {sharingId === item.Id ? (
                                                         <Loader2 size={36} className="animate-spin opacity-80" />
                                                     ) : (
-                                                        <Forward size={36} className="fill-white/10" />
+                                                        <svg width="36" height="36" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                            <path d="M24 6L24 32" stroke="white" strokeWidth="3" strokeLinecap="round"/>
+                                                            <path d="M37 19L24 6L11 19" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+                                                            <path d="M8 34V40C8 41.1046 8.89543 42 10 42H38C39.1046 42 40 41.1046 40 40V34" stroke="white" strokeWidth="3" strokeLinecap="round"/>
+                                                        </svg>
                                                     )}
+                                                </div>
+                                            </button>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setDeleteConfirmItem(item);
+                                                }}
+                                                onTouchStart={(e) => e.stopPropagation()}
+                                                onTouchMove={(e) => e.stopPropagation()}
+                                                onTouchEnd={(e) => e.stopPropagation()}
+                                                className="flex flex-col items-center group relative p-4 -m-4"
+                                            >
+                                                <div className="flex items-center justify-center text-white transition-all group-active:scale-95 drop-shadow-lg">
+                                                    <Trash2 size={32} className="opacity-80" />
                                                 </div>
                                             </button>
                                         </div>
@@ -872,8 +922,8 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                     {activeVideoIndex === index && (
                                         <>
                                             <div
-                                                className="absolute left-0 right-0 cursor-pointer pointer-events-auto z-[50] flex items-end"
-                                                style={{ bottom: 'calc(env(safe-area-inset-bottom) + 12px)', height: '24px' }}
+                                                className="absolute left-0 right-0 cursor-pointer pointer-events-auto z-[50] flex items-end group/progress"
+                                                style={{ bottom: 'calc(env(safe-area-inset-bottom) + 4px)', height: '40px' }}
                                                 onMouseDown={() => setIsDragging(true)}
                                                 onMouseUp={() => setIsDragging(false)}
                                                 onClick={(e) => handleSeek(item.Id, index, e)}
@@ -882,11 +932,11 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                 onTouchMove={(e) => handleSeek(item.Id, index, e)}
                                             >
                                                 <motion.div
-                                                    className="w-full bg-white/20 overflow-hidden relative"
+                                                    className="w-full bg-white/20 overflow-hidden relative group-hover/progress:!h-[6px] group-hover/progress:!opacity-80"
                                                     initial={{ height: 2, opacity: 0 }}
                                                     animate={{
-                                                        height: isDragging ? 4 : 1,
-                                                        opacity: (isDragging || hasManualSeek[item.Id]) ? 0.8 : 0,
+                                                        height: isDragging ? 6 : 2,
+                                                        opacity: (isDragging || hasManualSeek[item.Id]) ? 0.8 : 0.4,
                                                         translateY: (isDragging || hasManualSeek[item.Id]) ? 0 : 2
                                                     }}
                                                     transition={{ duration: 0.2 }}
@@ -960,6 +1010,59 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                     scrollbar-width: none;
                 }
             `}</style>
+
+            {/* Delete Confirmation Dialog */}
+            <AnimatePresence>
+                {deleteConfirmItem && (
+                    <>
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => !isDeleting && setDeleteConfirmItem(null)}
+                            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200]"
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.85 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.85 }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                            className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[85vw] max-w-sm bg-[#1a1a1a] rounded-3xl z-[201] overflow-hidden border border-white/10 shadow-2xl"
+                        >
+                            <div className="p-6 text-center">
+                                <div className="w-14 h-14 mx-auto mb-4 bg-red-500/10 rounded-full flex items-center justify-center">
+                                    <Trash2 size={28} className="text-red-500" />
+                                </div>
+                                <h3 className="text-white text-lg font-bold mb-2">确认删除</h3>
+                                <p className="text-white/50 text-sm leading-relaxed">
+                                    确定要从 Emby 服务器删除
+                                    <span className="text-white/80 font-medium"> {deleteConfirmItem.Name} </span>
+                                    吗？此操作不可撤销。
+                                </p>
+                            </div>
+                            <div className="border-t border-white/10 flex">
+                                <button
+                                    onClick={() => setDeleteConfirmItem(null)}
+                                    disabled={isDeleting}
+                                    className="flex-1 py-4 text-white/70 font-medium text-[15px] hover:bg-white/5 transition-colors disabled:opacity-50"
+                                >
+                                    取消
+                                </button>
+                                <div className="w-px bg-white/10" />
+                                <button
+                                    onClick={() => handleDelete(deleteConfirmItem)}
+                                    disabled={isDeleting}
+                                    className="flex-1 py-4 text-red-500 font-bold text-[15px] hover:bg-red-500/10 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                                >
+                                    {isDeleting ? (
+                                        <><Loader2 size={18} className="animate-spin" /> 删除中...</>
+                                    ) : '删除'}
+                                </button>
+                            </div>
+                        </motion.div>
+                    </>
+                )}
+            </AnimatePresence>
             {/* Sidebar Overlay Content */}
             <AnimatePresence>
                 {isSidebarOpen && (
