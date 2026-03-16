@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Settings as SettingsIcon, Save, Lock, ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
 import * as api from '../api';
 import type { GlobalSettings } from '../types';
+import axios from 'axios';
 
 interface SettingsProps {
     onBack: () => void;
@@ -16,6 +17,7 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
         auto_update_interval: 120,
         emby_server_url: '',
         emby_api_key: '',
+        emby_default_library: '',
     });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -25,6 +27,38 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [changingPwd, setChangingPwd] = useState(false);
+
+    // Emby library selection
+    const [libraries, setLibraries] = useState<{ id: string, name: string }[]>([]);
+    const [fetchingLibraries, setFetchingLibraries] = useState(false);
+
+    useEffect(() => {
+        if (settings.emby_server_url && settings.emby_api_key) {
+            handleFetchLibraries();
+        }
+    }, [settings.emby_server_url, settings.emby_api_key]);
+
+    const handleFetchLibraries = async () => {
+        if (!settings.emby_server_url || !settings.emby_api_key) return;
+        setFetchingLibraries(true);
+        try {
+            const resp = await axios.get(`${settings.emby_server_url}/emby/Items`, {
+                params: {
+                    api_key: settings.emby_api_key,
+                    Recursive: false,
+                    IsFolder: true,
+                    SortBy: 'SortName'
+                }
+            });
+            if (resp.data?.Items) {
+                setLibraries(resp.data.Items.map((i: any) => ({ id: i.Id, name: i.Name })));
+            }
+        } catch (err) {
+            console.error('Fetch libraries failed', err);
+        } finally {
+            setFetchingLibraries(false);
+        }
+    };
 
     useEffect(() => {
         fetchSettings();
@@ -196,6 +230,29 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                                 className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 outline-none focus:border-primary/50 transition-all text-white text-sm"
                                 placeholder="输入您的 API Key"
                             />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-white/60 mb-2">默认媒体库 (锁定播放范围)</label>
+                            <div className="relative">
+                                <select
+                                    value={settings.emby_default_library || ''}
+                                    onChange={(e) => setSettings(s => ({ ...s, emby_default_library: e.target.value }))}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 outline-none focus:border-primary/50 transition-all text-white text-sm appearance-none cursor-pointer"
+                                >
+                                    <option value="" className="bg-[#1a1a1a]">-- 不限制 (扫描所有媒体库) --</option>
+                                    {libraries.map(lib => (
+                                        <option key={lib.id} value={lib.id} className="bg-[#1a1a1a]">
+                                            {lib.name}
+                                        </option>
+                                    ))}
+                                </select>
+                                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-white/20">
+                                    {fetchingLibraries ? <Loader2 size={16} className="animate-spin" /> : <SettingsIcon size={16} />}
+                                </div>
+                            </div>
+                            <p className="mt-2 text-[10px] text-white/20 italic">
+                                {libraries.length === 0 ? '填写服务器地址和 API Key 后将自动加载媒体库列表' : '选择后，播放器将强制仅从此媒体库检索视频。'}
+                            </p>
                         </div>
 
                         <button

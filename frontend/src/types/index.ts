@@ -22,6 +22,7 @@ export interface GlobalSettings {
   auto_update_interval: number;
   emby_server_url?: string;
   emby_api_key?: string;
+  emby_default_library?: string;
 }
 
 export interface AuthResponse {

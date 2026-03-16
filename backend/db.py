@@ -381,14 +381,19 @@ def update_account_password(session: Session, username: str, new_password_hash: 
     return False
 
 
-def update_user_preference(session: Session, uid: str, video_pref: bool = None, note_pref: bool = None, tg_sync_pref: bool = None, tg_chat_pref: str = None):
+class _Unset:
+    def __bool__(self):
+        return False
+
+UNSET = _Unset()
+
+def update_user_preference(session: Session, uid: str, video_pref=UNSET, note_pref=UNSET, tg_sync_pref=UNSET, tg_chat_pref=UNSET):
     user = session.query(User).filter_by(uid=uid).first()
     if user:
-        # 允许设置为 None (跟随默认)
-        if video_pref is not None: user.download_video_override = video_pref
-        if note_pref is not None: user.download_note_override = note_pref
-        if tg_sync_pref is not None: user.tg_sync_enabled = tg_sync_pref
-        if tg_chat_pref is not None: user.tg_target_chat = tg_chat_pref
+        if video_pref is not UNSET: user.download_video_override = video_pref
+        if note_pref is not UNSET: user.download_note_override = note_pref
+        if tg_sync_pref is not UNSET: user.tg_sync_enabled = tg_sync_pref
+        if tg_chat_pref is not UNSET: user.tg_target_chat = tg_chat_pref
         user.updated_at = int(time.time())
         session.commit()
         return True

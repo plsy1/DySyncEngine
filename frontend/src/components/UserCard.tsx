@@ -24,6 +24,10 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
         if (isSyncing) setIsPending(false);
     }, [isSyncing]);
 
+    const profileUrl = user.platform === 'tiktok'
+        ? (user.uid ? `https://www.tiktok.com/@${user.uid}` : null)
+        : (user.sec_user_id ? `https://www.douyin.com/user/${user.sec_user_id}` : null);
+
     const handleRefresh = (e: React.MouseEvent) => {
         e.stopPropagation();
         setIsPending(true);
@@ -48,21 +52,46 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
 
             {/* Header Section */}
             <div className="p-5 flex items-start gap-4">
-                <div className="relative shrink-0">
-                    <img
-                        src={user.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${user.nickname}`}
-                        alt={user.nickname || ''}
-                        className="w-14 h-14 rounded-2xl object-cover ring-2 ring-white/5 group-hover:ring-primary/40 transition-all duration-500 shadow-xl"
-                    />
-                    <div className={`absolute -bottom-1 -right-1 p-1 rounded-lg shadow-lg ${user.platform === 'tiktok' ? 'bg-black text-white' : 'bg-red-500'} scale-75 border border-white/10`}>
-                        {user.platform === 'tiktok' ? <ExternalLink size={10} /> : <div className="w-2.5 h-2.5 bg-white rounded-full scale-75" />}
+                {profileUrl ? (
+                    <a 
+                        href={profileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="relative shrink-0 block group/avatar active:scale-95 transition-transform"
+                        title="在浏览器中打开主页"
+                    >
+                        <img
+                            src={user.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${user.nickname}`}
+                            alt={user.nickname || ''}
+                            className="w-14 h-14 rounded-2xl object-cover ring-2 ring-white/5 group-hover:ring-primary/40 transition-all duration-500 shadow-xl"
+                        />
+                        <div className={`absolute -bottom-1 -right-1 p-1 rounded-lg shadow-lg ${user.platform === 'tiktok' ? 'bg-black text-white' : 'bg-red-500'} scale-75 border border-white/10`}>
+                            {user.platform === 'tiktok' ? <ExternalLink size={10} /> : <div className="w-2.5 h-2.5 bg-white rounded-full scale-75" />}
+                        </div>
+                    </a>
+                ) : (
+                    <div className="relative shrink-0">
+                        <img
+                            src={user.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${user.nickname}`}
+                            alt={user.nickname || ''}
+                            className="w-14 h-14 rounded-2xl object-cover ring-2 ring-white/5 group-hover:ring-primary/40 transition-all duration-500 shadow-xl"
+                        />
+                        <div className={`absolute -bottom-1 -right-1 p-1 rounded-lg shadow-lg ${user.platform === 'tiktok' ? 'bg-black text-white' : 'bg-red-500'} scale-75 border border-white/10`}>
+                            {user.platform === 'tiktok' ? <ExternalLink size={10} /> : <div className="w-2.5 h-2.5 bg-white rounded-full scale-75" />}
+                        </div>
                     </div>
-                </div>
+                )}
 
                 <div className="flex-1 min-w-0 pt-0.5">
                     <div className="flex items-center justify-between mb-0.5">
                         <h3 className="text-base font-bold text-white truncate group-hover:text-primary transition-colors">
-                            {user.nickname || '未命名'}
+                            {profileUrl ? (
+                                <a href={profileUrl} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                                    {user.nickname || '未命名'}
+                                </a>
+                            ) : (
+                                user.nickname || '未命名'
+                            )}
                         </h3>
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button
@@ -131,7 +160,12 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
-                        className="bg-black/20 border-t border-white/5 overflow-hidden"
+                        onAnimationComplete={() => {
+                            // After expansion, we can allow overflow so dropdowns aren't clipped
+                            // But overflow: hidden is needed during the transition itself
+                        }}
+                        className="bg-black/20 border-t border-white/5"
+                        style={{ overflow: 'visible' }} // Replaced overflow-hidden with styled overflow: visible
                     >
                         <div className="p-5 space-y-5">
                             {/* Row 1: Content Overrides */}
@@ -175,10 +209,11 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
                                         <ShieldCheck size={14} className="text-blue-400" />
                                         <span className="text-xs font-bold text-white/60">Telegram 推送服务</span>
                                     </div>
-                                    <PreferenceToggle
+                                     <PreferenceToggle
                                         value={user.tg_sync_enabled}
                                         onChange={(v) => onPreferenceChange?.(user.uid, user.download_video_override, user.download_note_override, v, user.tg_target_chat)}
                                         compact
+                                        position="top"
                                     />
                                 </div>
                                 <div className="relative">
@@ -209,7 +244,19 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
     );
 };
 
-const PreferenceToggle = ({ value, icon, onChange, compact = false }: { value: boolean | null, icon?: React.ReactNode, onChange: (v: boolean | null) => void, compact?: boolean }) => {
+const PreferenceToggle = ({ 
+    value, 
+    icon, 
+    onChange, 
+    compact = false, 
+    position = 'bottom' 
+}: { 
+    value: boolean | null, 
+    icon?: React.ReactNode, 
+    onChange: (v: boolean | null) => void, 
+    compact?: boolean,
+    position?: 'top' | 'bottom'
+}) => {
     const [isOpen, setIsOpen] = useState(false);
 
     const states = [
@@ -238,10 +285,10 @@ const PreferenceToggle = ({ value, icon, onChange, compact = false }: { value: b
                     <>
                         <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
                         <motion.div
-                            initial={{ opacity: 0, y: -10 }}
+                            initial={{ opacity: 0, y: position === 'bottom' ? -10 : 10 }}
                             animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            className="absolute top-full left-0 right-0 mt-1 z-20 bg-[#121212] border border-white/10 rounded-xl shadow-2xl overflow-hidden p-1 gap-1 flex flex-col"
+                            exit={{ opacity: 0, y: position === 'bottom' ? -10 : 10 }}
+                            className={`absolute ${position === 'bottom' ? 'top-full mt-1' : 'bottom-full mb-1'} right-0 ${compact ? 'w-24' : 'left-0'} z-20 bg-[#121212] border border-white/10 rounded-xl shadow-2xl overflow-hidden p-1 gap-1 flex flex-col`}
                         >
                             {states.map((s) => (
                                 <button

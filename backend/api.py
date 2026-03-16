@@ -529,6 +529,7 @@ class GlobalSettings(BaseModel):
     auto_update_interval: int
     emby_server_url: str | None = None
     emby_api_key: str | None = None
+    emby_default_library: str | None = None
 
 class UserPreferenceRequest(BaseModel):
     uid: str
@@ -562,7 +563,8 @@ def get_settings_api(session: Session = Depends(get_session), _ = Depends(get_cu
         download_note=get_config(session, "download_note", "true") == "true",
         auto_update_interval=int(get_config(session, "auto_update_interval", "120")),
         emby_server_url=get_config(session, "emby_server_url", ""),
-        emby_api_key=get_config(session, "emby_api_key", "")
+        emby_api_key=get_config(session, "emby_api_key", ""),
+        emby_default_library=get_config(session, "emby_default_library", "")
     )
 
 @router.post("/settings")
@@ -574,6 +576,8 @@ def update_settings_api(req: GlobalSettings, session: Session = Depends(get_sess
         set_config(session, "emby_server_url", req.emby_server_url)
     if req.emby_api_key is not None:
         set_config(session, "emby_api_key", req.emby_api_key)
+    if req.emby_default_library is not None:
+        set_config(session, "emby_default_library", req.emby_default_library)
     return {"success": True}
 
 @router.post("/change_password")
@@ -587,13 +591,12 @@ def change_password_api(req: PasswordChangeRequest, session: Session = Depends(g
 
 @router.post("/user/preference")
 def update_user_pref_api(req: UserPreferenceRequest, session: Session = Depends(get_session), _ = Depends(get_current_user)):
-    success = update_user_preference(
-        session, req.uid, 
-        video_pref=req.video_pref, 
-        note_pref=req.note_pref,
-        tg_sync_pref=req.tg_sync_pref,
-        tg_chat_pref=req.tg_chat_pref
-    )
+    # 使用 exclude_unset=True 确保只有请求中显式包含的字段才会被更新
+    # 这样可以区分 "未提供该字段" (不修改) 和 "显式提供为 null" (修改为默认)
+    update_data = req.model_dump(exclude_unset=True)
+    uid = update_data.pop("uid")
+    
+    success = update_user_preference(session, uid, **update_data)
     return {"success": success}
 
 @router.get("/scheduler/status")

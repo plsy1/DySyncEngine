@@ -58,6 +58,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     const [isUserPaused, setIsUserPaused] = useState(false);
     const [isFastForwarding, setIsFastForwarding] = useState(false);
     const longPressTimerRef = useRef<any>(null);
+    const wheelTimerRef = useRef<number>(0);
     const [hasStarted, setHasStarted] = useState<{ [key: string]: boolean }>({});
     const [hasManualSeek, setHasManualSeek] = useState<{ [key: string]: boolean }>({});
     const [displayMode, setDisplayMode] = useState<'smart' | 'cover' | 'contain'>('smart');
@@ -108,7 +109,14 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                 timeout: 10000,
             });
 
-            const folderIds = folderId ? folderId.split(',') : [null];
+            // IF a default library is set, and no specific folders are selected, 
+            // use the default library as the starting ParentId.
+            let effectiveFolderId = folderId;
+            if (!effectiveFolderId && data.emby_default_library) {
+                effectiveFolderId = data.emby_default_library;
+            }
+
+            const folderIds = effectiveFolderId ? effectiveFolderId.split(',') : [null];
 
             // Fetch from each folder in parallel
             const fetchPromises = folderIds.map(fid => {
@@ -239,15 +247,21 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                 baseURL: settings.emby_server_url,
                 timeout: 5000,
             });
+
+            // If we are at root AND a default library is configured, fetch from that library instead.
+            const effectiveParentId = (sidebarPath.length === 0 && settings.emby_default_library) 
+                ? settings.emby_default_library 
+                : parentId;
+
             const response = await embyApi.get('/emby/Items', {
                 params: {
                     api_key: settings.emby_api_key,
-                    ParentId: parentId,
+                    ParentId: effectiveParentId,
                     Recursive: 'false',
                     IsFolder: 'true',
                     SortBy: 'SortName',
                     SortOrder: 'Ascending',
-                    Fields: 'ImageTags' // Get image tags for folder icons if available
+                    Fields: 'ImageTags' 
                 }
             });
             if (response.data && response.data.Items) {
@@ -540,6 +554,30 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         }
     };
 
+    const handleWheel = (e: React.WheelEvent) => {
+        if (isSidebarOpen || deleteConfirmItem || loadingMore) return;
+        
+        // Sensitivity check for standard mouse wheel
+        if (Math.abs(e.deltaY) < 20) return;
+        
+        const now = Date.now();
+        if (now - wheelTimerRef.current < 600) return; // Debounce to prevent rapid skipping
+
+        if (e.deltaY > 0) {
+            if (activeVideoIndex < items.length - 1) {
+                wheelTimerRef.current = now;
+                const nextIndex = activeVideoIndex + 1;
+                itemRefs.current[nextIndex]?.scrollIntoView({ behavior: 'smooth' });
+            }
+        } else {
+            if (activeVideoIndex > 0) {
+                wheelTimerRef.current = now;
+                const prevIndex = activeVideoIndex - 1;
+                itemRefs.current[prevIndex]?.scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+    };
+
     // Handle scroll to play/pause using Intersection Observer
     useEffect(() => {
         if (!containerRef.current || items.length === 0) return;
@@ -547,7 +585,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         const observerOptions = {
             root: containerRef.current,
             rootMargin: '0px',
-            threshold: 0.6, // Trigger when 60% of video is visible
+            threshold: 0.5, // Trigger slightly earlier for responsiveness
         };
 
         const observerCallback: IntersectionObserverCallback = (entries) => {
@@ -617,6 +655,41 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
             }
         });
     }, [activeVideoIndex, items]);
+
+    // Keyboard Shortcuts for PC
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (isSidebarOpen || deleteConfirmItem) return;
+            
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (activeVideoIndex < items.length - 1) {
+                    const nextIndex = activeVideoIndex + 1;
+                    itemRefs.current[nextIndex]?.scrollIntoView({ behavior: 'smooth' });
+                }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (activeVideoIndex > 0) {
+                    const prevIndex = activeVideoIndex - 1;
+                    itemRefs.current[prevIndex]?.scrollIntoView({ behavior: 'smooth' });
+                }
+            } else if (e.key === ' ') {
+                e.preventDefault();
+                const video = videoRefs.current[activeVideoIndex];
+                if (video) {
+                    if (video.paused) {
+                        video.play();
+                        setIsUserPaused(false);
+                    } else {
+                        video.pause();
+                        setIsUserPaused(true);
+                    }
+                }
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [activeVideoIndex, items.length, isSidebarOpen, deleteConfirmItem]);
 
 
     if (loading) {
@@ -753,6 +826,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                     <div
                         ref={containerRef}
                         className="h-full overflow-y-scroll snap-y snap-mandatory no-scrollbar scroll-smooth"
+                        onWheel={handleWheel}
                     >
                         <div className="min-h-full">
                             {items.map((item, index) => (
@@ -760,6 +834,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                     key={item.Id}
                                     ref={(el) => { itemRefs.current[index] = el; }}
                                     className="h-screen w-full snap-start relative flex items-center justify-center overflow-hidden bg-black"
+                                    style={{ scrollSnapStop: 'always' }}
                                     data-index={index}
                                     onTouchStart={(e) => handleGlobalTouchStart(index, e)}
                                     onTouchMove={(e) => handleGlobalTouchMove(item.Id, index, e)}
@@ -1158,7 +1233,9 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                         <div className="p-2 bg-white/5 rounded-xl">
                                                             <Monitor size={20} className="text-white/60" />
                                                         </div>
-                                                        <span className="flex-1 text-left text-white/80">全部媒体库</span>
+                                                        <span className="flex-1 text-left text-white/80">
+                                                            {settings?.emby_default_library ? '仅看指定媒体库' : '全部媒体库'}
+                                                        </span>
                                                     </button>
                                                 )}
 
