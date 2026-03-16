@@ -416,6 +416,7 @@ def parse_video_api(share_url: str = Query(..., description="分享链接")):
     author = video_data.get("author", {})
     video = video_data.get("video", {})
     
+    
     return VideoParseInfo(
         aweme_id=video_data.get("aweme_id", ""),
         aweme_type=video_data.get("aweme_type", 0),
@@ -478,7 +479,7 @@ def download_from_share_url(share_url: str = Query(..., description="抖音分�
 
     share_url = extract_share_url(share_url)
     share_url = resolve_redirect(share_url)
-    video_data = fetch_video_profile(share_url)
+    video_data = fetch_video_profile(share_url, minimal=False)
 
     aweme_id = video_data.get("aweme_id")
     aweme_type = video_data.get("aweme_type", 0)
@@ -507,7 +508,7 @@ def download_from_share_url(share_url: str = Query(..., description="抖音分�
 
     success = download_video(share_url, author_folder, filename, aweme_id)
 
-    return ShareDownloadResult(filename=filename, downloaded=success)
+    return ShareDownloadResult(filename=filename, downloaded=bool(success))
 
 
 # ----------------------------
