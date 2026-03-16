@@ -219,7 +219,7 @@ class TelegramUploader:
                 # --- Fallback logic for old records ---
                 if not target_path or not os.path.exists(target_path):
                     # 尝试重新构造可能的文件路径
-                    type_folder = "视频" if aweme.aweme_type == 0 else "图文"
+                    type_folder = "videos" if aweme.aweme_type == 0 else "notes"
                     filename_base = f"{aweme.desc[:30] if aweme.desc else aweme.aweme_id}_{aweme.aweme_id}"
                     author_folder_name = f"{aweme.nickname}_{aweme.uid}"
                     
