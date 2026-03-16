@@ -45,11 +45,17 @@ def download_video(share_url: str, author_folder: str, filename: str, aweme_id: 
             content_type = resp.headers.get("content-type", "")
             
             if "application/zip" in content_type or "zip" in resp.headers.get("content-disposition", "").lower():
-                zip_folder = os.path.join(parent_path, sanitize_filename(filename))
+                base_filename = f"{sanitize_filename(filename)}_{aweme_id}"
+                zip_folder = os.path.join(parent_path, base_filename)
+
+                if os.path.exists(zip_folder):
+                    zip_folder = os.path.join(parent_path, f"{base_filename}_{aweme_id}")
+
                 Path(zip_folder).mkdir(parents=True, exist_ok=True)
                 
                 with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
                     z.extractall(zip_folder)
+                    
                 logger.info(f"解压完成: {zip_folder}")
                 return zip_folder
             else:

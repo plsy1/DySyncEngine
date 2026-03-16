@@ -220,7 +220,6 @@ class TelegramUploader:
                 if not target_path or not os.path.exists(target_path):
                     # 尝试重新构造可能的文件路径
                     type_folder = "videos" if aweme.aweme_type == 0 else "notes"
-                    filename_base = f"{aweme.desc[:30] if aweme.desc else aweme.aweme_id}_{aweme.aweme_id}"
                     author_folder_name = f"{aweme.nickname}_{aweme.uid}"
                     
                     # 按照 downloader.py 的逻辑构造路径
@@ -228,12 +227,23 @@ class TelegramUploader:
                     parent_path = os.path.join(config.SAVE_DIR, *path_parts)
                     
                     if aweme.aweme_type == 0:
-                        potential_path = os.path.join(parent_path, f"{sanitize_filename(filename_base)}.mp4")
-                    else:
-                        potential_path = os.path.join(parent_path, sanitize_filename(filename_base))
+                        filename_base = aweme.desc if aweme.desc else aweme.aweme_id
+                        filename_base = sanitize_filename(filename_base)
+                        filename_base = f"{filename_base}.mp4"
+                        potential_path = os.path.join(parent_path, filename_base)
+                        potential_path_with_awemeid = os.path.join(parent_path, f"{filename_base}_{aweme.aweme_id}.mp4")
+                    else:   
+                        filename_base = aweme.desc if aweme.desc else aweme.aweme_id
+                        filename_base = sanitize_filename(filename_base)
+                        potential_path = os.path.join(parent_path, filename_base)
+                        potential_path_with_awemeid = os.path.join(parent_path, f"{filename_base}_{aweme.aweme_id}")
                         
                     if os.path.exists(potential_path):
                         target_path = potential_path
+                        aweme.local_path = target_path # 顺便修复数据库
+                        session.commit()
+                    elif os.path.exists(potential_path_with_awemeid):
+                        target_path = potential_path_with_awemeid
                         aweme.local_path = target_path # 顺便修复数据库
                         session.commit()
                     else:
