@@ -58,6 +58,11 @@ from scheduler import scheduler_manager
 
 @app.on_event("startup")
 async def startup_event():
+    # 获取并存储主线程的事件循环，供后台线程触发异步任务
+    loop = asyncio.get_running_loop()
+    from utils import set_main_loop
+    set_main_loop(loop)
+
     # 清理遗留任务
     from db import mark_interrupted_tasks_as_failed
     with next(get_session()) as session:

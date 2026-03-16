@@ -1,9 +1,9 @@
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { User, Task } from '../types';
-import { RefreshCw, Trash2, Video, FileText, ChevronDown } from 'lucide-react';
+import { RefreshCw, Trash2, Video, FileText, ChevronDown, Send, Settings2, ExternalLink, ShieldCheck } from 'lucide-react';
 import dayjs from 'dayjs';
 import { ProgressBar } from './ProgressBar';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 interface UserCardProps {
     user: User;
@@ -11,161 +11,248 @@ interface UserCardProps {
     onRefresh: (secUserId: string) => void;
     onDelete: (user: User) => void;
     onToggleAutoUpdate: (uid: string, enabled: boolean) => void;
-    onPreferenceChange?: (uid: string, video: boolean | null, note: boolean | null) => void;
+    onPreferenceChange?: (uid: string, video: boolean | null, note: boolean | null, tgSync: boolean | null, tgChat: string | null) => void;
+    onTgSync?: (uid: string) => void;
 }
 
-export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, onPreferenceChange }: UserCardProps) => {
+export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, onPreferenceChange, onTgSync }: UserCardProps) => {
+    const [isPending, setIsPending] = useState(false);
+    const [showSettings, setShowSettings] = useState(false);
     const isSyncing = task?.status === 'running' || task?.status === 'pending';
+
+    useEffect(() => {
+        if (isSyncing) setIsPending(false);
+    }, [isSyncing]);
+
+    const handleRefresh = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setIsPending(true);
+        onRefresh(user.sec_user_id || '');
+    };
+
+    const handleTgSync = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setIsPending(true);
+        onTgSync?.(user.uid);
+    };
+
     return (
         <motion.div
             layout
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className="glass-card relative group"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="glass-card overflow-hidden flex flex-col group border border-white/5 hover:border-white/10 transition-all duration-300"
         >
-            <button
-                onClick={() => onDelete(user)}
-                className="absolute top-4 right-4 p-2 text-white/20 hover:text-primary transition-colors hover:bg-primary/10 rounded-lg opacity-0 group-hover:opacity-100"
-            >
-                <Trash2 size={18} />
-            </button>
+            {/* Background Accent */}
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
 
-            <div className="flex items-center gap-4 mb-6">
-                <a
-                    href={user.platform === 'tiktok' ? `https://www.tiktok.com/@${user.uid}` : `https://www.douyin.com/user/${user.sec_user_id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="relative block h-16 w-16"
-                >
+            {/* Header Section */}
+            <div className="p-5 flex items-start gap-4">
+                <div className="relative shrink-0">
                     <img
-                        src={user.avatar_url || ''}
+                        src={user.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${user.nickname}`}
                         alt={user.nickname || ''}
-                        className="w-16 h-16 rounded-full border-2 border-primary/30 object-cover hover:border-primary transition-all"
-                        onError={(e) => {
-                            (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${user.nickname}`;
-                        }}
+                        className="w-14 h-14 rounded-2xl object-cover ring-2 ring-white/5 group-hover:ring-primary/40 transition-all duration-500 shadow-xl"
                     />
-                    {user.auto_update && (
-                        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-bg shadow-sm" title="自动同步已开启" />
-                    )}
-                </a>
-                <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                        <h3 className="text-lg font-bold truncate pr-2">{user.nickname || '未命名'}</h3>
-                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${user.platform === 'tiktok' ? 'bg-black text-white border border-white/20' : 'bg-red-500/20 text-red-500'}`}>
-                            {user.platform === 'tiktok' ? 'TikTok' : 'Douyin'}
-                        </span>
+                    <div className={`absolute -bottom-1 -right-1 p-1 rounded-lg shadow-lg ${user.platform === 'tiktok' ? 'bg-black text-white' : 'bg-red-500'} scale-75 border border-white/10`}>
+                        {user.platform === 'tiktok' ? <ExternalLink size={10} /> : <div className="w-2.5 h-2.5 bg-white rounded-full scale-75" />}
                     </div>
-                    <p className="text-sm text-white/40 truncate">UID: {user.uid}</p>
+                </div>
+
+                <div className="flex-1 min-w-0 pt-0.5">
+                    <div className="flex items-center justify-between mb-0.5">
+                        <h3 className="text-base font-bold text-white truncate group-hover:text-primary transition-colors">
+                            {user.nickname || '未命名'}
+                        </h3>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                                onClick={() => setShowSettings(!showSettings)}
+                                className={`p-1.5 rounded-lg transition-colors ${showSettings ? 'bg-primary/20 text-primary' : 'hover:bg-white/5 text-white/40'}`}
+                                title="偏好设置"
+                            >
+                                <Settings2 size={16} />
+                            </button>
+                            <button
+                                onClick={() => onDelete(user)}
+                                className="p-1.5 rounded-lg hover:bg-red-500/10 text-white/20 hover:text-red-400 transition-colors"
+                                title="删除用户"
+                            >
+                                <Trash2 size={16} />
+                            </button>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px] font-medium font-mono text-white/30 uppercase tracking-wider">
+                        <span>{user.platform}</span>
+                        <span>•</span>
+                        <span className="truncate">{user.uid}</span>
+                    </div>
                 </div>
             </div>
 
-            <div className="space-y-4">
-                <p className="text-sm text-white/60 line-clamp-2 min-h-[2.5rem]">
-                    {user.signature || '暂无签名'}
+            {/* Content Body */}
+            <div className="px-5 pb-5 flex-1 flex flex-col gap-4">
+                <p className="text-xs text-white/50 leading-relaxed line-clamp-2 italic">
+                    {user.signature || '该作者很懒，什么都没写...'}
                 </p>
 
-                <div className="flex items-center justify-between py-3 border-t border-white/5">
-                    <span className="text-xs text-white/30">
-                        上次同步: {dayjs(user.updated_at * 1000).format('YY-MM-DD HH:mm')}
-                    </span>
-                    <div className="flex items-center gap-2">
-                        <PreferenceToggle
-                            label="视频"
-                            value={user.download_video_override}
-                            icon={<Video size={14} />}
-                            onChange={(v) => onPreferenceChange?.(user.uid, v, user.download_note_override)}
+                {/* Progress / Actions */}
+                <div className="mt-auto">
+                    {isSyncing || isPending ? (
+                        <ProgressBar 
+                            progress={task?.progress || 0} 
+                            message={isPending ? "正在准备队列..." : task?.message || ""} 
+                            status={isPending ? "running" : task?.status || "running"} 
                         />
-                        <PreferenceToggle
-                            label="图文"
-                            value={user.download_note_override}
-                            icon={<FileText size={14} />}
-                            onChange={(v) => onPreferenceChange?.(user.uid, user.download_video_override, v)}
-                        />
-                    </div>
+                    ) : (
+                        <div className="flex gap-2">
+                            <button
+                                onClick={handleRefresh}
+                                className="flex-1 h-10 flex items-center justify-center gap-2 rounded-xl bg-white/5 border border-white/5 hover:bg-primary/20 hover:border-primary/30 text-white/90 text-xs font-bold transition-all active:scale-[0.97]"
+                            >
+                                <RefreshCw size={14} className={isPending ? "animate-spin" : ""} />
+                                同步内容
+                            </button>
+                            <button
+                                onClick={handleTgSync}
+                                title="手动推送至 Telegram"
+                                className="w-10 h-10 flex items-center justify-center rounded-xl bg-blue-500/10 border border-blue-500/10 hover:bg-blue-500/20 hover:border-blue-500/30 text-blue-400 transition-all active:scale-[0.97]"
+                            >
+                                <Send size={16} />
+                            </button>
+                        </div>
+                    )}
                 </div>
+            </div>
 
-                <div className="flex items-center justify-between py-3 border-t border-white/5">
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold text-white/40">自动更新</span>
-                        <button
-                            onClick={() => onToggleAutoUpdate(user.uid, !user.auto_update)}
-                            disabled={isSyncing}
-                            className={`w-10 h-6 rounded-full transition-colors relative ${user.auto_update ? 'bg-primary' : 'bg-white/10'} ${isSyncing ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        >
-                            <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${user.auto_update ? 'translate-x-4' : ''}`} />
-                        </button>
-                    </div>
-                </div>
-
-                {isSyncing ? (
-                    <div className="py-2">
-                        <ProgressBar progress={task.progress} message={task.message} status={task.status} />
-                    </div>
-                ) : (
-                    <button
-                        onClick={() => onRefresh(user.sec_user_id || '')}
-                        className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-xl bg-white/5 border border-white/10 hover:bg-primary hover:border-primary transition-all font-semibold active:scale-[0.98]"
+            {/* Expandable Settings Panel */}
+            <AnimatePresence>
+                {showSettings && (
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="bg-black/20 border-t border-white/5 overflow-hidden"
                     >
-                        <RefreshCw size={16} />
-                        同步视频
-                    </button>
+                        <div className="p-5 space-y-5">
+                            {/* Row 1: Content Overrides */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-white/20 uppercase tracking-widest pl-1">视频下载</label>
+                                    <PreferenceToggle
+                                        value={user.download_video_override}
+                                        icon={<Video size={12} />}
+                                        onChange={(v) => onPreferenceChange?.(user.uid, v, user.download_note_override, user.tg_sync_enabled, user.tg_target_chat)}
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-white/20 uppercase tracking-widest pl-1">图文同步</label>
+                                    <PreferenceToggle
+                                        value={user.download_note_override}
+                                        icon={<FileText size={12} />}
+                                        onChange={(v) => onPreferenceChange?.(user.uid, user.download_video_override, v, user.tg_sync_enabled, user.tg_target_chat)}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Row 2: Automation */}
+                            <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5">
+                                <div className="flex items-center gap-2">
+                                    <RefreshCw size={14} className={`text-primary ${user.auto_update ? 'animate-spin-slow' : ''}`} />
+                                    <span className="text-xs font-bold text-white/60">后台自动更新</span>
+                                </div>
+                                <button
+                                    onClick={() => onToggleAutoUpdate(user.uid, !user.auto_update)}
+                                    className={`w-9 h-5 rounded-full transition-all relative ${user.auto_update ? 'bg-primary' : 'bg-white/10'}`}
+                                >
+                                    <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${user.auto_update ? 'left-5' : 'left-1'}`} />
+                                </button>
+                            </div>
+
+                            {/* Row 3: TG Advanced */}
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between px-1">
+                                    <div className="flex items-center gap-2">
+                                        <ShieldCheck size={14} className="text-blue-400" />
+                                        <span className="text-xs font-bold text-white/60">Telegram 推送服务</span>
+                                    </div>
+                                    <PreferenceToggle
+                                        value={user.tg_sync_enabled}
+                                        onChange={(v) => onPreferenceChange?.(user.uid, user.download_video_override, user.download_note_override, v, user.tg_target_chat)}
+                                        compact
+                                    />
+                                </div>
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        placeholder="目标 ID (例如: -100xxx 或 me)"
+                                        defaultValue={user.tg_target_chat || ''}
+                                        onBlur={(e) => {
+                                            if (e.target.value !== (user.tg_target_chat || '')) {
+                                                onPreferenceChange?.(user.uid, user.download_video_override, user.download_note_override, user.tg_sync_enabled, e.target.value);
+                                            }
+                                        }}
+                                        className="w-full bg-white/5 border border-white/5 rounded-xl py-2.5 px-4 text-xs text-white/70 outline-none focus:border-primary/30 transition-all placeholder:text-white/10"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    </motion.div>
                 )}
+            </AnimatePresence>
+
+            {/* Footer Status */}
+            <div className="px-5 py-3 bg-white/2 border-t border-white/5 flex items-center justify-between text-[10px] font-medium text-white/20 tracking-tighter uppercase">
+                <span>Last Activity</span>
+                <span className="font-mono">{dayjs(user.updated_at * 1000).format('MM-DD HH:mm')}</span>
             </div>
         </motion.div>
     );
 };
-const PreferenceToggle = ({ label, value, icon, onChange }: { label: string, value: boolean | null, icon: React.ReactNode, onChange: (v: boolean | null) => void }) => {
+
+const PreferenceToggle = ({ value, icon, onChange, compact = false }: { value: boolean | null, icon?: React.ReactNode, onChange: (v: boolean | null) => void, compact?: boolean }) => {
     const [isOpen, setIsOpen] = useState(false);
 
-    const getStateColor = () => {
-        if (value === true) return 'text-green-400 bg-green-400/10 border-green-400/20';
-        if (value === false) return 'text-red-400 bg-red-400/10 border-red-400/20';
-        return 'text-white/40 bg-white/5 border-white/10';
-    };
+    const states = [
+        { label: '默认', value: null, color: 'text-white/40 bg-white/5' },
+        { label: '开启', value: true, color: 'text-primary bg-primary/10' },
+        { label: '禁用', value: false, color: 'text-red-400 bg-red-400/10' },
+    ];
 
-    const getStateLabel = () => {
-        if (value === true) return '开启';
-        if (value === false) return '关闭';
-        return '默认';
-    };
+    const current = states.find(s => s.value === value) || states[0];
 
     return (
         <div className="relative">
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded-md border text-[10px] font-bold transition-all hover:bg-white/10 ${getStateColor()}`}
+                className={`flex items-center justify-between gap-2 px-3 h-8 rounded-lg border border-white/5 text-[10px] font-bold transition-all hover:bg-white/10 ${current.color} ${compact ? 'min-w-[60px]' : 'w-full'}`}
             >
-                {icon}
-                <span>{label}: {getStateLabel()}</span>
-                <ChevronDown size={10} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                <div className="flex items-center gap-1.5 capitalize">
+                    {icon}
+                    <span>{current.label}</span>
+                </div>
+                <ChevronDown size={10} className={`transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
             </button>
 
             <AnimatePresence>
                 {isOpen && (
                     <>
-                        <div className="fixed inset-0 z-[60]" onClick={() => setIsOpen(false)} />
+                        <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
                         <motion.div
-                            initial={{ opacity: 0, scale: 0.95, y: 5 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95, y: 5 }}
-                            className="absolute bottom-full mb-2 right-0 z-[70] bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl overflow-hidden min-w-[80px]"
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            className="absolute top-full left-0 right-0 mt-1 z-20 bg-[#121212] border border-white/10 rounded-xl shadow-2xl overflow-hidden p-1 gap-1 flex flex-col"
                         >
-                            {[
-                                { l: '跟随默认', v: null },
-                                { l: '强制开启', v: true },
-                                { l: '强制关闭', v: false },
-                            ].map((opt) => (
+                            {states.map((s) => (
                                 <button
-                                    key={opt.l}
+                                    key={s.label}
                                     onClick={() => {
-                                        onChange(opt.v);
+                                        onChange(s.value);
                                         setIsOpen(false);
                                     }}
-                                    className={`w-full text-left px-3 py-2 text-[10px] hover:bg-white/5 transition-colors ${value === opt.v ? 'text-primary' : 'text-white/60'}`}
+                                    className={`w-full text-left px-3 py-2 rounded-lg text-[10px] font-bold transition-colors ${value === s.value ? 'bg-primary/20 text-primary' : 'text-white/40 hover:bg-white/5 hover:text-white/60'}`}
                                 >
-                                    {opt.l}
+                                    {s.label}模式
                                 </button>
                             ))}
                         </motion.div>
@@ -175,5 +262,3 @@ const PreferenceToggle = ({ label, value, icon, onChange }: { label: string, val
         </div>
     );
 };
-
-import { AnimatePresence } from 'framer-motion';

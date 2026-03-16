@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { Send, Save, ArrowLeft, Loader2, MessageSquare, ShieldCheck, Key, Phone, Settings as SettingsIcon } from 'lucide-react';
+import { Send, Save, ArrowLeft, Loader2, MessageSquare, ShieldCheck, Key, Phone, Settings as SettingsIcon, Search } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 import * as api from '../api';
 
 interface TelegramProps {
@@ -26,10 +26,19 @@ export const Telegram = ({ onBack, onNotify }: TelegramProps) => {
     const [targetChat, setTargetChat] = useState('');
     const [autoUpload, setAutoUpload] = useState(false);
     const [saving, setSaving] = useState(false);
+    
+    // Searchable dropdown state
+    const [chatSearch, setChatSearch] = useState('');
+    const [showChatDropdown, setShowChatDropdown] = useState(false);
 
     useEffect(() => {
         fetchStatus();
     }, []);
+
+    const filteredChats = chats.filter(c => 
+        c.name.toLowerCase().includes(chatSearch.toLowerCase()) || 
+        c.id.toString().includes(chatSearch)
+    );
 
     const fetchStatus = async () => {
         try {
@@ -40,7 +49,12 @@ export const Telegram = ({ onBack, onNotify }: TelegramProps) => {
             setAutoUpload(data.auto_upload || false);
             
             if (data.is_authorized) {
-                fetchChats();
+                const fetched = await fetchChats();
+                // 如果已有目标 ID，尝试回显名称
+                if (data.target_chat && fetched) {
+                    const current = fetched.find((c: any) => c.id.toString() === data.target_chat.toString());
+                    if (current) setChatSearch(current.name);
+                }
             }
         } catch (err) {
             onNotify('获取 TG 状态失败', 'error');
@@ -52,8 +66,12 @@ export const Telegram = ({ onBack, onNotify }: TelegramProps) => {
     const fetchChats = async () => {
         try {
             const data = await api.getTgChats(); 
-            if (data.chats) setChats(data.chats);
+            if (data.chats) {
+                setChats(data.chats);
+                return data.chats;
+            }
         } catch (err) {}
+        return null;
     };
 
     const handleSetup = async (e: React.FormEvent) => {
@@ -241,19 +259,72 @@ export const Telegram = ({ onBack, onNotify }: TelegramProps) => {
                             </button>
                         </div>
 
-                        <div>
-                            <label className="block text-xs font-medium text-white/40 mb-2">目标对话/频道</label>
-                            {status?.is_authorized && chats.length > 0 ? (
-                                <select 
-                                    value={targetChat}
-                                    onChange={(e) => setTargetChat(e.target.value)}
-                                    className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 outline-none focus:border-primary/50 text-sm text-white appearance-none"
-                                >
-                                    <option value="">-- 请选择目标 --</option>
-                                    {chats.map(chat => (
-                                        <option key={chat.id} value={chat.id}>{chat.name}</option>
-                                    ))}
-                                </select>
+                        <div className="space-y-3">
+                            <label className="block text-xs font-bold text-white/40 uppercase tracking-widest pl-1">目标对话 / 搜索</label>
+                            
+                            {status?.is_authorized ? (
+                                <div className="relative group/select">
+                                    <div className="relative">
+                                        <div className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20">
+                                            <Search size={16} />
+                                        </div>
+                                        <input 
+                                            type="text"
+                                            placeholder="搜索对话、频道或输入 ID..."
+                                            value={chatSearch}
+                                            onChange={(e) => {
+                                                setChatSearch(e.target.value);
+                                                setShowChatDropdown(true);
+                                            }}
+                                            onFocus={() => setShowChatDropdown(true)}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-4 outline-none focus:border-primary/50 text-sm text-white transition-all"
+                                        />
+                                    </div>
+
+                                    <AnimatePresence>
+                                        {showChatDropdown && (
+                                            <>
+                                                <div className="fixed inset-0 z-10" onClick={() => setShowChatDropdown(false)} />
+                                                <motion.div
+                                                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                                    className="absolute top-full left-0 right-0 mt-2 z-20 bg-[#121212] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[300px]"
+                                                >
+                                                    <div className="overflow-y-auto p-2 gap-1 flex flex-col custom-scrollbar">
+                                                        {filteredChats.length > 0 ? (
+                                                            filteredChats.map(chat => (
+                                                                <button
+                                                                    key={chat.id}
+                                                                    onClick={() => {
+                                                                        setTargetChat(chat.id);
+                                                                        setChatSearch(chat.name);
+                                                                        setShowChatDropdown(false);
+                                                                    }}
+                                                                    className={`w-full text-left px-4 py-3 rounded-xl transition-all flex items-center justify-between group ${targetChat === chat.id ? 'bg-primary/20 text-primary border border-primary/20' : 'hover:bg-white/5 text-white/60 border border-transparent'}`}
+                                                                >
+                                                                    <div className="flex flex-col">
+                                                                        <span className="text-sm font-bold truncate max-w-[200px]">{chat.name}</span>
+                                                                        <span className="text-[10px] opacity-40 font-mono">ID: {chat.id}</span>
+                                                                    </div>
+                                                                    <div className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase ${
+                                                                        chat.type === 'channel' ? 'bg-blue-500/10 text-blue-400' :
+                                                                        chat.type === 'group' ? 'bg-orange-500/10 text-orange-400' :
+                                                                        'bg-white/10 text-white/40'
+                                                                    }`}>
+                                                                        {chat.type}
+                                                                    </div>
+                                                                </button>
+                                                            ))
+                                                        ) : (
+                                                            <div className="p-8 text-center text-white/20 text-xs italic">未找到匹配的结果</div>
+                                                        )}
+                                                    </div>
+                                                </motion.div>
+                                            </>
+                                        )}
+                                    </AnimatePresence>
+                                </div>
                             ) : (
                                 <input 
                                     type="text" 
@@ -263,7 +334,9 @@ export const Telegram = ({ onBack, onNotify }: TelegramProps) => {
                                     placeholder="用户ID, 频道ID或用户名"
                                 />
                             )}
-                            <p className="text-[10px] text-white/20 mt-2 italic">提示: 确保您的账号已经加入了该频道或对话。</p>
+                            <p className="text-[10px] text-white/20 mt-2 italic px-1">
+                                {targetChat ? `当前选中 ID: ${targetChat}` : "提示: 请先在上方搜索或选择一个目标频道"}
+                            </p>
                         </div>
 
                         <button

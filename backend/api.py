@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Query, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, Query, BackgroundTasks, Depends, HTTPException, status, Form
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Optional
 from db import (
     get_session,
     add_aweme,
@@ -26,7 +26,7 @@ from db import (
 from fetch import fetch_all_awemes, fetch_user_profile, fetch_video_profile
 from downloader import download_video, DOWNLOAD_API
 from auth import create_access_token, verify_password, get_password_hash, get_current_user
-from utils import extract_share_url, get_url_platform, resolve_redirect, extract_sec_user_id, sanitize_filename
+from utils import extract_share_url, get_url_platform, resolve_redirect, extract_sec_user_id, sanitize_filename, run_coro_safe
 from telegram_uploader import tg_uploader
 import re
 import httpx
@@ -34,6 +34,8 @@ import uuid
 import io
 import os
 from loguru import logger
+import asyncio
+from telethon.errors import SessionPasswordNeededError
 
 router = APIRouter()
 
@@ -74,12 +76,13 @@ def process_single_aweme_download(session: Session, aweme: Any) -> bool:
     author_folder = os.path.join(f"{aweme.nickname}_{aweme.uid}", type_folder)
     
     try:
-        success = download_video(
+        saved_path = download_video(
             aweme.share_url, author_folder, filename, aweme.aweme_id
         )
-        if success:
+        if saved_path:
             aweme.downloaded = True
-            logger.info(f"下载成功: {aweme.aweme_id}")
+            aweme.local_path = saved_path
+            logger.info(f"下载成功: {aweme.aweme_id} -> {saved_path}")
             session.commit()
             return True
         else:
@@ -163,26 +166,25 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
             
         process_single_aweme_download(session, aweme)
 
-    if task_id:
-        update_task_progress(session, task_id, 100, status="completed", message="同步完成")
-
     # --- Telegram Auto Upload ---
-    tg_enabled = get_config(session, "tg_auto_upload", "false") == "true"
-    tg_chat = get_config(session, "tg_target_chat")
+    user = session.query(User).filter_by(uid=uid).first()
+    if not user:
+        if task_id:
+            update_task_progress(session, task_id, 100, status="completed", message="同步完成")
+        return
+
+    # 优先级：个人覆盖 > 全局设定
+    global_tg_enabled = get_config(session, "tg_auto_upload", "false") == "true"
+    global_tg_chat = get_config(session, "tg_target_chat")
+    
+    tg_enabled = user.tg_sync_enabled if user.tg_sync_enabled is not None else global_tg_enabled
+    tg_chat = user.tg_target_chat if user.tg_target_chat else global_tg_chat
     if tg_enabled and tg_chat:
-        logger.info(f"触发 Telegram 自动同步: {uid}")
-        # 获取下载目录 (从 downloader.py 逻辑看是 nickname_uid 目录)
-        user = session.query(User).filter_by(uid=uid).first()
-        if user:
-            author_folder_base = f"{user.nickname}_{user.uid}"
-            from config import config
-            full_path = os.path.join(config.SAVE_DIR, author_folder_base)
-            
-            # 异步启动上传，不阻塞同步流程
-            asyncio.create_task(tg_uploader.upload_folder(tg_chat, full_path, {
-                "nickname": user.nickname,
-                "uid": user.uid
-            }))
+        # 异步启动同步到 TG，不阻塞同步流程，并传递 task_id 以接管进度显示
+        run_coro_safe(tg_uploader.sync_user_content(tg_chat, uid, task_id=task_id))
+    else:
+        if task_id:
+            update_task_progress(session, task_id, 100, status="completed", message="同步完成")
 
 
 def download_user_videos_task(sec_user_id: str, platform: str, task_id: str):
@@ -300,9 +302,16 @@ def refresh_user_videos_api(
             sync_user_videos(session, sec_user_id, platform=platform, task_id=task_id)
 
     with next(get_session()) as session:
+        # 检查是否已有该用户的任务正在运行
+        from db import Task as DbTask
         # 获取 uid (从 db 查，如果查不到就用 sec_user_id 占位)
         user = session.query(User).filter_by(sec_user_id=sec_user_id).first()
         target_id = user.uid if user else sec_user_id
+        
+        existing = session.query(DbTask).filter_by(target_id=target_id, status="running").first()
+        if existing:
+            return {"started": True, "task_id": existing.id, "message": "任务已在运行中"}
+
         platform = user.platform if user else "douyin"
         create_task(session, task_id, target_id=target_id)
 
@@ -362,6 +371,8 @@ class UserInfo(BaseModel):
     auto_update: bool
     download_video_override: bool | None
     download_note_override: bool | None
+    tg_sync_enabled: bool | None
+    tg_target_chat: str | None
     updated_at: int
     platform: str = "douyin"
 
@@ -522,6 +533,8 @@ class UserPreferenceRequest(BaseModel):
     uid: str
     video_pref: bool | None = None
     note_pref: bool | None = None
+    tg_sync_pref: bool | None = None
+    tg_chat_pref: str | None = None
 
 @router.post("/login")
 def login(req: LoginRequest, session: Session = Depends(get_session)):
@@ -573,7 +586,13 @@ def change_password_api(req: PasswordChangeRequest, session: Session = Depends(g
 
 @router.post("/user/preference")
 def update_user_pref_api(req: UserPreferenceRequest, session: Session = Depends(get_session), _ = Depends(get_current_user)):
-    success = update_user_preference(session, req.uid, req.video_pref, req.note_pref)
+    success = update_user_preference(
+        session, req.uid, 
+        video_pref=req.video_pref, 
+        note_pref=req.note_pref,
+        tg_sync_pref=req.tg_sync_pref,
+        tg_chat_pref=req.tg_chat_pref
+    )
     return {"success": success}
 
 @router.get("/scheduler/status")
@@ -695,6 +714,43 @@ async def get_tg_chats():
             "type": type_str
         })
     return {"chats": chats}
+
+@router.post("/tg/sync_user")
+async def tg_sync_user_api(uid: str = Query(..., description="用户的 uid"), background_tasks: BackgroundTasks = None, session: Session = Depends(get_session)):
+    """
+    手动触发将指定用户的未同步内容上传到 Telegram
+    """
+    user = session.query(User).filter_by(uid=uid).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    global_tg_chat = get_config(session, "tg_target_chat")
+    tg_chat = user.tg_target_chat if user.tg_target_chat else global_tg_chat
+    
+    if not tg_chat:
+        raise HTTPException(status_code=400, detail="TG target chat not configured")
+        
+    from db import Task as DbTask
+    existing = session.query(DbTask).filter_by(target_id=uid, status="running").first()
+    if existing:
+        return {"started": True, "task_id": existing.id, "message": "任务已在运行中"}
+        
+    task_id = str(uuid.uuid4())
+    create_task(session, task_id, target_id=uid)
+    
+    run_coro_safe(tg_uploader.sync_user_content(tg_chat, uid, task_id=task_id))
+    return {"started": True, "task_id": task_id}
+
+@router.post("/tg/sync_all")
+async def tg_sync_all_api(session: Session = Depends(get_session)):
+    """
+    手动触发全量 TG 同步审计：扫描所有用户未同步到 TG 的内容
+    """
+    task_id = str(uuid.uuid4())
+    create_task(session, task_id, target_id="tg_global_audit")
+    
+    run_coro_safe(tg_uploader.sync_all_tg_content(task_id=task_id))
+    return {"started": True, "task_id": task_id}
 
 @router.post("/tg/settings")
 async def update_tg_settings(target_chat: str = Form(...), auto_upload: bool = Form(...), session: Session = Depends(get_session)):

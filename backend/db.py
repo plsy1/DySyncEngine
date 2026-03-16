@@ -9,7 +9,7 @@ except Exception:
     pass
 from typing import Generator
 from loguru import logger
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey, text, inspect
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
 
 # ----------------------------
@@ -53,6 +53,8 @@ class Aweme(Base):
     aweme_type = Column(Integer, default=0)  # 0: 视频, 68: 图文
     platform = Column(String, default="douyin")
     downloaded = Column(Boolean, default=False)
+    tg_exported = Column(Boolean, default=False)
+    local_path = Column(String, nullable=True)
 
 
 class User(Base):
@@ -68,6 +70,8 @@ class User(Base):
     # 个人偏好：None 表示使用全局默认，True/False 表示强制覆盖
     download_video_override = Column(Boolean, nullable=True)
     download_note_override = Column(Boolean, nullable=True)
+    tg_sync_enabled = Column(Boolean, nullable=True)  # True/False 表示强制覆盖，None 表示遵循全局
+    tg_target_chat = Column(String, nullable=True)   # 如果设置了，则同步到此，否则遵循全局
     created_at = Column(Integer, default=lambda: int(time.time()))
     updated_at = Column(Integer, default=lambda: int(time.time()))
     platform = Column(String, default="douyin")
@@ -104,9 +108,31 @@ class Task(Base):
 
 
 # ----------------------------
-# 创建表
+# 创建表与增量迁移
 # ----------------------------
 Base.metadata.create_all(bind=engine)
+
+# 简单的 SQLite 增量迁移检查（针对已有数据库添加新列）
+with engine.connect() as conn:
+    inspector = inspect(engine)
+    
+    # User table migrations
+    columns = [c["name"] for c in inspector.get_columns("users")]
+    if "tg_sync_enabled" not in columns:
+        conn.execute(text("ALTER TABLE users ADD COLUMN tg_sync_enabled BOOLEAN"))
+        conn.commit()
+    if "tg_target_chat" not in columns:
+        conn.execute(text("ALTER TABLE users ADD COLUMN tg_target_chat TEXT"))
+        conn.commit()
+
+    # Aweme table migrations
+    aweme_columns = [c["name"] for c in inspector.get_columns("awemes")]
+    if "tg_exported" not in aweme_columns:
+        conn.execute(text("ALTER TABLE awemes ADD COLUMN tg_exported BOOLEAN DEFAULT 0"))
+        conn.commit()
+    if "local_path" not in aweme_columns:
+        conn.execute(text("ALTER TABLE awemes ADD COLUMN local_path TEXT"))
+        conn.commit()
 
 
 # ----------------------------
@@ -355,12 +381,14 @@ def update_account_password(session: Session, username: str, new_password_hash: 
     return False
 
 
-def update_user_preference(session: Session, uid: str, video_pref: bool = None, note_pref: bool = None):
+def update_user_preference(session: Session, uid: str, video_pref: bool = None, note_pref: bool = None, tg_sync_pref: bool = None, tg_chat_pref: str = None):
     user = session.query(User).filter_by(uid=uid).first()
     if user:
         # 允许设置为 None (跟随默认)
-        user.download_video_override = video_pref
-        user.download_note_override = note_pref
+        if video_pref is not None: user.download_video_override = video_pref
+        if note_pref is not None: user.download_note_override = note_pref
+        if tg_sync_pref is not None: user.tg_sync_enabled = tg_sync_pref
+        if tg_chat_pref is not None: user.tg_target_chat = tg_chat_pref
         user.updated_at = int(time.time())
         session.commit()
         return True

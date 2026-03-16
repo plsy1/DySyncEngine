@@ -1,7 +1,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { RefreshCw, Play, Clock, Activity, CheckCircle, Loader2 } from 'lucide-react';
+import { RefreshCw, Play, Clock, Activity, CheckCircle, Loader2, Send } from 'lucide-react';
 import type { Task, SchedulerStatus, ToastType } from '../types';
 import * as api from '../api';
 
@@ -49,6 +49,15 @@ export function Tasks({ onNotify, activeTasks }: TasksProps) {
         }
     };
 
+    const handleTgSyncAll = async () => {
+        try {
+            await api.tgSyncAll();
+            onNotify('全局 TG 同步审计已启动');
+        } catch (err) {
+            onNotify('同步审计启动失败', 'error');
+        }
+    };
+
     const formatTime = (ts: number | null) => {
         if (!ts) return '从未执行';
         return new Date(ts * 1000).toLocaleString();
@@ -63,68 +72,98 @@ export function Tasks({ onNotify, activeTasks }: TasksProps) {
                 </div>
             </header>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {/* Scheduler Status Card */}
-                <div className="card p-6 border border-white/5 bg-white/2 backdrop-blur-sm rounded-3xl space-y-6">
+                <div className="card p-6 border border-white/5 bg-white/2 backdrop-blur-sm rounded-3xl space-y-6 flex flex-col">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
                                 <Clock size={20} />
                             </div>
-                            <h3 className="font-semibold text-lg">账号自动更新调度器</h3>
+                            <h3 className="font-semibold text-lg">全量调度器</h3>
                         </div>
                         {schedulerStatus?.is_running && (
                             <span className="flex items-center gap-1.5 text-xs font-medium text-primary px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20">
                                 <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                                正在运行
+                                正在同步
                             </span>
                         )}
                     </div>
 
-                    <div className="space-y-4 pt-2">
+                    <div className="space-y-4 pt-2 flex-1">
                         <div className="flex justify-between items-center text-sm">
-                            <span className="text-white/40">上次运行时间</span>
+                            <span className="text-white/40">上次运行</span>
                             <span className="font-medium">{formatTime(schedulerStatus?.last_run || null)}</span>
                         </div>
                         <div className="flex justify-between items-center text-sm">
-                            <span className="text-white/40">下次运行时间</span>
-                            <span className="font-medium">{formatTime(schedulerStatus?.next_run || null)}</span>
+                            <span className="text-white/40">下次运行</span>
+                            <span className="font-medium text-primary">{formatTime(schedulerStatus?.next_run || null)}</span>
                         </div>
                     </div>
 
                     <button
                         onClick={handleRunScheduler}
                         disabled={schedulerStatus?.is_running}
-                        className="w-full flex items-center justify-center gap-2 py-3.5 bg-white/5 hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed transition-all rounded-2xl font-medium text-sm border border-white/10"
+                        className="w-full flex items-center justify-center gap-2 py-3.5 bg-primary/10 hover:bg-primary/20 text-primary disabled:opacity-50 disabled:cursor-not-allowed transition-all rounded-2xl font-bold text-sm border border-primary/20"
                     >
                         {schedulerStatus?.is_running ? (
                             <Loader2 size={18} className="animate-spin" />
                         ) : (
                             <Play size={18} />
                         )}
-                        立即执行更新计划
+                        立即执行全量更新
                     </button>
                 </div>
 
                 {/* Global Check Card */}
-                <div className="card p-6 border border-white/5 bg-white/2 backdrop-blur-sm rounded-3xl space-y-6">
+                <div className="card p-6 border border-white/5 bg-white/2 backdrop-blur-sm rounded-3xl space-y-6 flex flex-col">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-orange-500/10 flex items-center justify-center text-orange-400">
                             <RefreshCw size={20} />
                         </div>
-                        <h3 className="font-semibold text-lg">全局数据审计</h3>
+                        <h3 className="font-semibold text-lg">本地补漏审计</h3>
                     </div>
 
-                    <p className="text-sm text-white/40 leading-relaxed">
-                        扫描数据库中所有被标记为“未下载”的作品，并根据当前全局设置或作者特定偏号重新尝试补漏。
+                    <p className="text-xs text-white/40 leading-relaxed flex-1 pt-2">
+                        扫描库中所有“未下载”的作品，重新尝试补齐。不涉及任何社交平台上传逻辑，仅针对本地存储。
                     </p>
 
                     <button
                         onClick={handleCheckUndownloaded}
-                        className="w-full flex items-center justify-center gap-2 py-3.5 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 transition-all rounded-2xl font-medium text-sm border border-orange-500/20"
+                        className="w-full flex items-center justify-center gap-2 py-3.5 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 transition-all rounded-2xl font-bold text-sm border border-orange-500/20"
                     >
                         <Activity size={18} />
-                        开始全局补漏扫描
+                        开始本地扫描
+                    </button>
+                </div>
+
+                {/* Telegram Audit Card */}
+                <div className="card p-6 border border-white/5 bg-white/2 backdrop-blur-sm rounded-3xl space-y-6 flex flex-col">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400">
+                            <Send size={20} />
+                        </div>
+                        <h3 className="font-semibold text-lg">TG 同步审计</h3>
+                    </div>
+
+                    <div className="space-y-4 pt-2 flex-1">
+                        <p className="text-xs text-white/40 leading-relaxed">
+                            扫描所有已下载但在数据库中标记为“未导出”的作品，强制推送到指定的 Telegram 频道。
+                        </p>
+                        <div className="flex justify-between items-center text-sm">
+                            <span className="text-white/40 text-xs">同步周期</span>
+                            <span className="font-medium text-[10px] text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded uppercase font-mono">
+                                Follows Scheduler
+                            </span>
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={handleTgSyncAll}
+                        className="w-full flex items-center justify-center gap-2 py-3.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 transition-all rounded-2xl font-bold text-sm border border-blue-500/20"
+                    >
+                        <Send size={18} />
+                        立即审计 TG 导出
                     </button>
                 </div>
             </div>
@@ -150,7 +189,11 @@ export function Tasks({ onNotify, activeTasks }: TasksProps) {
                                 <div className="flex justify-between items-start mb-4">
                                     <div>
                                         <div className="flex items-center gap-2">
-                                            <span className="font-semibold">{task.target_id === 'global_check' ? '全局扫描任务' : `同步任务: ${task.target_id}`}</span>
+                                            <span className="font-semibold">
+                                                {task.target_id === 'global_check' ? '本地补漏扫描' : 
+                                                 task.target_id === 'tg_global_audit' ? 'TG 全量同步审计' : 
+                                                 `同步任务: ${task.target_id}`}
+                                            </span>
                                             <span className="text-[10px] text-white/20 font-mono bg-white/5 px-2 py-0.5 rounded uppercase tracking-tighter">
                                                 {task.id.split('-')[0]}
                                             </span>

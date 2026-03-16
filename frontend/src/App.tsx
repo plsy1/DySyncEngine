@@ -122,6 +122,15 @@ function App() {
     }
   };
 
+  const handleTgSync = async (uid: string) => {
+    try {
+      await api.tgSyncUser(uid);
+      showToast('TG 手步同步已开始');
+    } catch (err) {
+      showToast('TG 同步启动失败', 'error');
+    }
+  };
+
   const confirmDelete = async () => {
     if (!modal.user) return;
     try {
@@ -164,162 +173,159 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#060606] text-white selection:bg-primary/30">
-      {/* Navigation */}
-      <nav className="sticky top-0 z-50 border-b border-white/5 bg-black/50 backdrop-blur-xl transition-all">
-        <div style={{ height: 'env(safe-area-inset-top)' }} />
-        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-black border border-primary/20 flex items-center justify-center shadow-lg shadow-primary/10 overflow-hidden">
-              <img src="/logo.svg" alt="DySyncEngine" className="w-full h-full object-cover" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold tracking-tight">DySync<span className="text-primary">Engine</span></h1>
-              <p className="text-[10px] text-white/40 font-medium uppercase tracking-widest">Advanced Sync Core</p>
+    <div className="min-h-screen bg-[#050505] text-white selection:bg-primary/30 flex overflow-hidden">
+      {/* Sidebar Navigation - Fixed on Left for Desktop */}
+      <nav className="fixed left-0 top-0 bottom-0 w-20 lg:w-64 bg-black/40 backdrop-blur-2xl border-r border-white/5 z-50 flex flex-col transition-all duration-500 ease-in-out group">
+        <div className="p-6 mb-8 flex items-center gap-3 overflow-hidden">
+          <div className="w-10 h-10 min-w-[40px] rounded-2xl bg-gradient-to-br from-primary to-primary/40 p-[1px]">
+            <div className="w-full h-full bg-black rounded-2xl flex items-center justify-center overflow-hidden">
+              <img src="/logo.svg" alt="DS" className="w-full h-full object-cover" />
             </div>
           </div>
+          <div className="hidden lg:block whitespace-nowrap">
+            <h1 className="text-lg font-bold tracking-tight">DySync<span className="text-primary text-xl">.</span></h1>
+            <p className="text-[10px] text-white/30 font-bold uppercase tracking-widest mt-[-4px]">Core v2.0</p>
+          </div>
+        </div>
 
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setView(v => v === 'player' ? 'dashboard' : 'player')}
-              className={`p-3 rounded-xl transition-all ${view === 'player' ? 'bg-primary text-white' : 'bg-white/5 text-white/60 hover:bg-white/10'}`}
-              title="Emby 播放器"
-            >
-              <Play size={20} />
-            </button>
-            <button
-              onClick={() => setView(v => v === 'tasks' ? 'dashboard' : 'tasks')}
-              className={`p-3 rounded-xl transition-all ${view === 'tasks' ? 'bg-primary text-white' : 'bg-white/5 text-white/60 hover:bg-white/10'}`}
-              title="任务管理"
-            >
-              <Activity size={20} />
-            </button>
-            <button
-              onClick={() => setView(v => v === 'logs' ? 'dashboard' : 'logs')}
-              className={`p-3 rounded-xl transition-all ${view === 'logs' ? 'bg-primary text-white' : 'bg-white/5 text-white/60 hover:bg-white/10'}`}
-              title="运行日志"
-            >
-              <Terminal size={20} />
-            </button>
-            <button
-              onClick={() => setView(v => v === 'telegram' ? 'dashboard' : 'telegram')}
-              className={`p-3 rounded-xl transition-all ${view === 'telegram' ? 'bg-primary text-white' : 'bg-white/5 text-white/60 hover:bg-white/10'}`}
-              title="Telegram 同步"
-            >
-              <Send size={20} />
-            </button>
-            <button
-              onClick={() => setView(v => v === 'settings' ? 'dashboard' : 'settings')}
-              className={`p-3 rounded-xl transition-all ${view === 'settings' ? 'bg-primary text-white' : 'bg-white/5 text-white/60 hover:bg-white/10'}`}
-              title="设置"
-            >
-              <SettingsIcon size={20} />
-            </button>
-            <button
-              onClick={handleLogout}
-              className="p-3 rounded-xl bg-white/5 hover:bg-red-500/10 active:scale-95 transition-all text-white/60 hover:text-red-400"
-              title="登出"
-            >
-              <LogOut size={20} />
-            </button>
-          </div>
+        <div className="flex-1 px-3 space-y-2">
+          <NavButton active={view === 'dashboard'} onClick={() => setView('dashboard')} icon={<Search size={20} />} label="发现 & 下载" />
+          <NavButton active={view === 'tasks'} onClick={() => setView('tasks')} icon={<Activity size={20} />} label="活跃任务" />
+          <NavButton active={view === 'logs'} onClick={() => setView('logs')} icon={<Terminal size={20} />} label="审计日志" />
+          <NavButton active={view === 'player'} onClick={() => setView('player')} icon={<Play size={20} />} label="Emby 播放" />
+          <NavButton active={view === 'telegram'} onClick={() => setView('telegram')} icon={<Send size={20} />} label="TG 集成" />
+        </div>
+
+        <div className="p-3 space-y-2 mb-6">
+          <NavButton active={view === 'settings'} onClick={() => setView('settings')} icon={<SettingsIcon size={20} />} label="全局配置" />
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-4 p-4 rounded-2xl text-white/40 hover:text-red-400 hover:bg-red-500/5 transition-all group/btn"
+          >
+            <LogOut size={20} />
+            <span className="hidden lg:block text-sm font-bold">退出系统</span>
+          </button>
         </div>
       </nav>
 
-      {view === 'settings' ? (
-        <main className="max-w-4xl mx-auto pt-10">
-          <Settings onBack={() => setView('dashboard')} onNotify={showToast} />
-        </main>
-      ) : view === 'player' ? (
-        <EmbyPlayer onBack={() => setView('dashboard')} onNotify={showToast} />
-      ) : view === 'tasks' ? (
-        <main className="max-w-7xl mx-auto px-6 pt-10">
-          <Tasks onNotify={showToast} activeTasks={activeTasks} />
-        </main>
-      ) : view === 'logs' ? (
-        <main className="max-w-7xl mx-auto px-6 pt-10">
-          <Logs />
-        </main>
-      ) : view === 'telegram' ? (
-        <main className="max-w-4xl mx-auto pt-10">
-          <Telegram onBack={() => setView('dashboard')} onNotify={showToast} />
-        </main>
-      ) : (
-        <main className="max-w-7xl mx-auto px-6 pt-10">
-          {/* Single Video Download Section */}
-          <SingleDownload onNotify={showToast} />
-
-          {/* Top Controls */}
-          <section className="flex flex-col md:flex-row gap-4 mb-12">
-            <form onSubmit={handleAddUser} className="flex-1 flex gap-2">
-              <div className="relative flex-1">
-                <Plus className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" size={20} />
-                <input
-                  type="text"
-                  value={newUserUrl}
-                  onChange={(e) => setNewUserUrl(e.target.value)}
-                  placeholder="添加新作者 (粘贴抖音主页链接)..."
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 outline-none focus:border-primary/50 transition-all"
-                />
-              </div>
-              <button type="submit" className="btn-primary">
-                添加
-              </button>
-            </form>
-
-            <div className="relative w-full md:w-80">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" size={20} />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="搜索账号或 UID..."
-                className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 outline-none focus:border-white/20 transition-all"
-              />
-            </div>
-          </section>
-
-          {/* User Grid */}
-          {loading && users.length === 0 ? (
-            <div className="flex items-center justify-center py-40">
-              <RefreshCw size={40} className="animate-spin text-primary" />
-            </div>
-          ) : filteredUsers.length > 0 ? (
+      {/* Main Content Area */}
+      <main className="flex-1 ml-20 lg:ml-64 min-h-screen overflow-y-auto custom-scrollbar">
+        <div className="max-w-[1920px] mx-auto p-6 lg:p-10 space-y-10">
+          <AnimatePresence mode="wait">
             <motion.div
-              layout
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+              key={view}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.3, ease: "easeOut" }}
             >
-              <AnimatePresence mode="popLayout">
-                {filteredUsers.map(user => (
-                  <UserCard
-                    key={user.uid}
-                    user={user}
-                    task={activeTasks.find(t => t.target_id === user.uid || t.target_id === user.sec_user_id)}
-                    onRefresh={handleRefresh}
-                    onToggleAutoUpdate={handleToggleAuto}
-                    onPreferenceChange={async (uid, v, n) => {
-                      try {
-                        await api.updateUserPreference(uid, v, n);
-                        setUsers(prev => prev.map(u => u.uid === uid ? { ...u, download_video_override: v, download_note_override: n } : u));
-                        showToast('个人偏好设置已更新');
-                      } catch (err) {
-                        showToast('更新失败', 'error');
-                      }
-                    }}
-                    onDelete={(u) => setModal({ isOpen: true, user: u })}
-                  />
-                ))}
-              </AnimatePresence>
+              {view === 'settings' ? (
+                <div className="max-w-4xl"><Settings onBack={() => setView('dashboard')} onNotify={showToast} /></div>
+              ) : view === 'player' ? (
+                <EmbyPlayer onBack={() => setView('dashboard')} onNotify={showToast} />
+              ) : view === 'tasks' ? (
+                <Tasks onNotify={showToast} activeTasks={activeTasks} />
+              ) : view === 'logs' ? (
+                <Logs />
+              ) : view === 'telegram' ? (
+                <div className="max-w-4xl"><Telegram onBack={() => setView('dashboard')} onNotify={showToast} /></div>
+              ) : (
+                <div className="space-y-12">
+                  <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                    <div>
+                      <h2 className="text-4xl font-black tracking-tight text-white mb-2">主控制台</h2>
+                      <p className="text-white/30 text-sm font-medium">当前监控 {users.length} 个账号，共有 {activeTasks.length} 个活跃任务</p>
+                    </div>
+                    <div className="flex gap-4">
+                        <div className="relative w-full lg:w-80">
+                          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" size={18} />
+                          <input
+                            type="text"
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            placeholder="搜索..."
+                            className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 pl-12 pr-4 outline-none focus:border-primary/50 transition-all font-medium text-sm"
+                          />
+                        </div>
+                    </div>
+                  </header>
+
+                  <SingleDownload onNotify={showToast} />
+
+                  {/* Quick Add Form Section */}
+                  <form onSubmit={handleAddUser} className="relative group p-1 rounded-3xl bg-gradient-to-r from-primary/20 to-transparent">
+                    <div className="bg-[#0b0b0b] rounded-[22px] p-6 flex flex-col md:flex-row gap-4 items-center">
+                      <div className="flex-1 w-full relative">
+                        <Plus className="absolute left-4 top-1/2 -translate-y-1/2 text-primary" size={20} />
+                        <input
+                          type="text"
+                          value={newUserUrl}
+                          onChange={(e) => setNewUserUrl(e.target.value)}
+                          placeholder="粘贴抖音主页链接以开始自动同步..."
+                          className="w-full bg-transparent py-2 pl-12 pr-4 outline-none text-white font-medium placeholder:text-white/20"
+                        />
+                      </div>
+                      <button type="submit" className="w-full md:w-auto px-8 py-3 bg-primary text-black font-black rounded-xl hover:scale-105 active:scale-95 transition-all shadow-xl shadow-primary/20">
+                        添加作者
+                      </button>
+                    </div>
+                  </form>
+
+                  {/* User Grid - RECLAIMING THE SIDES */}
+                  <section>
+                    {loading && users.length === 0 ? (
+                      <div className="flex items-center justify-center py-40">
+                        <RefreshCw size={40} className="animate-spin text-primary" />
+                      </div>
+                    ) : filteredUsers.length > 0 ? (
+                      <motion.div
+                        layout
+                        className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 3xl:grid-cols-5 4xl:grid-cols-6 gap-6"
+                      >
+                        <AnimatePresence mode="popLayout">
+                          {filteredUsers.map(user => (
+                            <UserCard
+                              key={user.uid}
+                              user={user}
+                              task={activeTasks.find(t => t.target_id === user.uid || t.target_id === user.sec_user_id)}
+                              onRefresh={handleRefresh}
+                              onToggleAutoUpdate={handleToggleAuto}
+                              onPreferenceChange={async (uid, v, n, tgS, tgC) => {
+                                try {
+                                  await api.updateUserPreference(uid, v, n, tgS, tgC);
+                                  setUsers(prev => prev.map(u => u.uid === uid ? { 
+                                    ...u, 
+                                    download_video_override: v, 
+                                    download_note_override: n,
+                                    tg_sync_enabled: tgS,
+                                    tg_target_chat: tgC
+                                  } : u));
+                                  showToast('个人偏好设置已更新');
+                                } catch (err) {
+                                  showToast('更新失败', 'error');
+                                }
+                              }}
+                              onDelete={(u) => setModal({ isOpen: true, user: u })}
+                              onTgSync={handleTgSync}
+                            />
+                          ))}
+                        </AnimatePresence>
+                      </motion.div>
+                    ) : (
+                      <div className="text-center py-40 border-2 border-dashed border-white/5 rounded-[40px] bg-white/[0.01]">
+                        <p className="text-white/20 font-bold text-xl mb-2">
+                          {search ? '空空如也' : '尚未开始同步'}
+                        </p>
+                        <p className="text-white/10 text-sm">{search ? '尝试换个关键词搜索' : '请在上方粘贴作者主页链接'}</p>
+                      </div>
+                    )}
+                  </section>
+                </div>
+              )}
             </motion.div>
-          ) : (
-            <div className="text-center py-40 border-2 border-dashed border-white/5 rounded-3xl">
-              <p className="text-white/20 font-medium">
-                {search ? '没有找到匹配的账号' : '尚未添加任何账号，粘贴链接开启追踪'}
-              </p>
-            </div>
-          )}
-        </main>
-      )}
+          </AnimatePresence>
+        </div>
+      </main>
 
       <AnimatePresence>
         {toast && toast.isVisible && (
@@ -334,15 +340,33 @@ function App() {
 
       <Modal
         isOpen={modal.isOpen}
-        title="删除账号"
-        description={modal.user ? `确定要删除作者 "${modal.user.nickname}" 及其所有下载记录吗？此操作不可撤销。` : ''}
-        confirmText="彻底删除"
+        title="删除确认"
+        description={modal.user ? `您即将从核心数据库中抹除作者 "${modal.user.nickname}"。其本地存储的文件将被保留，但追踪任务会立即终止。` : ''}
+        confirmText="确认删除"
         isDanger={true}
         onClose={() => setModal({ isOpen: false, user: null })}
         onConfirm={confirmDelete}
       />
       <ReloadPrompt />
     </div>
+  );
+}
+
+// Sub-component for navigation buttons
+function NavButton({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all relative group/btn ${active ? 'bg-primary text-black shadow-lg shadow-primary/20' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
+    >
+      <div className={`${active ? 'scale-110' : 'group-hover/btn:scale-110'} transition-transform duration-300`}>
+        {icon}
+      </div>
+      <span className={`hidden lg:block text-sm font-black whitespace-nowrap transition-all duration-300 ${active ? 'translate-x-0 opacity-100' : 'translate-x-0 opacity-60 group-hover/lg:opacity-100'}`}>
+        {label}
+      </span>
+      {active && <motion.div layoutId="nav-glow" className="absolute inset-0 bg-white/10 rounded-2xl -z-10" />}
+    </button>
   );
 }
 

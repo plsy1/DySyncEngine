@@ -50,8 +50,8 @@ export const updateSettings = async (settings: GlobalSettings) => {
   return data;
 };
 
-export const updateUserPreference = async (uid: string, video_pref: boolean | null, note_pref: boolean | null) => {
-  const { data } = await api.post('user/preference', { uid, video_pref, note_pref });
+export const updateUserPreference = async (uid: string, video_pref: boolean | null, note_pref: boolean | null, tg_sync_pref: boolean | null, tg_chat_pref: string | null) => {
+  const { data } = await api.post('user/preference', { uid, video_pref, note_pref, tg_sync_pref, tg_chat_pref });
   return data;
 };
 
@@ -148,5 +148,13 @@ export const updateTgSettings = async (targetChat: string, autoUpload: boolean) 
   formData.append('target_chat', targetChat);
   formData.append('auto_upload', autoUpload ? 'true' : 'false');
   const { data } = await api.post('tg/settings', formData);
+  return data;
+};
+export const tgSyncUser = async (uid: string): Promise<ApiResponse> => {
+  const { data } = await api.post<ApiResponse>(`tg/sync_user?uid=${uid}`);
+  return data;
+};
+export const tgSyncAll = async (): Promise<ApiResponse> => {
+  const { data } = await api.post<ApiResponse>('tg/sync_all');
   return data;
 };

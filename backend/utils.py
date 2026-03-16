@@ -2,6 +2,27 @@ import re
 import httpx
 from loguru import logger
 from config import config
+import asyncio
+
+_main_loop = None
+
+def set_main_loop(loop: asyncio.AbstractEventLoop):
+    global _main_loop
+    _main_loop = loop
+
+def run_coro_safe(coro):
+    """
+    在主线程的事件循环中安全地运行协程（从后台线程触发）
+    """
+    if _main_loop:
+        return asyncio.run_coroutine_threadsafe(coro, _main_loop)
+    else:
+        # 如果还没初始化 loop，尝试用 create_task (仅当在主线程时有效)
+        try:
+            return asyncio.create_task(coro)
+        except RuntimeError:
+            logger.error("无法启动异步任务: 尚未配置主事件循环且当前位于非事件循环线程")
+            return None
 
 def extract_share_url(text: str) -> str:
     """

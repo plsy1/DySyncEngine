@@ -9,6 +9,8 @@ export interface User {
   auto_update: boolean;
   download_video_override: boolean | null;
   download_note_override: boolean | null;
+  tg_sync_enabled: boolean | null;
+  tg_target_chat: string | null;
   updated_at: number;
   created_at: number;
   platform: string;
