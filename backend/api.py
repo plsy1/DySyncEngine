@@ -616,11 +616,10 @@ def lookup_videos_by_path(req: VideoLookupRequest, session: Session = Depends(ge
         norm_p = normalize_p(p)
         filename = norm_p.split("/")[-1]
         
-        # 尝试提取方括号中的 ID: "视频文案 [7123451234123123].mp4"
-        id_match = re.search(r'\[(\d+)\]', filename)
+        # Try to extract ID from the full path: ".../Folder [7123451234123123]/1.jpg"
+        id_match = re.search(r'\[(\d+)\]', norm_p)
         if id_match:
             aweme_id = id_match.group(1)
-            # 记录此路径对应哪个 ID
             remaining_paths.append({"original": p, "norm": norm_p, "aweme_id": aweme_id, "filename": filename})
             extracted_ids.append(aweme_id)
         else:
@@ -650,7 +649,6 @@ def lookup_videos_by_path(req: VideoLookupRequest, session: Session = Depends(ge
         for item in remaining_paths:
             if item["aweme_id"] and item["aweme_id"] in mapping:
                 data = mapping[item["aweme_id"]]
-                # 注意：我们要用原始路径作为 key 返回给前端
                 mapping[item["original"]] = data
             else:
                 still_remaining.append(item)
@@ -676,7 +674,16 @@ def lookup_videos_by_path(req: VideoLookupRequest, session: Session = Depends(ge
                 l_path = normalize_p(aweme.local_path)
                 l_filename = l_path.split("/")[-1]
                 
+                # Check filename OR if the parent directory matches (common for photos)
+                matched = False
                 if info["filename"] == l_filename:
+                    matched = True
+                else:
+                    # For notes, local_path might be the folder. Check if info["norm"] contains it.
+                    if l_path in info["norm"]:
+                        matched = True
+
+                if matched:
                     mapping[info["original"]] = {
                         "nickname": aweme.nickname,
                         "desc": aweme.desc,

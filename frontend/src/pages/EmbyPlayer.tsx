@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Loader2, Play, AlertCircle, Menu, X, Folder, Volume2, VolumeX, Maximize2, Minimize2, Monitor, Repeat, ArrowRightCircle, Clock, Shuffle, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Play, AlertCircle, Menu, X, Folder, Volume2, VolumeX, Maximize2, Monitor, Repeat, ArrowRightCircle, Trash2, Home, Plus, Clock, Shuffle } from 'lucide-react';
 import * as api from '../api';
 import type { GlobalSettings } from '../types';
 import axios from 'axios';
@@ -25,6 +25,8 @@ interface EmbyItem {
     ImageTags?: {
         Primary?: string;
     };
+    ParentId?: string;
+    Children?: EmbyItem[];
 }
 
 export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
@@ -68,17 +70,33 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     const [sharingId, setSharingId] = useState<string | null>(null);
     const [deleteConfirmItem, setDeleteConfirmItem] = useState<EmbyItem | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [isMobile, setIsMobile] = useState(
+        typeof window !== 'undefined' ? window.innerWidth < 768 : false
+    );
     const [isScreenLandscape, setIsScreenLandscape] = useState(
         typeof window !== 'undefined' ? window.innerWidth > window.innerHeight : false
     );
+    const [galleryIndexes, setGalleryIndexes] = useState<{ [key: string]: number }>({});
+    const [fetchState, setFetchState] = useState<{ [key: string]: number }>({}); // Track next StartIndex per folderId
+    const [filterMode, setFilterMode] = useState<'video' | 'photo' | 'mixed'>(() => {
+        const saved = localStorage.getItem('emby_player_filter_mode');
+        return (saved as any) || 'mixed';
+    });
 
     useEffect(() => {
         const handleResize = () => {
             setIsScreenLandscape(window.innerWidth > window.innerHeight);
+            setIsMobile(window.innerWidth < 768);
         };
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
     }, []);
+
+    const getFolderName = (path?: string) => {
+        if (!path) return '';
+        const parts = path.replace(/\\/g, '/').split('/');
+        return parts.length > 1 ? parts[parts.length - 2] : '';
+    };
 
     const handlePlaying = (itemId: string) => {
         setHasStarted(prev => ({ ...prev, [itemId]: true }));
@@ -89,8 +107,9 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
     useEffect(() => {
         localStorage.setItem('emby_player_folder_ids', selectedFolderIds.join(','));
+        localStorage.setItem('emby_player_filter_mode', filterMode);
         loadSettingsAndVideos(tab, selectedFolderIds.length > 0 ? selectedFolderIds.join(',') : null);
-    }, [tab, selectedFolderIds]);
+    }, [tab, selectedFolderIds, filterMode]);
 
     const loadSettingsAndVideos = async (currentTab: 'latest' | 'random', folderId: string | null) => {
         setLoading(true);
@@ -108,7 +127,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
             const embyApi = axios.create({
                 baseURL: data.emby_server_url,
-                timeout: 10000,
+                timeout: 15000, // Increased timeout for larger libraries
             });
 
             // IF a default library is set, and no specific folders are selected, 
@@ -122,14 +141,19 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
             // Fetch from each folder in parallel
             const fetchPromises = folderIds.map(fid => {
+                const includeTypes = filterMode === 'video' ? 'Video,Movie,Episode' :
+                    filterMode === 'photo' ? 'Photo' :
+                        'Video,Movie,Episode,Photo';
+
                 const params: any = {
                     api_key: data.emby_api_key,
-                    IncludeItemTypes: 'Video,Movie,Episode',
+                    IncludeItemTypes: includeTypes,
                     Recursive: 'true',
                     SortBy: currentTab === 'latest' ? 'DateCreated' : 'Random',
                     SortOrder: currentTab === 'latest' ? 'Descending' : undefined,
-                    Limit: folderIds.length > 1 ? Math.max(10, Math.floor(40 / folderIds.length)) : 40,
-                    Fields: 'Overview,Path,PrimaryImageAspectRatio,ImageTags,Width,Height,DateCreated'
+                    Limit: folderIds.length > 1 ? Math.max(40, Math.floor(200 / folderIds.length)) : 100,
+                    Fields: 'Overview,Path,PrimaryImageAspectRatio,ImageTags,Width,Height,DateCreated,ParentId',
+                    StartIndex: 0
                 };
                 if (fid) params.ParentId = fid;
                 return embyApi.get('/emby/Items', { params });
@@ -138,17 +162,69 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
             const responses = await Promise.all(fetchPromises);
             let allItems: EmbyItem[] = [];
 
-            responses.forEach(response => {
+
+            const newFetchState: { [key: string]: number } = {};
+            responses.forEach((response, idx) => {
+                const fid = folderIds[idx] || 'root';
                 if (response.data && response.data.Items) {
                     allItems = [...allItems, ...response.data.Items];
+                    newFetchState[fid] = response.data.Items.length;
+                }
+            });
+            setFetchState(newFetchState);
+
+            // Grouping logic: Videos are separate, Photos are grouped by ParentId
+            const videos = allItems.filter(i => i.MediaType === 'Video');
+            const photos = allItems.filter(i => i.MediaType === 'Photo' || i.Type === 'Photo');
+
+            const photoGroups = new Map<string, EmbyItem[]>();
+            photos.forEach(p => {
+                const pid = p.ParentId || 'root';
+                if (!photoGroups.has(pid)) photoGroups.set(pid, []);
+                // Deduplicate photos by ID within the same group
+                if (!photoGroups.get(pid)!.some(existing => existing.Id === p.Id)) {
+                    photoGroups.get(pid)!.push(p);
                 }
             });
 
-            // Filter duplicates and only keep Videos
+            // Create processed items list
+            let processedItems: EmbyItem[] = [...videos];
+
+            // Add photos: If multiple in a folder, create a gallery. Else add individually.
+            photoGroups.forEach((group) => {
+                if (group.length > 1) {
+                    // Sorting photos by name naturally treats (1.jpg, 2.jpg) correctly
+                    group.sort((a, b) => (a.Name || '').localeCompare(b.Name || '', undefined, { numeric: true }));
+
+                    // We use the first photo as the "template" for the gallery item
+                    const template = { ...group[0] };
+                    const folderName = getFolderName(template.Path);
+                    if (folderName) template.Name = folderName;
+
+                    processedItems.push({
+                        ...template,
+                        Type: 'Gallery', // UI internal type
+                        Children: group,
+                    });
+                } else {
+                    const item = { ...group[0] };
+                    const folderName = getFolderName(item.Path);
+                    // If the item name is just a generic filename (like 1.jpg), use folder name
+                    if (folderName && (item.Name.match(/^\d+\.(jpg|png|jpeg|webp)$/i) || item.Name.length < 5)) {
+                        item.Name = folderName;
+                    }
+                    processedItems.push(item);
+                }
+            });
+
+            // Filter duplicates (just in case)
             const uniqueItems = Array.from(new Map(
-                allItems
-                    .filter(i => i.MediaType === 'Video')
-                    .map(item => [item.Id, item])
+                processedItems.map(item => [
+                    (item.Type === 'Gallery' || item.MediaType === 'Photo' || item.Type === 'Photo')
+                        ? `gallery_${item.ParentId || 'root'}`
+                        : item.Id,
+                    item
+                ])
             ).values());
 
             // Sort by date if latest tab
@@ -198,41 +274,156 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
             // For multi-folder, we fetch a small batch from each to merge
             // This is a simplified pagination strategy for merged results
+            const includeTypes = filterMode === 'video' ? 'Video,Movie,Episode' :
+                filterMode === 'photo' ? 'Photo' :
+                    'Video,Movie,Episode,Photo';
+
             const fetchPromises = folderIds.map(fid => {
                 const params: any = {
                     api_key: settings.emby_api_key,
-                    IncludeItemTypes: 'Video,Movie,Episode',
+                    IncludeItemTypes: includeTypes,
                     Recursive: 'true',
                     SortBy: tab === 'latest' ? 'DateCreated' : 'Random',
                     SortOrder: tab === 'latest' ? 'Descending' : undefined,
-                    Limit: folderIds.length > 1 ? 10 : 20,
-                    Fields: 'Overview,Path,PrimaryImageAspectRatio,ImageTags,Width,Height,DateCreated',
-                    StartIndex: folderIds.length === 1 ? items.length : undefined
+                    Limit: folderIds.length > 1 ? 50 : 150,
+                    Fields: 'Overview,Path,PrimaryImageAspectRatio,ImageTags,Width,Height,DateCreated,ParentId',
+                    StartIndex: tab === 'latest' ? (fetchState[fid || 'root'] || 0) : undefined
                 };
 
-                // If multi-select, we can't easily use StartIndex without tracking per-folder counts.
-                // Instead, we rely on the deduplication logic.
+                // If multi-select, we track per-folder counts.
                 if (fid) params.ParentId = fid;
                 return embyApi.get('/emby/Items', { params });
             });
 
             const responses = await Promise.all(fetchPromises);
             let newItems: EmbyItem[] = [];
+            const updatedFetchState = { ...fetchState };
 
-            responses.forEach(response => {
+            responses.forEach((response, idx) => {
+                const fid = folderIds[idx] || 'root';
                 if (response.data && response.data.Items) {
                     newItems = [...newItems, ...response.data.Items];
+                    updatedFetchState[fid] = (updatedFetchState[fid] || 0) + response.data.Items.length;
+                }
+            });
+            setFetchState(updatedFetchState);
+
+            // Grouping logic: Same as initial load
+            const videos = newItems.filter(i => i.MediaType === 'Video');
+            const photos = newItems.filter(i => i.MediaType === 'Photo' || i.Type === 'Photo');
+
+            const photoGroups = new Map<string, EmbyItem[]>();
+            photos.forEach(p => {
+                const pid = p.ParentId || 'root';
+                if (!photoGroups.has(pid)) photoGroups.set(pid, []);
+                if (!photoGroups.get(pid)!.some(existing => existing.Id === p.Id)) {
+                    photoGroups.get(pid)!.push(p);
                 }
             });
 
-            // Filter out existing items and non-videos
-            const uniqueNewItems = newItems.filter((i: EmbyItem) =>
-                i.MediaType === 'Video' && !items.some(existing => existing.Id === i.Id)
-            );
+            let processedNewItems: EmbyItem[] = [...videos];
+            photoGroups.forEach((group) => {
+                if (group.length > 1) {
+                    group.sort((a, b) => (a.Name || '').localeCompare(b.Name || '', undefined, { numeric: true }));
+                    const template = { ...group[0] };
+                    const folderName = getFolderName(template.Path);
+                    if (folderName) template.Name = folderName;
 
-            if (uniqueNewItems.length > 0) {
-                // Merged sort if latest
-                let nextList = [...items, ...uniqueNewItems];
+                    processedNewItems.push({
+                        ...template,
+                        Type: 'Gallery',
+                        Children: group,
+                    });
+                } else {
+                    const item = { ...group[0] };
+                    const folderName = getFolderName(item.Path);
+                    if (folderName && (item.Name.match(/^\d+\.(jpg|png|jpeg|webp)$/i) || item.Name.length < 5)) {
+                        item.Name = folderName;
+                    }
+                    processedNewItems.push(item);
+                }
+            });
+
+            // Merging logic: 
+            // 1. For videos, just check if exists.
+            // 2. For photos, if a gallery or single photo for that PID exists, MERGE them.
+
+            let updatedItems = [...items];
+            let brandNewItems: EmbyItem[] = [];
+
+            // Handle Videos
+            videos.forEach(v => {
+                if (!updatedItems.some(existing => existing.Id === v.Id)) {
+                    brandNewItems.push(v);
+                }
+            });
+
+            // Handle Photos/Galleries
+            photoGroups.forEach((group, pid) => {
+                const existingIndex = updatedItems.findIndex(i =>
+                    (i.Type === 'Gallery' || i.MediaType === 'Photo' || i.Type === 'Photo') &&
+                    (i.ParentId || 'root') === pid
+                );
+
+                if (existingIndex !== -1) {
+                    const existing = updatedItems[existingIndex];
+                    // Already exists, merge children
+                    const currentChildren = existing.Type === 'Gallery' ? (existing.Children || []) : [existing];
+                    const mergedChildren = [...currentChildren];
+
+                    group.forEach(newPhoto => {
+                        if (!mergedChildren.some(c => c.Id === newPhoto.Id)) {
+                            mergedChildren.push(newPhoto);
+                        }
+                    });
+
+                    if (mergedChildren.length > 1) {
+                        mergedChildren.sort((a, b) => (a.Name || '').localeCompare(b.Name || '', undefined, { numeric: true }));
+                        const template = { ...mergedChildren[0] };
+                        const folderName = getFolderName(template.Path);
+                        if (folderName) template.Name = folderName;
+
+                        updatedItems[existingIndex] = {
+                            ...template,
+                            Type: 'Gallery',
+                            Children: mergedChildren,
+                            ParentId: pid === 'root' ? undefined : pid
+                        };
+                    } else {
+                        const item = { ...mergedChildren[0] };
+                        const folderName = getFolderName(item.Path);
+                        if (folderName && (item.Name.match(/^\d+\.(jpg|png|jpeg|webp)$/i) || item.Name.length < 5)) {
+                            item.Name = folderName;
+                        }
+                        updatedItems[existingIndex] = item;
+                    }
+                } else {
+                    // Brand new group
+                    if (group.length > 1) {
+                        group.sort((a, b) => (a.Name || '').localeCompare(b.Name || '', undefined, { numeric: true }));
+                        const template = { ...group[0] };
+                        const folderName = getFolderName(template.Path);
+                        if (folderName) template.Name = folderName;
+
+                        brandNewItems.push({
+                            ...template,
+                            Type: 'Gallery',
+                            Children: group,
+                            ParentId: pid === 'root' ? undefined : pid
+                        });
+                    } else {
+                        const item = { ...group[0] };
+                        const folderName = getFolderName(item.Path);
+                        if (folderName && (item.Name.match(/^\d+\.(jpg|png|jpeg|webp)$/i) || item.Name.length < 5)) {
+                            item.Name = folderName;
+                        }
+                        brandNewItems.push(item);
+                    }
+                }
+            });
+
+            if (newItems.length > 0) {
+                let nextList = [...updatedItems, ...brandNewItems];
                 if (tab === 'latest') {
                     nextList.sort((a, b) => {
                         const dateA = new Date(a.DateCreated || 0).getTime();
@@ -243,11 +434,17 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                 setItems(nextList);
 
                 // Enhance new items
-                const newPaths = uniqueNewItems.map(i => (i as any).Path).filter(Boolean);
+                const newPaths = [...newItems].map(i => (i as any).Path).filter(Boolean);
                 if (newPaths.length > 0) {
                     api.lookupVideos(newPaths).then(mapping => {
                         setVideoMetadata(prev => ({ ...prev, ...mapping }));
                     }).catch(e => console.error("Metadata lookup (load more) failed", e));
+                }
+
+                // If we fetched items but none were "brand new" vertical slots (all merged), 
+                // try fetching one more time automatically to prevent the user from hitting a dead end.
+                if (brandNewItems.length === 0 && newItems.length > 0) {
+                    setTimeout(() => loadMoreVideos(), 100);
                 }
             }
         } catch (err) {
@@ -267,8 +464,8 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
             });
 
             // If we are at root AND a default library is configured, fetch from that library instead.
-            const effectiveParentId = (sidebarPath.length === 0 && settings.emby_default_library) 
-                ? settings.emby_default_library 
+            const effectiveParentId = (sidebarPath.length === 0 && settings.emby_default_library)
+                ? settings.emby_default_library
                 : parentId;
 
             const response = await embyApi.get('/emby/Items', {
@@ -279,7 +476,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                     IsFolder: 'true',
                     SortBy: 'SortName',
                     SortOrder: 'Ascending',
-                    Fields: 'ImageTags' 
+                    Fields: 'ImageTags'
                 }
             });
             if (response.data && response.data.Items) {
@@ -383,15 +580,18 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
     const handleShare = async (item: EmbyItem) => {
         if (sharingId) return;
-        const url = getVideoUrl(item);
+        const url = item.MediaType === 'Video' ? getVideoUrl(item) : getPosterUrl(item);
         if (!url) return;
 
         setSharingId(item.Id);
         try {
+            const isVideo = item.MediaType === 'Video';
             const response = await fetch(url);
             const blob = await response.blob();
-            const fileName = `${item.Name || 'video'}.mp4`;
-            const file = new File([blob], fileName, { type: 'video/mp4' });
+            const ext = isVideo ? 'mp4' : 'jpg';
+            const mime = isVideo ? 'video/mp4' : 'image/jpeg';
+            const fileName = `${item.Name || 'file'}.${ext}`;
+            const file = new File([blob], fileName, { type: mime });
 
             if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
                 await navigator.share({
@@ -574,10 +774,10 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
     const handleWheel = (e: React.WheelEvent) => {
         if (isSidebarOpen || deleteConfirmItem || loadingMore) return;
-        
+
         // Sensitivity check for standard mouse wheel
         if (Math.abs(e.deltaY) < 20) return;
-        
+
         const now = Date.now();
         if (now - wheelTimerRef.current < 600) return; // Debounce to prevent rapid skipping
 
@@ -614,8 +814,8 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                 if (entry.isIntersecting) {
                     setActiveVideoIndex(index);
 
-                    // Trigger load more when approaching the end (e.g., 5 items left)
-                    if (index >= items.length - 5 && !loadingMore) {
+                    // Trigger load more when approaching the end (e.g., 10 items left)
+                    if (index >= items.length - 10 && !loadingMore) {
                         loadMoreVideos();
                     }
 
@@ -678,7 +878,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (isSidebarOpen || deleteConfirmItem) return;
-            
+
             if (e.key === 'ArrowDown') {
                 e.preventDefault();
                 if (activeVideoIndex < items.length - 1) {
@@ -696,11 +896,27 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                 const video = videoRefs.current[activeVideoIndex];
                 if (video) {
                     if (video.paused) {
-                        video.play();
+                        video.play().catch(() => { });
                         setIsUserPaused(false);
                     } else {
                         video.pause();
                         setIsUserPaused(true);
+                    }
+                }
+            } else if (e.key === 'ArrowRight') {
+                const item = items[activeVideoIndex];
+                if (item?.Type === 'Gallery') {
+                    const current = galleryIndexes[item.Id] || 0;
+                    if (current < (item.Children?.length || 0) - 1) {
+                        setGalleryIndexes(prev => ({ ...prev, [item.Id]: current + 1 }));
+                    }
+                }
+            } else if (e.key === 'ArrowLeft') {
+                const item = items[activeVideoIndex];
+                if (item?.Type === 'Gallery') {
+                    const current = galleryIndexes[item.Id] || 0;
+                    if (current > 0) {
+                        setGalleryIndexes(prev => ({ ...prev, [item.Id]: current - 1 }));
                     }
                 }
             }
@@ -733,9 +949,11 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         return `${settings.emby_server_url}/emby/videos/${item.Id}/stream.mp4?api_key=${settings.emby_api_key}&Static=true`;
     };
 
-    const getPosterUrl = (item: EmbyItem) => {
+    const getPosterUrl = (item: EmbyItem, highRes: boolean = false) => {
         if (!settings || !item.ImageTags?.Primary) return undefined;
-        return `${settings.emby_server_url}/emby/Items/${item.Id}/Images/Primary?api_key=${settings.emby_api_key}&tag=${item.ImageTags.Primary}&quality=90`;
+        let url = `${settings.emby_server_url}/emby/Items/${item.Id}/Images/Primary?api_key=${settings.emby_api_key}&tag=${item.ImageTags.Primary}&quality=90`;
+        if (highRes) url += '&maxWidth=1920';
+        return url;
     };
 
     return (
@@ -755,73 +973,84 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                     <ArrowLeft size={28} />
                 </button>
 
-                {/* Tabs removed for unified UI */}
-
-                <div
-                    className="absolute flex items-center gap-2 pointer-events-auto drop-shadow-lg opacity-80"
-                    style={{ top: 'calc(env(safe-area-inset-top) + 12px)', right: '20px' }}
-                >
-                    <button
-                        onClick={() => {
-                            const newTab = tab === 'latest' ? 'random' : 'latest';
-                            setTab(newTab);
-                            onNotify(`排序切换至: ${newTab === 'latest' ? '最新发布' : '随机推荐'}`, 'success');
-                        }}
-                        className="p-3 text-white transition-all hover:opacity-100 hover:bg-white/10 rounded-full"
-                        title="切换数据源"
-                    >
-                        {tab === 'latest' ? <Clock size={24} /> : <Shuffle size={24} />}
-                    </button>
-                    <button
-                        onClick={() => {
-                            const newMode = playbackMode === 'loop' ? 'next' : 'loop';
-                            setPlaybackMode(newMode);
-                            onNotify(`播放模式: ${newMode === 'loop' ? '单片循环' : '自动连播'}`, 'success');
-                        }}
-                        className="p-3 text-white transition-all hover:opacity-100 hover:bg-white/10 rounded-full"
-                        title="切换播放模式"
-                    >
-                        {playbackMode === 'loop' ? <Repeat size={24} /> : <ArrowRightCircle size={24} className="text-primary" />}
-                    </button>
-                    <button
-                        onClick={() => {
-                            const modes: ('smart' | 'cover' | 'contain')[] = ['smart', 'cover', 'contain'];
-                            const nextIndex = (modes.indexOf(displayMode) + 1) % modes.length;
-                            setDisplayMode(modes[nextIndex]);
-                            onNotify(`切换至: ${modes[nextIndex] === 'smart' ? '智能适配' : modes[nextIndex] === 'cover' ? '全屏铺满' : '完整显示'}`, 'success');
-                        }}
-                        className="p-3 text-white transition-all hover:opacity-100 hover:bg-white/10 rounded-full"
-                        title="切换显示模式"
-                    >
-                        {displayMode === 'smart' ? <Monitor size={24} /> : displayMode === 'cover' ? <Maximize2 size={24} /> : <Minimize2 size={24} />}
-                    </button>
-                    <button
-                        onClick={() => {
-                            const nextMuted = !isMuted;
-                            setIsMuted(nextMuted);
-
-                            // WARM UP: If unmuting, try to play/pause adjacent videos
-                            // This signals to iOS that these videos are allowed to have sound
-                            if (!nextMuted) {
-                                [activeVideoIndex, activeVideoIndex + 1, activeVideoIndex - 1].forEach(idx => {
-                                    const v = videoRefs.current[idx];
-                                    if (v) {
-                                        v.muted = false;
-                                        // A quick play/pause can sometimes 'unlock' the audio context for that element
-                                        const p = v.play();
-                                        if (p) p.then(() => { if (idx !== activeVideoIndex) v.pause(); }).catch(() => { });
-                                    }
-                                });
-                            }
-                        }}
-                        className="p-3 text-white transition-all hover:opacity-100 hover:bg-white/10 rounded-full"
-                    >
-                        {isMuted ? <VolumeX size={24} className="text-red-500" /> : <Volume2 size={24} />}
-                    </button>
-                    <button onClick={handleOpenSidebar} className="p-3 text-white transition-all hover:opacity-100 hover:bg-white/10 rounded-full">
-                        <Menu size={28} />
-                    </button>
+                {/* Filter Tabs in Center */}
+                <div className="pointer-events-auto">
+                    <div className="flex items-center bg-white/5 backdrop-blur-md rounded-full px-1 py-1 border border-white/10 shadow-lg">
+                        {[
+                            { id: 'video', label: '视频' },
+                            { id: 'mixed', label: '混合' },
+                            { id: 'photo', label: '图片' }
+                        ].map((m) => (
+                            <button
+                                key={m.id}
+                                onClick={() => {
+                                    setFilterMode(m.id as any);
+                                    onNotify(`切换至: ${m.label}模式`, 'success');
+                                }}
+                                className={`px-4 py-1.5 rounded-full text-xs sm:text-sm font-bold transition-all duration-300 ${filterMode === m.id
+                                    ? 'bg-white text-black shadow-lg scale-105'
+                                    : 'text-white/60 hover:text-white hover:bg-white/5'
+                                    }`}
+                            >
+                                {m.label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
+
+                {/* PC Version Utilities (Right Side) */}
+                {!isMobile && (
+                    <div className="absolute right-6 flex items-center gap-4 pointer-events-auto">
+                        <button
+                            onClick={() => {
+                                const newTab = tab === 'latest' ? 'random' : 'latest';
+                                setTab(newTab);
+                                onNotify(`排序切换至: ${newTab === 'latest' ? '最新发布' : '随机推荐'}`, 'success');
+                            }}
+                            className="p-2.5 text-white/70 hover:text-white transition-all bg-white/5 hover:bg-white/10 rounded-full"
+                            title={tab === 'latest' ? '切换至随机推荐' : '切换至最新发布'}
+                        >
+                            {tab === 'latest' ? <Clock size={20} /> : <Shuffle size={20} className="text-primary" />}
+                        </button>
+                        <button
+                            onClick={() => {
+                                const newMode = playbackMode === 'loop' ? 'next' : 'loop';
+                                setPlaybackMode(newMode);
+                                onNotify(`播放模式: ${newMode === 'loop' ? '单片循环' : '自动连播'}`, 'success');
+                            }}
+                            className="p-2.5 text-white/70 hover:text-white transition-all bg-white/5 hover:bg-white/10 rounded-full"
+                            title="播放模式"
+                        >
+                            {playbackMode === 'loop' ? <Repeat size={20} /> : <ArrowRightCircle size={20} className="text-primary" />}
+                        </button>
+                        <button
+                            onClick={() => {
+                                const modes: ('smart' | 'cover' | 'contain')[] = ['smart', 'cover', 'contain'];
+                                const nextIndex = (modes.indexOf(displayMode) + 1) % modes.length;
+                                setDisplayMode(modes[nextIndex]);
+                                onNotify(`适配模式: ${modes[nextIndex]}`, 'success');
+                            }}
+                            className="p-2.5 text-white/70 hover:text-white transition-all bg-white/5 hover:bg-white/10 rounded-full"
+                            title="画面占比"
+                        >
+                            {displayMode === 'smart' ? <Monitor size={20} /> : <Maximize2 size={20} />}
+                        </button>
+                        <button
+                            onClick={() => setIsMuted(!isMuted)}
+                            className="p-2.5 text-white/70 hover:text-white transition-all bg-white/5 hover:bg-white/10 rounded-full"
+                            title="静音开关"
+                        >
+                            {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+                        </button>
+                        <button
+                            onClick={() => setIsSidebarOpen(true)}
+                            className="p-2.5 text-white/70 hover:text-white transition-all bg-white/10 hover:bg-white/20 rounded-full ml-2 border border-white/10"
+                            title="选择目录"
+                        >
+                            <Menu size={20} />
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Scrolling Container */}
@@ -851,7 +1080,12 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                 <div
                                     key={item.Id}
                                     ref={(el) => { itemRefs.current[index] = el; }}
-                                    className="h-screen w-full snap-start relative flex items-center justify-center overflow-hidden bg-black"
+                                    className="
+    w-full snap-start relative flex items-center justify-center
+    overflow-hidden bg-black
+    h-[calc(100vh-56px-env(safe-area-inset-bottom))]
+    md:h-screen
+  "
                                     style={{ scrollSnapStop: 'always' }}
                                     data-index={index}
                                     onTouchStart={(e) => handleGlobalTouchStart(index, e)}
@@ -862,19 +1096,24 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                         const video = videoRefs.current[index];
                                         if (video) {
                                             if (video.paused) {
-                                                video.play();
+                                                video.play().catch(() => { });
                                                 setIsUserPaused(false);
                                             } else {
                                                 video.pause();
                                                 setIsUserPaused(true);
                                             }
+                                        } else if (item.Type === 'Gallery') {
+                                            // Cycle through photos on click for desktop
+                                            const current = galleryIndexes[item.Id] || 0;
+                                            const next = (current + 1) % (item.Children?.length || 1);
+                                            setGalleryIndexes(prev => ({ ...prev, [item.Id]: next }));
                                         }
                                     }}
                                 >
                                     {Math.abs(activeVideoIndex - index) <= 1 ? (
                                         <>
-                                            {/* Blurred Background for Landscape videos */}
-                                            {((item.Width || 0) > (item.Height || 0)) && getPosterUrl(item) && (
+                                            {/* Blurred Background */}
+                                            {getPosterUrl(item) && (
                                                 <div className="absolute inset-0 w-full h-full overflow-hidden">
                                                     <img
                                                         src={getPosterUrl(item)}
@@ -885,39 +1124,98 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                 </div>
                                             )}
 
-                                            <video
-                                                ref={(el) => {
-                                                    videoRefs.current[index] = el;
-                                                    // Try to play immediately if it's the active one that just mounted
-                                                    if (el && activeVideoIndex === index && el.paused && !isUserPaused) {
-                                                        safePlay(index);
-                                                    }
-                                                }}
-                                                src={getVideoUrl(item)}
-                                                className={`relative z-10 w-full h-full pointer-events-auto bg-transparent ${displayMode === 'cover' ? 'object-cover' :
-                                                    displayMode === 'contain' ? 'object-contain' :
-                                                        (isScreenLandscape || (item.Width || 0) > (item.Height || 0)) ? 'object-contain' : 'object-cover'
-                                                    }`}
-                                                autoPlay={activeVideoIndex === index}
-                                                loop={playbackMode === 'loop'}
-                                                muted={isMuted}
-                                                playsInline
-                                                onPlaying={() => handlePlaying(item.Id)}
-                                                onEnded={() => {
-                                                    if (playbackMode === 'next' && activeVideoIndex < items.length - 1) {
-                                                        const nextIndex = activeVideoIndex + 1;
-                                                        itemRefs.current[nextIndex]?.scrollIntoView({ behavior: 'smooth' });
-                                                        // Trigger play immediately. onEnded is also a valid user-originated activation point in some browsers
-                                                        safePlay(nextIndex);
-                                                    }
-                                                }}
-                                                onTimeUpdate={(e) => handleTimeUpdate(item.Id, e)}
-                                                onLoadedMetadata={(e) => handleLoadedMetadata(item.Id, e)}
-                                            />
-                                            {getPosterUrl(item) && !hasStarted[item.Id] && (
+                                            {item.MediaType === 'Video' ? (
+                                                <>
+                                                    <video
+                                                        ref={(el) => {
+                                                            videoRefs.current[index] = el;
+                                                            if (el && activeVideoIndex === index && el.paused && !isUserPaused) {
+                                                                safePlay(index);
+                                                            }
+                                                        }}
+                                                        src={getVideoUrl(item)}
+                                                        className={`relative z-10 w-full h-full pointer-events-auto bg-transparent ${displayMode === 'cover' ? 'object-cover' :
+                                                            displayMode === 'contain' ? 'object-contain' :
+                                                                (isScreenLandscape || (item.Width || 0) > (item.Height || 0)) ? 'object-contain' : 'object-cover'
+                                                            }`}
+                                                        autoPlay={activeVideoIndex === index}
+                                                        loop={playbackMode === 'loop'}
+                                                        muted={isMuted}
+                                                        playsInline
+                                                        onPlaying={() => handlePlaying(item.Id)}
+                                                        onEnded={() => {
+                                                            if (playbackMode === 'next' && activeVideoIndex < items.length - 1) {
+                                                                const nextIndex = activeVideoIndex + 1;
+                                                                itemRefs.current[nextIndex]?.scrollIntoView({ behavior: 'smooth' });
+                                                                safePlay(nextIndex);
+                                                            }
+                                                        }}
+                                                        onTimeUpdate={(e) => handleTimeUpdate(item.Id, e)}
+                                                        onLoadedMetadata={(e) => handleLoadedMetadata(item.Id, e)}
+                                                    />
+                                                    {getPosterUrl(item) && !hasStarted[item.Id] && (
+                                                        <img
+                                                            src={getPosterUrl(item)}
+                                                            className={`absolute inset-0 w-full h-full z-20 pointer-events-none ${displayMode === 'cover' ? 'object-cover' :
+                                                                displayMode === 'contain' ? 'object-contain' :
+                                                                    (isScreenLandscape || (item.Width || 0) > (item.Height || 0)) ? 'object-contain' : 'object-cover'
+                                                                }`}
+                                                            alt=""
+                                                        />
+                                                    )}
+                                                </>
+                                            ) : item.Type === 'Gallery' ? (
+                                                <div className="relative z-10 w-full h-full flex items-center justify-center">
+                                                    {/* Progress indicators at top */}
+                                                    <div className="absolute top-[calc(env(safe-area-inset-top)+84px)] right-6 bg-black/30 backdrop-blur-md px-3 py-1 rounded-full z-50 border border-white/10">
+                                                        <span className="text-white text-xs font-bold tracking-tighter tabular-nums">
+                                                            {(galleryIndexes[item.Id] || 0) + 1} / {item.Children?.length}
+                                                        </span>
+                                                    </div>
+                                                    <div
+                                                        className="w-full h-full flex items-center justify-center touch-pan-y"
+                                                        onTouchStart={(e) => {
+                                                            const startX = e.touches[0].clientX;
+                                                            (e.currentTarget as any)._startX = startX;
+                                                        }}
+                                                        onTouchEnd={(e) => {
+                                                            const startX = (e.currentTarget as any)._startX;
+                                                            if (startX === undefined) return;
+                                                            const endX = e.changedTouches[0].clientX;
+                                                            const diff = endX - startX;
+                                                            if (Math.abs(diff) > 40) {
+                                                                const count = item.Children!.length;
+                                                                const current = galleryIndexes[item.Id] || 0;
+                                                                if (diff < 0 && current < count - 1) {
+                                                                    setGalleryIndexes(prev => ({ ...prev, [item.Id]: current + 1 }));
+                                                                    if (window.navigator.vibrate) window.navigator.vibrate(10);
+                                                                } else if (diff > 0 && current > 0) {
+                                                                    setGalleryIndexes(prev => ({ ...prev, [item.Id]: current - 1 }));
+                                                                    if (window.navigator.vibrate) window.navigator.vibrate(10);
+                                                                }
+                                                            }
+                                                        }}
+                                                    >
+                                                        <AnimatePresence mode="popLayout">
+                                                            <motion.img
+                                                                key={galleryIndexes[item.Id] || 0}
+                                                                src={getPosterUrl(item.Children![galleryIndexes[item.Id] || 0], true)}
+                                                                initial={{ opacity: 0, x: 20 }}
+                                                                animate={{ opacity: 1, x: 0 }}
+                                                                exit={{ opacity: 0, x: -20 }}
+                                                                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                                                                className={`w-full h-full pointer-events-none ${displayMode === 'cover' ? 'object-cover' :
+                                                                    displayMode === 'contain' ? 'object-contain' :
+                                                                        (isScreenLandscape || (item.Width || 0) > (item.Height || 0)) ? 'object-contain' : 'object-cover'
+                                                                    }`}
+                                                            />
+                                                        </AnimatePresence>
+                                                    </div>
+                                                </div>
+                                            ) : (
                                                 <img
-                                                    src={getPosterUrl(item)}
-                                                    className={`absolute inset-0 w-full h-full z-20 pointer-events-none ${displayMode === 'cover' ? 'object-cover' :
+                                                    src={getPosterUrl(item, true)}
+                                                    className={`relative z-10 w-full h-full pointer-events-auto ${displayMode === 'cover' ? 'object-cover' :
                                                         displayMode === 'contain' ? 'object-contain' :
                                                             (isScreenLandscape || (item.Width || 0) > (item.Height || 0)) ? 'object-contain' : 'object-cover'
                                                         }`}
@@ -958,7 +1256,8 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                         )}
 
                                         {/* Right Action Buttons */}
-                                        <div className="absolute right-4 bottom-32 flex flex-col gap-6 items-center pointer-events-auto z-40">
+                                        <div className="absolute right-4 bottom-12 flex flex-col gap-6 items-center pointer-events-auto z-40">
+                                            {/* Utility buttons moved to bottom footer */}
                                             {item.Path && videoMetadata[item.Path]?.avatar_url && (
                                                 <div className="flex flex-col items-center mb-2">
                                                     <button
@@ -974,9 +1273,9 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                         }}
                                                         className="w-14 h-14 rounded-full border-2 border-white overflow-hidden shadow-xl hover:scale-110 transition-transform active:scale-90"
                                                     >
-                                                        <img 
-                                                            src={videoMetadata[item.Path!].avatar_url} 
-                                                            alt="avatar" 
+                                                        <img
+                                                            src={videoMetadata[item.Path!].avatar_url}
+                                                            alt="avatar"
                                                             className="w-full h-full object-cover"
                                                         />
                                                     </button>
@@ -1000,8 +1299,8 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                         <Loader2 size={32} className="animate-spin opacity-80" />
                                                     ) : (
                                                         <svg width="34" height="34" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                                            <path d="M26 6L42 22L26 38" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
-                                                            <path d="M6 42C6 42 10 30 20 25C30 20 42 22 42 22" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
+                                                            <path d="M26 6L42 22L26 38" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+                                                            <path d="M6 42C6 42 10 30 20 25C30 20 42 22 42 22" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
                                                         </svg>
                                                     )}
                                                 </button>
@@ -1021,11 +1320,11 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                     className="flex items-center justify-center w-12 h-12 text-white transition-all active:scale-95 drop-shadow-xl"
                                                 >
                                                     <svg width="32" height="32" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                                        <path d="M9 10V44H39V10H9Z" fill="none" stroke="white" strokeWidth="4" strokeLinejoin="round"/>
-                                                        <path d="M20 20V34" stroke="white" strokeWidth="4" strokeLinecap="round"/>
-                                                        <path d="M28 20V34" stroke="white" strokeWidth="4" strokeLinecap="round"/>
-                                                        <path d="M4 10H44" stroke="white" strokeWidth="4" strokeLinecap="round"/>
-                                                        <path d="M16 10L19.289 4H28.7771L32 10H16Z" fill="none" stroke="white" strokeWidth="4" strokeLinejoin="round"/>
+                                                        <path d="M9 10V44H39V10H9Z" fill="none" stroke="white" strokeWidth="4" strokeLinejoin="round" />
+                                                        <path d="M20 20V34" stroke="white" strokeWidth="4" strokeLinecap="round" />
+                                                        <path d="M28 20V34" stroke="white" strokeWidth="4" strokeLinecap="round" />
+                                                        <path d="M4 10H44" stroke="white" strokeWidth="4" strokeLinecap="round" />
+                                                        <path d="M16 10L19.289 4H28.7771L32 10H16Z" fill="none" stroke="white" strokeWidth="4" strokeLinejoin="round" />
                                                     </svg>
                                                 </button>
                                                 <span className="text-white text-[11px] font-bold mt-1 drop-shadow-md">删除</span>
@@ -1033,10 +1332,11 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                         </div>
                                     </div>
 
+
                                     {/* Video Info Overlay */}
-                                    <div className="absolute bottom-0 left-0 right-0 p-6 pb-12 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none flex flex-col justify-end z-30">
+                                    <div className="absolute bottom-0 left-0 right-0 p-6 pb-6 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none flex flex-col justify-end z-30">
                                         <div className="flex items-center gap-2 mb-2 drop-shadow-md">
-                                            <button 
+                                            <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     if (item.Path && videoMetadata[item.Path]) {
@@ -1064,11 +1364,11 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                     </div>
 
                                     {/* Progress Bar - Bottom (Douyin Style) */}
-                                    {activeVideoIndex === index && (
+                                    {activeVideoIndex === index && item.MediaType === 'Video' && (
                                         <>
                                             <div
                                                 className="absolute left-0 right-0 cursor-pointer pointer-events-auto z-[50] flex items-end group/progress"
-                                                style={{ bottom: 'calc(env(safe-area-inset-bottom) + 4px)', height: '40px' }}
+                                                style={{ bottom: '0px', height: '40px' }}
                                                 onMouseDown={() => setIsDragging(true)}
                                                 onMouseUp={() => setIsDragging(false)}
                                                 onClick={(e) => handleSeek(item.Id, index, e)}
@@ -1143,7 +1443,71 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                         )}
                     </div>
                 )}
+
             </div>
+
+            {/* Dedicated Bottom Navigation Bar - Mobile ONLY */}
+            {isMobile && (
+                <div className="h-[calc(env(safe-area-inset-bottom)+56px)] bg-[#050505] border-t border-white/5 flex items-stretch px-2 z-50 pointer-events-auto">
+                    <button
+                        onClick={() => {
+                            const newTab = tab === 'latest' ? 'random' : 'latest';
+                            setTab(newTab);
+                            onNotify(`排序切换至: ${newTab === 'latest' ? '最新发布' : '随机推荐'}`, 'success');
+                        }}
+                        className={`flex-1 flex flex-col items-center justify-center gap-1 transition-all active:scale-95 ${tab === 'random' ? 'text-white' : 'text-white/50'}`}
+                    >
+                        <Home size={22} className={tab === 'random' ? 'fill-white' : ''} />
+                        <span className="text-[10px] font-medium">{tab === 'random' ? '随机' : '最新'}</span>
+                    </button>
+
+                    <button
+                        onClick={() => {
+                            const newMode = playbackMode === 'loop' ? 'next' : 'loop';
+                            setPlaybackMode(newMode);
+                            onNotify(`播放模式: ${newMode === 'loop' ? '单片循环' : '自动连播'}`, 'success');
+                        }}
+                        className={`flex-1 flex flex-col items-center justify-center gap-1 transition-all active:scale-95 ${playbackMode === 'next' ? 'text-white' : 'text-white/50'}`}
+                    >
+                        {playbackMode === 'loop' ? <Repeat size={22} opacity={0.6} /> : <ArrowRightCircle size={22} className="text-white" />}
+                        <span className="text-[10px] font-medium">播放模式</span>
+                    </button>
+
+                    <div className="flex-1 flex items-center justify-center">
+                        <button
+                            onClick={() => setIsSidebarOpen(true)}
+                            className="w-12 h-8 bg-white rounded-lg flex items-center justify-center transition-all active:scale-90 group relative overflow-hidden"
+                        >
+                            <div className="absolute inset-x-0 top-0 bottom-0 bg-primary/20 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            <Plus size={24} className="text-black font-bold relative z-10" />
+                        </button>
+                    </div>
+
+                    <button
+                        onClick={() => {
+                            const modes: ('smart' | 'cover' | 'contain')[] = ['smart', 'cover', 'contain'];
+                            const nextIndex = (modes.indexOf(displayMode) + 1) % modes.length;
+                            setDisplayMode(modes[nextIndex]);
+                            onNotify(`适配: ${modes[nextIndex]}`, 'success');
+                        }}
+                        className="flex-1 flex flex-col items-center justify-center gap-1 transition-all active:scale-95 text-white/50"
+                    >
+                        {displayMode === 'smart' ? <Monitor size={22} /> : <Maximize2 size={22} />}
+                        <span className="text-[10px] font-medium">画面比例</span>
+                    </button>
+
+                    <button
+                        onClick={() => {
+                            setIsMuted(!isMuted);
+                            onNotify(!isMuted ? '已静音' : '音量已开启', 'success');
+                        }}
+                        className={`flex-1 flex flex-col items-center justify-center gap-1 transition-all active:scale-95 ${!isMuted ? 'text-white' : 'text-white/50'}`}
+                    >
+                        {isMuted ? <VolumeX size={22} /> : <Volume2 size={22} />}
+                        <span className="text-[10px] font-medium">{isMuted ? '静音' : '音量'}</span>
+                    </button>
+                </div>
+            )}
 
             {/* Global Styles for hiding scrollbar */}
             <style>{`
@@ -1181,7 +1545,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                 <h3 className="text-white text-lg font-bold mb-2">确认删除</h3>
                                 <p className="text-white/50 text-sm leading-relaxed">
                                     确定要从 Emby 服务器删除
-                                    <span className="text-white/80 font-medium"> {deleteConfirmItem.Name} </span>
+                                    <span className="text-white/80 font-medium"> {deleteConfirmItem!.Name} </span>
                                     吗？此操作不可撤销。
                                 </p>
                             </div>
@@ -1195,7 +1559,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                 </button>
                                 <div className="w-px bg-white/10" />
                                 <button
-                                    onClick={() => handleDelete(deleteConfirmItem)}
+                                    onClick={() => handleDelete(deleteConfirmItem!)}
                                     disabled={isDeleting}
                                     className="flex-1 py-4 text-red-500 font-bold text-[15px] hover:bg-red-500/10 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                                 >
