@@ -21,3 +21,5 @@ PyJWT==2.11.0
 python-multipart==0.0.9
 bcrypt==4.0.1
 loguru==0.7.2
+telethon==1.36.0
+Pillow==10.4.0

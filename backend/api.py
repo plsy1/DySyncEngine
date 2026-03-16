@@ -27,6 +27,7 @@ from fetch import fetch_all_awemes, fetch_user_profile, fetch_video_profile
 from downloader import download_video, DOWNLOAD_API
 from auth import create_access_token, verify_password, get_password_hash, get_current_user
 from utils import extract_share_url, get_url_platform, resolve_redirect, extract_sec_user_id, sanitize_filename
+from telegram_uploader import tg_uploader
 import re
 import httpx
 import uuid
@@ -164,6 +165,24 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
 
     if task_id:
         update_task_progress(session, task_id, 100, status="completed", message="同步完成")
+
+    # --- Telegram Auto Upload ---
+    tg_enabled = get_config(session, "tg_auto_upload", "false") == "true"
+    tg_chat = get_config(session, "tg_target_chat")
+    if tg_enabled and tg_chat:
+        logger.info(f"触发 Telegram 自动同步: {uid}")
+        # 获取下载目录 (从 downloader.py 逻辑看是 nickname_uid 目录)
+        user = session.query(User).filter_by(uid=uid).first()
+        if user:
+            author_folder_base = f"{user.nickname}_{user.uid}"
+            from config import config
+            full_path = os.path.join(config.SAVE_DIR, author_folder_base)
+            
+            # 异步启动上传，不阻塞同步流程
+            asyncio.create_task(tg_uploader.upload_folder(tg_chat, full_path, {
+                "nickname": user.nickname,
+                "uid": user.uid
+            }))
 
 
 def download_user_videos_task(sec_user_id: str, platform: str, task_id: str):
@@ -593,6 +612,95 @@ def get_logs_api(lines: int = Query(1000, description="读取日志的行数")):
     except Exception as e:
         return {"logs": [f"读取日志失败: {str(e)}"]}
 
+
+# ----------------------------
+# Telegram 认证与配置 API
+# ----------------------------
+
+@router.post("/tg/setup")
+async def tg_setup(api_id: int = Form(...), api_hash: str = Form(...), phone: str = Form(...), session: Session = Depends(get_session)):
+    set_config(session, "tg_api_id", str(api_id))
+    set_config(session, "tg_api_hash", api_hash)
+    set_config(session, "tg_phone", phone)
+    
+    client = await tg_uploader.get_client()
+    if not client:
+        raise HTTPException(status_code=500, detail="Failed to initialize TG client")
+        
+    if not await client.is_user_authorized():
+        await client.send_code_request(phone)
+        return {"status": "needs_code"}
+    
+    return {"status": "authorized"}
+
+@router.post("/tg/verify")
+async def tg_verify(code: str = Form(...), password: Optional[str] = Form(None), session: Session = Depends(get_session)):
+    client = await tg_uploader.get_client()
+    if not client:
+        raise HTTPException(status_code=500, detail="TG client not initialized")
+    
+    phone = get_config(session, "tg_phone")
+    try:
+        try:
+            await client.sign_in(phone, code)
+        except SessionPasswordNeededError:
+            if not password:
+                return {"status": "error", "message": "Password required"}
+            await client.sign_in(password=password)
+        return {"status": "authorized"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@router.get("/tg/status")
+async def get_tg_status(session: Session = Depends(get_session)):
+    client = await tg_uploader.get_client()
+    is_auth = False
+    if client:
+        is_auth = await client.is_user_authorized()
+    
+    return {
+        "is_authorized": is_auth,
+        "api_id": get_config(session, "tg_api_id"),
+        "target_chat": get_config(session, "tg_target_chat"),
+        "auto_upload": get_config(session, "tg_auto_upload", "false") == "true"
+    }
+
+@router.get("/tg/chats")
+async def get_tg_chats():
+    client = await tg_uploader.get_client()
+    if not client or not await client.is_user_authorized():
+        return {"status": "unauthorized"}
+    
+    chats = []
+    chats.append({"id": "me", "name": "⭐ Saved Messages (收藏夹)", "type": "user"})
+    
+    async for dialog in client.iter_dialogs(limit=100):
+        entity = dialog.entity
+        type_str = "user"
+        if dialog.is_channel: type_str = "channel"
+        elif dialog.is_group: type_str = "group"
+        
+        display_name = dialog.name
+        if getattr(entity, 'bot', False):
+            display_name = f"🤖 {display_name}"
+            type_str = "bot"
+            
+        username = getattr(entity, 'username', '')
+        if username:
+            display_name = f"{display_name} (@{username})"
+
+        chats.append({
+            "id": dialog.id,
+            "name": display_name,
+            "type": type_str
+        })
+    return {"chats": chats}
+
+@router.post("/tg/settings")
+async def update_tg_settings(target_chat: str = Form(...), auto_upload: bool = Form(...), session: Session = Depends(get_session)):
+    set_config(session, "tg_target_chat", target_chat)
+    set_config(session, "tg_auto_upload", "true" if auto_upload else "false")
+    return {"status": "success"}
 
 def throw_auth_error(detail="用户名或密码错误"):
     raise HTTPException(

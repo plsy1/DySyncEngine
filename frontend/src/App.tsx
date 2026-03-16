@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Search, RefreshCw, LogOut, Settings as SettingsIcon, Loader2, Activity, Terminal, Play } from 'lucide-react';
+import { Plus, Search, RefreshCw, LogOut, Settings as SettingsIcon, Loader2, Activity, Terminal, Play, Send } from 'lucide-react';
 import type { User, ToastType, Task } from './types';
 import * as api from './api';
 import { UserCard } from './components/UserCard';
@@ -12,11 +12,12 @@ import { Settings } from './pages/Settings';
 import { Tasks } from './pages/Tasks';
 import { Logs } from './pages/Logs';
 import { EmbyPlayer } from './pages/EmbyPlayer';
+import { Telegram } from './pages/Telegram';
 import ReloadPrompt from './components/ReloadPrompt';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
-  const [view, setView] = useState<'dashboard' | 'settings' | 'tasks' | 'logs' | 'player'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'settings' | 'tasks' | 'logs' | 'player' | 'telegram'>('dashboard');
   const [users, setUsers] = useState<User[]>([]);
   const [activeTasks, setActiveTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -201,6 +202,13 @@ function App() {
               <Terminal size={20} />
             </button>
             <button
+              onClick={() => setView(v => v === 'telegram' ? 'dashboard' : 'telegram')}
+              className={`p-3 rounded-xl transition-all ${view === 'telegram' ? 'bg-primary text-white' : 'bg-white/5 text-white/60 hover:bg-white/10'}`}
+              title="Telegram 同步"
+            >
+              <Send size={20} />
+            </button>
+            <button
               onClick={() => setView(v => v === 'settings' ? 'dashboard' : 'settings')}
               className={`p-3 rounded-xl transition-all ${view === 'settings' ? 'bg-primary text-white' : 'bg-white/5 text-white/60 hover:bg-white/10'}`}
               title="设置"
@@ -231,6 +239,10 @@ function App() {
       ) : view === 'logs' ? (
         <main className="max-w-7xl mx-auto px-6 pt-10">
           <Logs />
+        </main>
+      ) : view === 'telegram' ? (
+        <main className="max-w-4xl mx-auto pt-10">
+          <Telegram onBack={() => setView('dashboard')} onNotify={showToast} />
         </main>
       ) : (
         <main className="max-w-7xl mx-auto px-6 pt-10">

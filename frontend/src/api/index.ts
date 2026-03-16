@@ -114,3 +114,39 @@ export const getLogs = async (): Promise<{ logs: string[] }> => {
   const { data } = await api.get<{ logs: string[] }>('logs');
   return data;
 };
+
+// Telegram endpoints
+export const tgSetup = async (apiId: number, apiHash: string, phone: string) => {
+  const formData = new FormData();
+  formData.append('api_id', apiId.toString());
+  formData.append('api_hash', apiHash);
+  formData.append('phone', phone);
+  const { data } = await api.post('tg/setup', formData);
+  return data;
+};
+
+export const tgVerify = async (code: string, password?: string) => {
+  const formData = new FormData();
+  formData.append('code', code);
+  if (password) formData.append('password', password);
+  const { data } = await api.post('tg/verify', formData);
+  return data;
+};
+
+export const getTgStatus = async () => {
+  const { data } = await api.get('tg/status');
+  return data;
+};
+
+export const getTgChats = async () => {
+  const { data } = await api.get('tg/chats');
+  return data;
+};
+
+export const updateTgSettings = async (targetChat: string, autoUpload: boolean) => {
+  const formData = new FormData();
+  formData.append('target_chat', targetChat);
+  formData.append('auto_upload', autoUpload ? 'true' : 'false');
+  const { data } = await api.post('tg/settings', formData);
+  return data;
+};

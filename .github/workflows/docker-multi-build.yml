@@ -1,52 +1,73 @@
-name: CI Docker Multi Job
+name: CI Docker GHCR Build
 
 on:
   push:
     branches:
       - main
+    paths:
+      - 'VERSION'
   workflow_dispatch:
 
 jobs:
-  docker-amd64:
+  docker-build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     outputs:
-      ts: ${{ steps.timestamp.outputs.ts }}
+      version: ${{ steps.version.outputs.VERSION }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-      - name: Get timestamp
-        id: timestamp
-        run: echo "ts=$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
+      - name: Get version
+        id: version
+        run: echo "VERSION=$(cat VERSION | tr -d '\n')" >> $GITHUB_OUTPUT
 
-      - uses: docker/login-action@v3
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/setup-buildx-action@v3
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
-      - uses: docker/build-push-action@v6
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
         with:
-          file: Dockerfile
+          context: .
+          file: ./Dockerfile
           push: true
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           tags: |
-            plsy1/douyinapi:${{ steps.timestamp.outputs.ts }}-amd64
-            plsy1/douyinapi:latest-amd64
-          cache-from: type=registry,ref=plsy1/douyinapi:buildcache
-          cache-to: type=registry,ref=plsy1/douyinapi:buildcache,mode=max
+            ghcr.io/${{ github.repository_owner }}/dy_sync_engine:${{ steps.version.outputs.VERSION }}
+            ghcr.io/${{ github.repository_owner }}/dy_sync_engine:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-  docker-manifest:
+  create-release:
     runs-on: ubuntu-latest
-    needs: [docker-amd64]
+    permissions:
+      contents: write
+    needs: [docker-build]
     steps:
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@v4
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          fetch-depth: 0
 
-      - name: Create multi-arch manifest
-        run: |
-          docker buildx imagetools create \
-            --tag plsy1/douyinapi:latest \
-            plsy1/douyinapi:latest-amd64
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.docker-build.outputs.version }}
+          name: Release v${{ needs.docker-build.outputs.version }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
