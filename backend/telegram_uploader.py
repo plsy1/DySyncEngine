@@ -227,27 +227,34 @@ class TelegramUploader:
                     parent_path = os.path.join(config.SAVE_DIR, *path_parts)
                     
                     if aweme.aweme_type == 0:
-                        filename_base = aweme.desc if aweme.desc else aweme.aweme_id
-                        filename_base = sanitize_filename(filename_base)
-                        filename_base = f"{filename_base}.mp4"
-                        potential_path = os.path.join(parent_path, filename_base)
-                        potential_path_with_awemeid = os.path.join(parent_path, f"{filename_base}_{aweme.aweme_id}.mp4")
-                    else:   
-                        filename_base = aweme.desc if aweme.desc else aweme.aweme_id
-                        filename_base = sanitize_filename(filename_base)
-                        potential_path = os.path.join(parent_path, filename_base)
-                        potential_path_with_awemeid = os.path.join(parent_path, f"{filename_base}_{aweme.aweme_id}")
+                        base_name = sanitize_filename(aweme.desc if aweme.desc else aweme.aweme_id)
+                        # 1. 优先尝试新版标准路径: 文案 [ID].mp4
+                        potential_new = os.path.join(parent_path, f"{base_name} [{aweme.aweme_id}].mp4")
+                        # 2. 尝试旧版带下划线路径: 文案_ID.mp4
+                        potential_old_id = os.path.join(parent_path, f"{base_name}_{aweme.aweme_id}.mp4")
+                        # 3. 尝试最原始路径: 文案.mp4
+                        potential_legacy = os.path.join(parent_path, f"{base_name}.mp4")
                         
-                    if os.path.exists(potential_path):
-                        target_path = potential_path
-                        aweme.local_path = target_path # 顺便修复数据库
-                        session.commit()
-                    elif os.path.exists(potential_path_with_awemeid):
-                        target_path = potential_path_with_awemeid
-                        aweme.local_path = target_path # 顺便修复数据库
+                        if os.path.exists(potential_new): target_path = potential_new
+                        elif os.path.exists(potential_old_id): target_path = potential_old_id
+                        elif os.path.exists(potential_legacy): target_path = potential_legacy
+                    else:   
+                        base_name = sanitize_filename(aweme.desc if aweme.desc else aweme.aweme_id)
+                        # 1. 优先尝试新版标准目录: 文案 [ID]
+                        potential_new = os.path.join(parent_path, f"{base_name} [{aweme.aweme_id}]")
+                        # 2. 尝试旧版目录
+                        potential_old_id = os.path.join(parent_path, f"{base_name}_{aweme.aweme_id}")
+                        potential_legacy = os.path.join(parent_path, base_name)
+                        
+                        if os.path.exists(potential_new): target_path = potential_new
+                        elif os.path.exists(potential_old_id): target_path = potential_old_id
+                        elif os.path.exists(potential_legacy): target_path = potential_legacy
+                        
+                    if target_path:
+                        aweme.local_path = target_path # 修复数据库路径
                         session.commit()
                     else:
-                        logger.warning(f"本地文件不存在，且无法找回，跳过: {aweme.aweme_id} (Path: {potential_path})")
+                        logger.warning(f"本地文件不存在，且无法找回，跳过: {aweme.aweme_id}")
                         continue
 
                 caption = f"#{aweme.nickname} #id_{aweme.uid}\n{aweme.desc}"

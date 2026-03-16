@@ -21,6 +21,7 @@ interface EmbyItem {
     Width?: number;
     Height?: number;
     DateCreated?: string;
+    Path?: string;
     ImageTags?: {
         Primary?: string;
     };
@@ -957,7 +958,27 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                         )}
 
                                         {/* Right Action Buttons */}
-                                        <div className="absolute right-4 bottom-32 flex flex-col gap-8 items-center pointer-events-auto z-40">
+                                        <div className="absolute right-4 bottom-32 flex flex-col gap-10 items-center pointer-events-auto z-40">
+                                            {item.Path && videoMetadata[item.Path]?.avatar_url && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        const m = videoMetadata[item.Path];
+                                                        if (m.platform === 'douyin' && m.sec_user_id) {
+                                                            window.open(`https://www.douyin.com/user/${m.sec_user_id}`, '_blank');
+                                                        } else if (m.platform === 'tiktok' && m.nickname) {
+                                                            window.open(`https://www.tiktok.com/@${m.nickname}`, '_blank');
+                                                        }
+                                                    }}
+                                                    className="w-14 h-14 rounded-full border-2 border-white overflow-hidden shadow-xl hover:scale-110 transition-transform active:scale-90"
+                                                >
+                                                    <img 
+                                                        src={videoMetadata[item.Path].avatar_url} 
+                                                        alt="avatar" 
+                                                        className="w-full h-full object-cover"
+                                                    />
+                                                </button>
+                                            )}
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
@@ -1001,15 +1022,30 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                     {/* Video Info Overlay */}
                                     <div className="absolute bottom-0 left-0 right-0 p-6 pb-12 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none flex flex-col justify-end z-30">
                                         <div className="flex items-center gap-2 mb-2 drop-shadow-md">
-                                            <span className="text-white font-bold text-lg">@{videoMetadata[(item as any).Path]?.nickname || item.Name}</span>
-                                            {videoMetadata[(item as any).Path]?.platform && (
+                                            <button 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (item.Path && videoMetadata[item.Path]) {
+                                                        const m = videoMetadata[item.Path];
+                                                        if (m.platform === 'douyin' && m.sec_user_id) {
+                                                            window.open(`https://www.douyin.com/user/${m.sec_user_id}`, '_blank');
+                                                        } else if (m.platform === 'tiktok' && m.nickname) {
+                                                            window.open(`https://www.tiktok.com/@${m.nickname}`, '_blank');
+                                                        }
+                                                    }
+                                                }}
+                                                className="text-white font-bold text-lg hover:text-primary transition-colors pointer-events-auto"
+                                            >
+                                                @{item.Path && videoMetadata[item.Path]?.nickname ? videoMetadata[item.Path].nickname : item.Name}
+                                            </button>
+                                            {item.Path && videoMetadata[item.Path]?.platform && (
                                                 <span className="px-1.5 py-0.5 bg-primary/20 text-primary text-[10px] rounded border border-primary/20 uppercase">
-                                                    {videoMetadata[(item as any).Path]?.platform}
+                                                    {videoMetadata[item.Path].platform}
                                                 </span>
                                             )}
                                         </div>
                                         <p className="text-white/80 text-sm line-clamp-3 drop-shadow-md">
-                                            {videoMetadata[(item as any).Path]?.desc || item.Overview}
+                                            {(item.Path && videoMetadata[item.Path]?.desc) || item.Overview}
                                         </p>
                                     </div>
 

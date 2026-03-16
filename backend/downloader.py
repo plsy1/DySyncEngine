@@ -45,11 +45,10 @@ def download_video(share_url: str, author_folder: str, filename: str, aweme_id: 
             content_type = resp.headers.get("content-type", "")
             
             if "application/zip" in content_type or "zip" in resp.headers.get("content-disposition", "").lower():
-                base_filename = f"{sanitize_filename(filename)}_{aweme_id}"
-                zip_folder = os.path.join(parent_path, base_filename)
-
-                if os.path.exists(zip_folder):
-                    zip_folder = os.path.join(parent_path, f"{base_filename}_{aweme_id}")
+                # 统一命名规范：视频描述 [作品ID]
+                # 这种带中括号的 ID 极大方便了跨系统后的精准识别
+                base_name = sanitize_filename(filename)
+                zip_folder = os.path.join(parent_path, f"{base_name} [{aweme_id}]")
 
                 Path(zip_folder).mkdir(parents=True, exist_ok=True)
                 
@@ -59,10 +58,9 @@ def download_video(share_url: str, author_folder: str, filename: str, aweme_id: 
                 logger.info(f"解压完成: {zip_folder}")
                 return zip_folder
             else:
-                base_filename = sanitize_filename(filename)
-                file_path = os.path.join(parent_path, f"{base_filename}.mp4")
-                if os.path.exists(file_path):
-                    file_path = os.path.join(parent_path, f"{base_filename}_{aweme_id}.mp4")
+                base_name = sanitize_filename(filename)
+                # 统一在文件名末尾包含 [aweme_id]，不再依赖冲突才加
+                file_path = os.path.join(parent_path, f"{base_name} [{aweme_id}].mp4")
                 
                 with open(file_path, "wb") as f:
                     f.write(resp.content)

@@ -33,6 +33,7 @@ import httpx
 import uuid
 import io
 import os
+import unicodedata
 from loguru import logger
 import asyncio
 from telethon.errors import SessionPasswordNeededError
@@ -142,8 +143,6 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
     for item in new_data:
         item["platform"] = platform
         add_aweme(session, item)
-
-    # 写入数据库 (已在上方循环中处理)
 
     # 获取未下载作品
     undownloaded_awemes = get_undownloaded_awemes_by_uid(session, uid)
@@ -594,30 +593,104 @@ def change_password_api(req: PasswordChangeRequest, session: Session = Depends(g
 
 @router.post("/user/preference")
 def update_user_pref_api(req: UserPreferenceRequest, session: Session = Depends(get_session), _ = Depends(get_current_user)):
-    # 使用 exclude_unset=True 确保只有请求中显式包含的字段才会被更新
-    # 这样可以区分 "未提供该字段" (不修改) 和 "显式提供为 null" (修改为默认)
     update_data = req.model_dump(exclude_unset=True)
     uid = update_data.pop("uid")
-    
     success = update_user_preference(session, uid, **update_data)
     return {"success": success}
 
 @router.post("/videos/lookup")
 def lookup_videos_by_path(req: VideoLookupRequest, session: Session = Depends(get_session)):
     from db import Aweme
-    # Bulk lookup by local_path
-    results = session.query(Aweme).filter(Aweme.local_path.in_(req.paths)).all()
+    import unicodedata
+
+    def normalize_p(p: str):
+        if not p: return ""
+        return unicodedata.normalize('NFC', p).lower().replace("\\", "/")
+
+    # 1. 第一轮扫描：搜集路径信息并尝试从文件名提取 ID
     mapping = {}
-    for aweme in results:
-        mapping[aweme.local_path] = {
-            "nickname": aweme.nickname,
-            "desc": aweme.desc,
-            "aweme_id": aweme.aweme_id,
-            "uid": aweme.uid,
-            "platform": aweme.platform,
-            "share_url": aweme.share_url
-        }
+    remaining_paths = []
+    extracted_ids = []
+    
+    for p in req.paths:
+        norm_p = normalize_p(p)
+        filename = norm_p.split("/")[-1]
+        
+        # 尝试提取方括号中的 ID: "视频文案 [7123451234123123].mp4"
+        id_match = re.search(r'\[(\d+)\]', filename)
+        if id_match:
+            aweme_id = id_match.group(1)
+            # 记录此路径对应哪个 ID
+            remaining_paths.append({"original": p, "norm": norm_p, "aweme_id": aweme_id, "filename": filename})
+            extracted_ids.append(aweme_id)
+        else:
+            remaining_paths.append({"original": p, "norm": norm_p, "aweme_id": None, "filename": filename})
+
+    # 2. 如果存在 ID，直接通过 ID 批量查询数据库（这是最精准的）
+    if extracted_ids:
+        # 连表查询 User 以获取 sec_user_id (用于跳转主页)
+        from db import User
+        id_results = session.query(Aweme, User).join(User, Aweme.uid == User.uid).filter(Aweme.aweme_id.in_(extracted_ids)).all()
+        
+        # id_results 是 (Aweme, User) 元组列表
+        for aweme, user in id_results:
+            mapping[aweme.aweme_id] = {
+                "nickname": aweme.nickname,
+                "desc": aweme.desc,
+                "aweme_id": aweme.aweme_id,
+                "uid": aweme.uid,
+                "sec_user_id": user.sec_user_id,
+                "avatar_url": user.avatar_url,
+                "platform": aweme.platform,
+                "share_url": aweme.share_url
+            }
+        
+        # 填充结果并移除已匹配的路径
+        still_remaining = []
+        for item in remaining_paths:
+            if item["aweme_id"] and item["aweme_id"] in mapping:
+                data = mapping[item["aweme_id"]]
+                # 注意：我们要用原始路径作为 key 返回给前端
+                mapping[item["original"]] = data
+            else:
+                still_remaining.append(item)
+        remaining_paths = still_remaining
+
+    # 3. 回退逻辑：针对没有 ID 的老文件，使用原有的模糊匹配
+    if remaining_paths:
+        from db import User
+        # 获取 UID 集合搜寻范围
+        uids = set()
+        for item in remaining_paths:
+            uid_match = re.search(r'_(\d+)/', item["norm"])
+            if uid_match: uids.add(uid_match.group(1))
+
+        if uids:
+            potential_matches = session.query(Aweme, User).join(User, Aweme.uid == User.uid).filter(Aweme.uid.in_(list(uids)), Aweme.downloaded == True).all()
+        else:
+            potential_matches = session.query(Aweme, User).join(User, Aweme.uid == User.uid).filter(Aweme.downloaded == True).order_by(Aweme.id.desc()).limit(2000).all()
+
+        for info in remaining_paths:
+            for aweme, user in potential_matches:
+                if not aweme.local_path: continue
+                l_path = normalize_p(aweme.local_path)
+                l_filename = l_path.split("/")[-1]
+                
+                if info["filename"] == l_filename:
+                    mapping[info["original"]] = {
+                        "nickname": aweme.nickname,
+                        "desc": aweme.desc,
+                        "aweme_id": aweme.aweme_id,
+                        "uid": aweme.uid,
+                        "sec_user_id": user.sec_user_id,
+                        "avatar_url": user.avatar_url,
+                        "platform": aweme.platform,
+                        "share_url": aweme.share_url
+                    }
+                    break
+                    
     return mapping
+
 
 @router.get("/scheduler/status")
 def get_scheduler_status():
@@ -649,7 +722,6 @@ def get_logs_api(lines: int = Query(1000, description="读取日志的行数")):
     
     try:
         with open(log_path, "r", encoding="utf-8") as f:
-            # 简单的读取末尾 N 行逻辑
             all_lines = f.readlines()
             return {"logs": all_lines[-lines:] if len(all_lines) > lines else all_lines}
     except Exception as e:
@@ -741,9 +813,6 @@ async def get_tg_chats():
 
 @router.post("/tg/sync_user")
 async def tg_sync_user_api(uid: str = Query(..., description="用户的 uid"), background_tasks: BackgroundTasks = None, session: Session = Depends(get_session)):
-    """
-    手动触发将指定用户的未同步内容上传到 Telegram
-    """
     user = session.query(User).filter_by(uid=uid).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -767,9 +836,6 @@ async def tg_sync_user_api(uid: str = Query(..., description="用户的 uid"), b
 
 @router.post("/tg/sync_all")
 async def tg_sync_all_api(session: Session = Depends(get_session)):
-    """
-    手动触发全量 TG 同步审计：扫描所有用户未同步到 TG 的内容
-    """
     task_id = str(uuid.uuid4())
     create_task(session, task_id, target_id="tg_global_audit")
     
@@ -788,5 +854,3 @@ def throw_auth_error(detail="用户名或密码错误"):
         detail=detail,
         headers={"WWW-Authenticate": "Bearer"},
     )
-
-
