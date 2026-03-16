@@ -958,64 +958,78 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                         )}
 
                                         {/* Right Action Buttons */}
-                                        <div className="absolute right-4 bottom-32 flex flex-col gap-10 items-center pointer-events-auto z-40">
+                                        <div className="absolute right-4 bottom-32 flex flex-col gap-6 items-center pointer-events-auto z-40">
                                             {item.Path && videoMetadata[item.Path]?.avatar_url && (
+                                                <div className="flex flex-col items-center mb-2">
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            if (!item.Path) return;
+                                                            const m = videoMetadata[item.Path];
+                                                            if (m.platform === 'douyin' && m.sec_user_id) {
+                                                                window.open(`https://www.douyin.com/user/${m.sec_user_id}`, '_blank');
+                                                            } else if (m.platform === 'tiktok' && m.nickname) {
+                                                                window.open(`https://www.tiktok.com/@${m.nickname}`, '_blank');
+                                                            }
+                                                        }}
+                                                        className="w-14 h-14 rounded-full border-2 border-white overflow-hidden shadow-xl hover:scale-110 transition-transform active:scale-90"
+                                                    >
+                                                        <img 
+                                                            src={videoMetadata[item.Path!].avatar_url} 
+                                                            alt="avatar" 
+                                                            className="w-full h-full object-cover"
+                                                        />
+                                                    </button>
+                                                </div>
+                                            )}
+
+                                            {/* Share Button */}
+                                            <div className="flex flex-col items-center">
                                                 <button
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        const m = videoMetadata[item.Path];
-                                                        if (m.platform === 'douyin' && m.sec_user_id) {
-                                                            window.open(`https://www.douyin.com/user/${m.sec_user_id}`, '_blank');
-                                                        } else if (m.platform === 'tiktok' && m.nickname) {
-                                                            window.open(`https://www.tiktok.com/@${m.nickname}`, '_blank');
-                                                        }
+                                                        handleShare(item);
                                                     }}
-                                                    className="w-14 h-14 rounded-full border-2 border-white overflow-hidden shadow-xl hover:scale-110 transition-transform active:scale-90"
+                                                    onTouchStart={(e) => e.stopPropagation()}
+                                                    onTouchMove={(e) => e.stopPropagation()}
+                                                    onTouchEnd={(e) => e.stopPropagation()}
+                                                    disabled={sharingId === item.Id}
+                                                    className="flex items-center justify-center w-12 h-12 text-white transition-all active:scale-95 drop-shadow-xl"
                                                 >
-                                                    <img 
-                                                        src={videoMetadata[item.Path].avatar_url} 
-                                                        alt="avatar" 
-                                                        className="w-full h-full object-cover"
-                                                    />
-                                                </button>
-                                            )}
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleShare(item);
-                                                }}
-                                                onTouchStart={(e) => e.stopPropagation()}
-                                                onTouchMove={(e) => e.stopPropagation()}
-                                                onTouchEnd={(e) => e.stopPropagation()}
-                                                disabled={sharingId === item.Id}
-                                                className="flex flex-col items-center group relative p-4 -m-4"
-                                            >
-                                                <div className="flex items-center justify-center text-white transition-all group-active:scale-95 drop-shadow-lg">
                                                     {sharingId === item.Id ? (
-                                                        <Loader2 size={36} className="animate-spin opacity-80" />
+                                                        <Loader2 size={32} className="animate-spin opacity-80" />
                                                     ) : (
-                                                        <svg width="36" height="36" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                                            <path d="M24 6L24 32" stroke="white" strokeWidth="3" strokeLinecap="round"/>
-                                                            <path d="M37 19L24 6L11 19" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-                                                            <path d="M8 34V40C8 41.1046 8.89543 42 10 42H38C39.1046 42 40 41.1046 40 40V34" stroke="white" strokeWidth="3" strokeLinecap="round"/>
+                                                        <svg width="34" height="34" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                            <path d="M26 6L42 22L26 38" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
+                                                            <path d="M6 42C6 42 10 30 20 25C30 20 42 22 42 22" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
                                                         </svg>
                                                     )}
-                                                </div>
-                                            </button>
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setDeleteConfirmItem(item);
-                                                }}
-                                                onTouchStart={(e) => e.stopPropagation()}
-                                                onTouchMove={(e) => e.stopPropagation()}
-                                                onTouchEnd={(e) => e.stopPropagation()}
-                                                className="flex flex-col items-center group relative p-4 -m-4"
-                                            >
-                                                <div className="flex items-center justify-center text-white transition-all group-active:scale-95 drop-shadow-lg">
-                                                    <Trash2 size={32} className="opacity-80" />
-                                                </div>
-                                            </button>
+                                                </button>
+                                                <span className="text-white text-[11px] font-bold mt-1 drop-shadow-md">分享</span>
+                                            </div>
+
+                                            {/* Delete Button */}
+                                            <div className="flex flex-col items-center">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setDeleteConfirmItem(item);
+                                                    }}
+                                                    onTouchStart={(e) => e.stopPropagation()}
+                                                    onTouchMove={(e) => e.stopPropagation()}
+                                                    onTouchEnd={(e) => e.stopPropagation()}
+                                                    className="flex items-center justify-center w-12 h-12 text-white transition-all active:scale-95 drop-shadow-xl"
+                                                >
+                                                    <svg width="32" height="32" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                        <path d="M9 10V44H39V10H9Z" fill="none" stroke="white" strokeWidth="4" strokeLinejoin="round"/>
+                                                        <path d="M20 20V34" stroke="white" strokeWidth="4" strokeLinecap="round"/>
+                                                        <path d="M28 20V34" stroke="white" strokeWidth="4" strokeLinecap="round"/>
+                                                        <path d="M4 10H44" stroke="white" strokeWidth="4" strokeLinecap="round"/>
+                                                        <path d="M16 10L19.289 4H28.7771L32 10H16Z" fill="none" stroke="white" strokeWidth="4" strokeLinejoin="round"/>
+                                                    </svg>
+                                                </button>
+                                                <span className="text-white text-[11px] font-bold mt-1 drop-shadow-md">删除</span>
+                                            </div>
                                         </div>
                                     </div>
 
