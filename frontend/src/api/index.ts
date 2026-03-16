@@ -158,3 +158,8 @@ export const tgSyncAll = async (): Promise<ApiResponse> => {
   const { data } = await api.post<ApiResponse>('tg/sync_all');
   return data;
 };
+
+export const lookupVideos = async (paths: string[]): Promise<Record<string, any>> => {
+  const { data } = await api.post('videos/lookup', { paths });
+  return data;
+};

@@ -531,6 +531,9 @@ class GlobalSettings(BaseModel):
     emby_api_key: str | None = None
     emby_default_library: str | None = None
 
+class VideoLookupRequest(BaseModel):
+    paths: list[str]
+
 class UserPreferenceRequest(BaseModel):
     uid: str
     video_pref: bool | None = None
@@ -598,6 +601,23 @@ def update_user_pref_api(req: UserPreferenceRequest, session: Session = Depends(
     
     success = update_user_preference(session, uid, **update_data)
     return {"success": success}
+
+@router.post("/videos/lookup")
+def lookup_videos_by_path(req: VideoLookupRequest, session: Session = Depends(get_session)):
+    from db import Aweme
+    # Bulk lookup by local_path
+    results = session.query(Aweme).filter(Aweme.local_path.in_(req.paths)).all()
+    mapping = {}
+    for aweme in results:
+        mapping[aweme.local_path] = {
+            "nickname": aweme.nickname,
+            "desc": aweme.desc,
+            "aweme_id": aweme.aweme_id,
+            "uid": aweme.uid,
+            "platform": aweme.platform,
+            "share_url": aweme.share_url
+        }
+    return mapping
 
 @router.get("/scheduler/status")
 def get_scheduler_status():

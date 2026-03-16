@@ -46,6 +46,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     const [sidebarPath, setSidebarPath] = useState<{ id: string, name: string }[]>([]);
     const [foldersLoading, setFoldersLoading] = useState(false);
     const [isMuted, setIsMuted] = useState(true);
+    const [videoMetadata, setVideoMetadata] = useState<Record<string, any>>({});
 
     // Progress State
     const [currentTime, setCurrentTime] = useState<{ [key: string]: number }>({});
@@ -163,6 +164,14 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
             setItems(uniqueItems);
 
+            // Enhance with local metadata
+            const paths = uniqueItems.map(i => (i as any).Path).filter(Boolean);
+            if (paths.length > 0) {
+                api.lookupVideos(paths).then(mapping => {
+                    setVideoMetadata(prev => ({ ...prev, ...mapping }));
+                }).catch(e => console.error("Metadata lookup failed", e));
+            }
+
             if (uniqueItems.length === 0) {
                 setError('在指定的 Emby 服务器中没有找到视频内容');
             }
@@ -231,6 +240,14 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                     });
                 }
                 setItems(nextList);
+
+                // Enhance new items
+                const newPaths = uniqueNewItems.map(i => (i as any).Path).filter(Boolean);
+                if (newPaths.length > 0) {
+                    api.lookupVideos(newPaths).then(mapping => {
+                        setVideoMetadata(prev => ({ ...prev, ...mapping }));
+                    }).catch(e => console.error("Metadata lookup (load more) failed", e));
+                }
             }
         } catch (err) {
             console.error('Failed to load more videos:', err);
@@ -983,14 +1000,17 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
                                     {/* Video Info Overlay */}
                                     <div className="absolute bottom-0 left-0 right-0 p-6 pb-12 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none flex flex-col justify-end z-30">
-                                        <h2 className="text-white text-xl font-bold mb-2 drop-shadow-lg leading-tight line-clamp-2">
-                                            {item.Name}
-                                        </h2>
-                                        {item.Overview && (
-                                            <p className="text-white/80 text-sm line-clamp-3 drop-shadow-md">
-                                                {item.Overview}
-                                            </p>
-                                        )}
+                                        <div className="flex items-center gap-2 mb-2 drop-shadow-md">
+                                            <span className="text-white font-bold text-lg">@{videoMetadata[(item as any).Path]?.nickname || item.Name}</span>
+                                            {videoMetadata[(item as any).Path]?.platform && (
+                                                <span className="px-1.5 py-0.5 bg-primary/20 text-primary text-[10px] rounded border border-primary/20 uppercase">
+                                                    {videoMetadata[(item as any).Path]?.platform}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="text-white/80 text-sm line-clamp-3 drop-shadow-md">
+                                            {videoMetadata[(item as any).Path]?.desc || item.Overview}
+                                        </p>
                                     </div>
 
                                     {/* Progress Bar - Bottom (Douyin Style) */}
