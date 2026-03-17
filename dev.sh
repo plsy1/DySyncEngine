@@ -56,6 +56,9 @@ echo "✨ Starting Frontend (Port 5173 on 0.0.0.0)..."
 (cd frontend && npm run dev -- --host 0.0.0.0) &
 
 # Start Backend (Uvicorn)
-echo "🐍 Starting Backend (Port 8000 on 0.0.0.0)..."
+export PORT=${PORT:-8000}
+export SAVE_DIR=${SAVE_DIR:-videos}
 export PYTHONPATH=$PYTHONPATH:$(pwd)/backend
-uvicorn main:app --app-dir ./backend --host 0.0.0.0 --port ${PORT:-8000} --reload
+
+echo "🐍 Starting Backend (Port $PORT on 0.0.0.0)..."
+uvicorn main:app --app-dir ./backend --host 0.0.0.0 --port $PORT --reload
