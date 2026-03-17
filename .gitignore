@@ -423,5 +423,4 @@ docker-compose.yml
 videos/
 dev_example/
 # External API Configs
-3rd/douyin_api/config.yaml
 config/
