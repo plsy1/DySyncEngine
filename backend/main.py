@@ -4,11 +4,32 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from api import router, sync_user_videos
 from db import get_session, get_auto_update_users
+import sys
 import os
 import asyncio
 from loguru import logger
 import logging
-import sys
+
+# ==============================================================================
+# 集成外部 Douyin_TikTok_Download_API 项目
+# ==============================================================================
+# 将其所在目录加入到 Python 模块搜索路径中
+EXTERNAL_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "3rd", "douyin_api")
+if EXTERNAL_DIR not in sys.path:
+    # 使用 insert(0, ...) 确保引用它的模块时它拥有最高优先级 (防止与其他 app 命名的包冲突)
+    sys.path.insert(0, EXTERNAL_DIR)
+
+# 这时候可以从外部项目加载其路由和应用
+# 注意：由于外部项目内部使用了绝对导入 (例如 from app.xxx)，
+# 且由于它自己的 main.py 里会初始化一些全局配置，我们这里导入其路由。
+try:
+    from app.api.router import router as external_api_router
+    HAS_EXTERNAL_API = True
+    logger.info("成功加载外部 Douyin_TikTok_Download_API 路由器")
+except ImportError as e:
+    logger.error(f"无法加载外部 Douyin_TikTok_Download_API 项目: {e}")
+    HAS_EXTERNAL_API = False
+# ==============================================================================
 
 # 配置 Loguru 拦截标准库日志
 class InterceptHandler(logging.Handler):
@@ -53,6 +74,10 @@ app = FastAPI(title="Douyin 视频抓取与下载")
 
 app.include_router(router, prefix="/api")
 
+# 挂载外部 API 路由，前置路径为 /api/external
+if HAS_EXTERNAL_API:
+    app.include_router(external_api_router, prefix="/api/external")
+    logger.info("外部 API 已挂载到 /api/external")
 
 from scheduler import scheduler_manager
 

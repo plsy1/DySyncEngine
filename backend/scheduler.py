@@ -27,7 +27,10 @@ class SchedulerManager:
                 # 决定下次运行时间
                 now = int(time.time())
                 if self.last_run is None:
-                    self.next_run = now
+                    # 首次启动时，不要立即运行，而是等待一个完整的间隔
+                    self.last_run = now
+                    self.next_run = now + interval_seconds
+                    logger.info(f"首次启动，调度器将在 {interval_mins} 分钟后开始第一次任务")
                 else:
                     self.next_run = self.last_run + interval_seconds
                 

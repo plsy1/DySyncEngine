@@ -10,12 +10,14 @@ services:
       - ./data:/app/backend/data
       # Downloaded videos/assets
       - ./videos:/app/videos
+      # Custom config for external API
+      - ./config/douyin_web/config.yaml:/app/3rd/douyin_api/crawlers/douyin/web/config.yaml
+      - ./config/tiktok_web/config.yaml:/app/3rd/douyin_api/crawlers/tiktok/web/config.yaml
+      - ./config/tiktok_app/config.yaml:/app/3rd/douyin_api/crawlers/tiktok/app/config.yaml
       # Custom config (optional, can also use env vars)
-      # - ./config.yaml:/app/config.yaml
     environment:
       - PORT=80
       - PYTHONUNBUFFERED=1
       # Example ENV overrides for config.yaml
       - SAVE_DIR=videos
-      - BASE_API_URL=http://10.1.1.6
     restart: unless-stopped

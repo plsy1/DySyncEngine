@@ -533,7 +533,8 @@ def download_from_share_url(share_url: str = Query(..., description="抖音分�
         saved_path = download_video(share_url, author_folder, filename, aweme_id)
         
         if saved_path:
-            # 更新下载状态和路径
+            # 更新下载状态 and 路径
+            from db import Aweme
             aweme = session.query(Aweme).filter_by(aweme_id=aweme_id).first()
             if aweme:
                 aweme.downloaded = True

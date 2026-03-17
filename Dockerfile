@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir -r ./backend/requirements.txt
 
 # Copy backend source
 COPY backend/ ./backend/
+COPY 3rd/douyin_api/ ./3rd/douyin_api/
 COPY config.yaml ./
 
 # Copy built frontend from previous stage
