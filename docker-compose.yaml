@@ -1,7 +1,7 @@
 services:
   dysyncengine:
     build: .
-    image: dysyncengine:latest
+    image: ghcr.io/plsy1/dy_sync_engine:latest
     container_name: dysyncengine
     ports:
       - "80:80"
