@@ -13,10 +13,12 @@ interface UserCardProps {
     onToggleAutoUpdate: (uid: string, enabled: boolean) => void;
     onPreferenceChange?: (uid: string, video: boolean | null, note: boolean | null, tgSync: boolean | null, tgChat: string | null) => void;
     onTgSync?: (uid: string) => void;
+    onMarkTgExported?: (uid: string) => void;
 }
 
-export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, onPreferenceChange, onTgSync }: UserCardProps) => {
+export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, onPreferenceChange, onTgSync, onMarkTgExported }: UserCardProps) => {
     const [isPending, setIsPending] = useState(false);
+    const [isMarking, setIsMarking] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
     const isSyncing = task?.status === 'running' || task?.status === 'pending';
 
@@ -216,18 +218,38 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
                                         position="top"
                                     />
                                 </div>
-                                <div className="relative">
-                                    <input
-                                        type="text"
-                                        placeholder="目标 ID (例如: -100xxx 或 me)"
-                                        defaultValue={user.tg_target_chat || ''}
-                                        onBlur={(e) => {
-                                            if (e.target.value !== (user.tg_target_chat || '')) {
-                                                onPreferenceChange?.(user.uid, user.download_video_override, user.download_note_override, user.tg_sync_enabled, e.target.value);
+                                <div className="flex gap-2">
+                                    <div className="relative flex-1">
+                                        <input
+                                            type="text"
+                                            placeholder="目标 ID (例如: -100xxx 或 me)"
+                                            defaultValue={user.tg_target_chat || ''}
+                                            onBlur={(e) => {
+                                                if (e.target.value !== (user.tg_target_chat || '')) {
+                                                    onPreferenceChange?.(user.uid, user.download_video_override, user.download_note_override, user.tg_sync_enabled, e.target.value);
+                                                }
+                                            }}
+                                            className="w-full bg-white/5 border border-white/5 rounded-xl py-2.5 px-4 text-xs text-white/70 outline-none focus:border-primary/30 transition-all placeholder:text-white/10"
+                                        />
+                                    </div>
+                                    <button
+                                        onClick={async (e) => {
+                                            e.stopPropagation();
+                                            if (window.confirm('确定要将该用户所有作品标记为已上传吗？这会阻止它们再次被自动同步。')) {
+                                                setIsMarking(true);
+                                                try {
+                                                    await onMarkTgExported?.(user.uid);
+                                                } finally {
+                                                    setIsMarking(false);
+                                                }
                                             }
                                         }}
-                                        className="w-full bg-white/5 border border-white/5 rounded-xl py-2.5 px-4 text-xs text-white/70 outline-none focus:border-primary/30 transition-all placeholder:text-white/10"
-                                    />
+                                        disabled={isMarking}
+                                        className="px-3 rounded-xl bg-blue-500/10 border border-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-[10px] font-bold transition-all whitespace-nowrap"
+                                        title="一键标记所有作品为已上传"
+                                    >
+                                        {isMarking ? <RefreshCw size={12} className="animate-spin" /> : "标记已传"}
+                                    </button>
                                 </div>
                             </div>
                         </div>

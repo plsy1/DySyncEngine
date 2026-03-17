@@ -21,6 +21,7 @@ from db import (
     update_account_password,
     update_user_preference,
     delete_user_data,
+    mark_all_tg_exported,
     User,
 )
 from fetch import fetch_all_awemes, fetch_user_profile, fetch_video_profile
@@ -875,6 +876,14 @@ async def tg_sync_user_api(uid: str = Query(..., description="用户的 uid"), b
     
     run_coro_safe(tg_uploader.sync_user_content(tg_chat, uid, task_id=task_id))
     return {"started": True, "task_id": task_id}
+
+@router.post("/tg/mark_all_exported")
+def mark_all_tg_exported_api(uid: str = Query(..., description="用户的 uid"), session: Session = Depends(get_session), _ = Depends(get_current_user)):
+    """
+    一键将指定用户的所有作品标记为已上传到 Telegram
+    """
+    success = mark_all_tg_exported(session, uid)
+    return {"success": success}
 
 @router.post("/tg/sync_all")
 async def tg_sync_all_api(session: Session = Depends(get_session)):

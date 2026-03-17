@@ -321,6 +321,14 @@ def get_undownloaded_awemes_by_uid(session: Session, uid: str):
     """
     return session.query(Aweme).filter_by(uid=uid, downloaded=False).all()
 
+def mark_all_tg_exported(session: Session, uid: str):
+    """
+    将指定用户的所有作品标记为已导出到 Telegram
+    """
+    session.query(Aweme).filter_by(uid=uid).update({Aweme.tg_exported: True})
+    session.commit()
+    return True
+
 def get_undownloaded_awemes(session: Session):
     """
     查询所有未下载的作品

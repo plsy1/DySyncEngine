@@ -125,9 +125,18 @@ function App() {
   const handleTgSync = async (uid: string) => {
     try {
       await api.tgSyncUser(uid);
-      showToast('TG 手步同步已开始');
+      showToast('TG 手动同步已开始');
     } catch (err) {
       showToast('TG 同步启动失败', 'error');
+    }
+  };
+
+  const handleMarkTgExported = async (uid: string) => {
+    try {
+      await api.tgMarkAllExported(uid);
+      showToast('已标记该用户所有作品为已上传');
+    } catch (err) {
+      showToast('标记失败', 'error');
     }
   };
 
@@ -316,6 +325,7 @@ function App() {
                               }}
                               onDelete={(u) => setModal({ isOpen: true, user: u })}
                               onTgSync={handleTgSync}
+                              onMarkTgExported={handleMarkTgExported}
                             />
                           ))}
                         </AnimatePresence>

@@ -159,6 +159,11 @@ export const tgSyncAll = async (): Promise<ApiResponse> => {
   return data;
 };
 
+export const tgMarkAllExported = async (uid: string): Promise<{ success: boolean }> => {
+  const { data } = await api.post<{ success: boolean }>(`tg/mark_all_exported?uid=${uid}`);
+  return data;
+};
+
 export const lookupVideos = async (paths: string[]): Promise<Record<string, any>> => {
   const { data } = await api.post('videos/lookup', { paths });
   return data;
