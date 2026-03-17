@@ -112,11 +112,3 @@ npm run dev
 
 本项目遵循 [Apache-2.0 License](LICENSE) 协议。
 **严告**：本项目仅供学习交流、研究网络协议及个人收藏使用，请勿用于任何形式的商业用途或侵权行为。
-
----
-
-## 📸 预览
-
-*(此处可添加您的截图或 GIF)*
-
-![Player Preview](https://via.placeholder.com/800x450?text=DySyncEngine+Player+Preview)
