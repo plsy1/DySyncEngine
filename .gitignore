@@ -424,5 +424,4 @@ videos/
 dev_example/
 # External API Configs
 3rd/douyin_api/config.yaml
-3rd/douyin_api/crawlers/**/config.yaml
 config/
