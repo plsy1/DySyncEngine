@@ -196,7 +196,14 @@ function App() {
           </div>
           <div className="hidden lg:block whitespace-nowrap">
             <h1 className="text-lg font-bold tracking-tight">DySync<span className="text-primary text-xl">.</span></h1>
-            <p className="text-[10px] text-white/30 font-bold uppercase tracking-widest mt-[-4px]">Core v{__APP_VERSION__}</p>
+            <a 
+              href="https://github.com/plsy1/DySyncEngine" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="block hover:text-primary/80 transition-colors"
+            >
+              <p className="text-[10px] text-white/30 font-bold uppercase tracking-widest mt-[-4px]">Core v{__APP_VERSION__}</p>
+            </a>
           </div>
         </div>
 
