@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Send, Save, ArrowLeft, Loader2, MessageSquare, ShieldCheck, Key, Phone, Settings as SettingsIcon, Search } from 'lucide-react';
+import { Send, Save, ArrowLeft, Loader2, MessageSquare, ShieldCheck, Settings as SettingsIcon } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import * as api from '../api';
 
@@ -134,8 +134,8 @@ export const Telegram = ({ onBack, onNotify }: TelegramProps) => {
     }
 
     return (
-        <div className="max-w-4xl mx-auto p-6">
-            <div className="flex items-center justify-between mb-10">
+        <div className="space-y-10 pb-20">
+            <header className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     <button
                         onClick={onBack}
@@ -143,92 +143,87 @@ export const Telegram = ({ onBack, onNotify }: TelegramProps) => {
                     >
                         <ArrowLeft size={20} />
                     </button>
-                    <div className="flex items-center gap-3">
-                        <Send className="text-primary" size={28} />
-                        <h1 className="text-3xl font-bold text-white">Telegram 同步</h1>
+                    <div>
+                        <h2 className="text-3xl font-black tracking-tight text-white">Telegram 同步</h2>
+                        <p className="text-white/50 text-base mt-1">即时推送、自动化审计与云端投递</p>
                     </div>
                 </div>
-            </div>
+            </header>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {/* Auth Panel */}
                 <motion.div
-                    initial={{ opacity: 0, y: 20 }}
+                    initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="glass-card p-8 space-y-6"
+                    className="card p-6 border border-white/5 bg-white/2 backdrop-blur-sm rounded-3xl space-y-6 flex flex-col"
                 >
-                    <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                    <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                            <ShieldCheck className={status?.is_authorized ? "text-green-500" : "text-amber-500"} size={20} />
-                            <h2 className="text-xl font-bold text-white">账号状态</h2>
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${status?.is_authorized ? "bg-green-500/10 text-green-500" : "bg-amber-500/10 text-amber-500"}`}>
+                                <ShieldCheck size={20} />
+                            </div>
+                            <h3 className="font-bold text-lg text-white">账号授权</h3>
                         </div>
-                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${status?.is_authorized ? 'bg-green-500/10 text-green-400' : 'bg-amber-500/10 text-amber-400'}`}>
-                            {status?.is_authorized ? '已连接' : '未连接'}
+                        <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${status?.is_authorized ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
+                            {status?.is_authorized ? 'Active' : 'Missing'}
                         </span>
                     </div>
 
                     {!status?.is_authorized ? (
                         step === 'info' ? (
-                            <form onSubmit={handleSetup} className="space-y-4">
-                                <p className="text-white/40 text-sm">连接到 Telegram 以启用自动上传功能。您需要从 my.telegram.org 获取 API 凭据。</p>
-                                <div>
-                                    <label className="block text-xs font-medium text-white/40 mb-1">API ID</label>
-                                    <div className="relative">
-                                        <Key className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" size={16} />
-                                        <input type="number" value={apiId} onChange={e => setApiId(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-4 outline-none focus:border-primary/50 text-sm" placeholder="1234567" required />
+                            <form onSubmit={handleSetup} className="space-y-4 flex-1 pt-2">
+                                <div className="space-y-3">
+                                    <div className="space-y-1.5">
+                                        <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">API ID</label>
+                                        <input type="number" value={apiId} onChange={e => setApiId(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 text-sm" placeholder="12345" required />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">API Hash</label>
+                                        <input type="text" value={apiHash} onChange={e => setApiHash(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 text-sm" placeholder="hash" required />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">手机号</label>
+                                        <input type="text" value={phone} onChange={e => setPhone(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 text-sm" placeholder="+86..." required />
                                     </div>
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-white/40 mb-1">API Hash</label>
-                                    <div className="relative">
-                                        <Key className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" size={16} />
-                                        <input type="text" value={apiHash} onChange={e => setApiHash(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-4 outline-none focus:border-primary/50 text-sm" placeholder="abcdef..." required />
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-white/40 mb-1">手机号 (带区号)</label>
-                                    <div className="relative">
-                                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" size={16} />
-                                        <input type="text" value={phone} onChange={e => setPhone(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-4 outline-none focus:border-primary/50 text-sm" placeholder="+86138..." required />
-                                    </div>
-                                </div>
-                                <button type="submit" disabled={submitting} className="w-full btn-primary py-4 mt-2 flex items-center justify-center gap-2">
-                                    {submitting ? <Loader2 className="animate-spin" size={20} /> : <Send size={20} />}
-                                    发送验证码
+                                <button type="submit" disabled={submitting} className="w-full flex items-center justify-center gap-2 py-3 bg-primary/10 hover:bg-primary/20 text-primary transition-all rounded-xl font-black text-xs border border-primary/20 mt-2">
+                                    {submitting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                                    发送登入请求
                                 </button>
                             </form>
                         ) : (
-                            <form onSubmit={handleVerify} className="space-y-4">
-                                <p className="text-white/40 text-sm">请输入收到的验证码。如果开启了两步验证，还需输入二步验证密码。</p>
-                                <div>
-                                    <label className="block text-xs font-medium text-white/40 mb-1">验证码</label>
-                                    <input type="text" value={code} onChange={e => setCode(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 outline-none focus:border-primary/50 text-sm" placeholder="Code" required />
+                            <form onSubmit={handleVerify} className="space-y-4 flex-1 pt-2">
+                                <div className="space-y-3">
+                                    <div className="space-y-1.5">
+                                        <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">验证码</label>
+                                        <input type="text" value={code} onChange={e => setCode(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 text-sm text-center font-bold tracking-widest" placeholder="-----" required />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">二步验证 (若有)</label>
+                                        <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 text-sm" placeholder="Optional" />
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-white/40 mb-1">2FA 密码 (可选)</label>
-                                    <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 outline-none focus:border-primary/50 text-sm" placeholder="Password" />
-                                </div>
-                                <button type="submit" disabled={submitting} className="w-full btn-primary py-4 mt-2 flex items-center justify-center gap-2">
-                                    {submitting ? <Loader2 className="animate-spin" size={20} /> : <ShieldCheck size={20} />}
-                                    完成验证
+                                <button type="submit" disabled={submitting} className="w-full flex items-center justify-center gap-2 py-3 bg-primary/10 hover:bg-primary/20 text-primary transition-all rounded-xl font-black text-xs border border-primary/20 mt-2">
+                                    {submitting ? <Loader2 size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+                                    确认并登入
                                 </button>
-                                <button type="button" onClick={() => setStep('info')} className="w-full py-2 text-white/20 text-xs hover:text-white/40">返回修改信息</button>
+                                <button type="button" onClick={() => setStep('info')} className="w-full py-2 text-white/50 text-[10px] font-bold hover:text-white/80 underline decoration-white/20">修改配置信息</button>
                             </form>
                         )
                     ) : (
-                        <div className="py-10 text-center space-y-4">
-                            <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mx-auto">
+                        <div className="py-10 flex flex-col items-center justify-center text-center space-y-5 flex-1 pt-2">
+                            <div className="w-16 h-16 rounded-2xl bg-green-500/10 flex items-center justify-center animate-pulse">
                                 <ShieldCheck className="text-green-500" size={32} />
                             </div>
                             <div>
-                                <h3 className="text-white font-bold">同步引擎就绪</h3>
-                                <p className="text-white/40 text-sm mt-1">当前已成功连接 Telegram 账号</p>
+                                <h3 className="text-lg font-black text-white">授权已就绪</h3>
+                                <p className="text-white/60 text-[11px] mt-1 max-w-[180px] mx-auto leading-relaxed">系统已成功通过 Telegram 官方验证，可随时执行同步任务。</p>
                             </div>
                             <button 
-                                onClick={() => { /* Logout/Reset logic could go here */ }} 
-                                className="px-4 py-2 rounded-lg bg-white/5 hover:bg-red-500/10 text-white/20 hover:text-red-400 text-xs transition-all"
+                                onClick={() => { fetchStatus(); }} 
+                                className="px-6 py-2 rounded-lg bg-white/10 border border-white/20 hover:bg-white/20 text-white/70 hover:text-white text-[10px] font-black transition-all uppercase tracking-widest"
                             >
-                                重新连接
+                                强制刷新状态
                             </button>
                         </div>
                     )}
@@ -236,62 +231,60 @@ export const Telegram = ({ onBack, onNotify }: TelegramProps) => {
 
                 {/* Settings Panel */}
                 <motion.div
-                    initial={{ opacity: 0, y: 20 }}
+                    initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="glass-card p-8 space-y-6"
+                    transition={{ delay: 0.1 }}
+                    className="card p-6 border border-white/5 bg-white/2 backdrop-blur-sm rounded-3xl space-y-6 flex flex-col"
                 >
-                    <div className="flex items-center gap-3 border-b border-white/5 pb-4">
-                        <SettingsIcon className="text-primary" size={20} />
-                        <h2 className="text-xl font-bold text-white">推送配置</h2>
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400">
+                            <SettingsIcon size={20} />
+                        </div>
+                        <h3 className="font-bold text-lg text-white">推送配置</h3>
                     </div>
 
-                    <div className="space-y-6">
+                    <div className="space-y-6 flex-1 pt-2">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-white font-medium">自动同步到 TG</p>
-                                <p className="text-white/40 text-sm">下载完成后自动将文件上传</p>
+                                <p className="text-white font-semibold text-base">自动同步</p>
+                                <p className="text-white/50 text-xs">任务完成即刻上传</p>
                             </div>
                             <button
                                 onClick={() => setAutoUpload(!autoUpload)}
-                                className={`w-14 h-8 rounded-full transition-all relative ${autoUpload ? 'bg-primary' : 'bg-white/10'}`}
+                                className={`w-10 h-6 rounded-full transition-all relative ${autoUpload ? 'bg-primary' : 'bg-white/10'}`}
                             >
-                                <div className={`absolute top-1 w-6 h-6 rounded-full bg-white transition-all ${autoUpload ? 'left-7' : 'left-1'}`} />
+                                <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${autoUpload ? 'left-4.5' : 'left-0.5'}`} />
                             </button>
                         </div>
 
-                        <div className="space-y-3">
-                            <label className="block text-xs font-bold text-white/40 uppercase tracking-widest pl-1">目标对话 / 搜索</label>
+                        <div className="space-y-2">
+                            <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">目标会话 / 频道 ID</label>
                             
                             {status?.is_authorized ? (
-                                <div className="relative group/select">
-                                    <div className="relative">
-                                        <div className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20">
-                                            <Search size={16} />
-                                        </div>
-                                        <input 
-                                            type="text"
-                                            placeholder="搜索对话、频道或输入 ID..."
-                                            value={chatSearch}
-                                            onChange={(e) => {
-                                                setChatSearch(e.target.value);
-                                                setShowChatDropdown(true);
-                                            }}
-                                            onFocus={() => setShowChatDropdown(true)}
-                                            className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-4 outline-none focus:border-primary/50 text-sm text-white transition-all"
-                                        />
-                                    </div>
+                                <div className="relative">
+                                    <input 
+                                        type="text"
+                                        placeholder="搜索或输入..."
+                                        value={chatSearch}
+                                        onChange={(e) => {
+                                            setChatSearch(e.target.value);
+                                            setShowChatDropdown(true);
+                                        }}
+                                        onFocus={() => setShowChatDropdown(true)}
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 text-xs"
+                                    />
 
                                     <AnimatePresence>
                                         {showChatDropdown && (
                                             <>
                                                 <div className="fixed inset-0 z-10" onClick={() => setShowChatDropdown(false)} />
                                                 <motion.div
-                                                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                                    className="absolute top-full left-0 right-0 mt-2 z-20 bg-[#121212] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[300px]"
+                                                    initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                                    exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                                                    className="absolute top-full left-0 right-0 mt-2 z-20 bg-[#161616] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[250px]"
                                                 >
-                                                    <div className="overflow-y-auto p-2 gap-1 flex flex-col custom-scrollbar">
+                                                    <div className="overflow-y-auto p-1.5 gap-1 flex flex-col custom-scrollbar">
                                                         {filteredChats.length > 0 ? (
                                                             filteredChats.map(chat => (
                                                                 <button
@@ -301,23 +294,17 @@ export const Telegram = ({ onBack, onNotify }: TelegramProps) => {
                                                                         setChatSearch(chat.name);
                                                                         setShowChatDropdown(false);
                                                                     }}
-                                                                    className={`w-full text-left px-4 py-3 rounded-xl transition-all flex items-center justify-between group ${targetChat === chat.id ? 'bg-primary/20 text-primary border border-primary/20' : 'hover:bg-white/5 text-white/60 border border-transparent'}`}
+                                                                    className={`w-full text-left px-3 py-2.5 rounded-xl transition-all flex items-center justify-between group ${targetChat === chat.id ? 'bg-primary/20 text-primary' : 'hover:bg-white/5 text-white/50'}`}
                                                                 >
-                                                                    <div className="flex flex-col">
-                                                                        <span className="text-sm font-bold truncate max-w-[200px]">{chat.name}</span>
-                                                                        <span className="text-[10px] opacity-40 font-mono">ID: {chat.id}</span>
+                                                                    <div className="flex flex-col min-w-0">
+                                                                        <span className="text-xs font-bold truncate pr-2">{chat.name}</span>
+                                                                        <span className="text-[9px] opacity-20 font-mono truncate">{chat.id}</span>
                                                                     </div>
-                                                                    <div className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase ${
-                                                                        chat.type === 'channel' ? 'bg-blue-500/10 text-blue-400' :
-                                                                        chat.type === 'group' ? 'bg-orange-500/10 text-orange-400' :
-                                                                        'bg-white/10 text-white/40'
-                                                                    }`}>
-                                                                        {chat.type}
-                                                                    </div>
+                                                                    <span className="text-[8px] font-black uppercase opacity-20 group-hover:opacity-40">{chat.type}</span>
                                                                 </button>
                                                             ))
                                                         ) : (
-                                                            <div className="p-8 text-center text-white/20 text-xs italic">未找到匹配的结果</div>
+                                                            <div className="p-4 text-center text-white/10 text-[10px] italic">无搜索结果</div>
                                                         )}
                                                     </div>
                                                 </motion.div>
@@ -330,34 +317,59 @@ export const Telegram = ({ onBack, onNotify }: TelegramProps) => {
                                     type="text" 
                                     value={targetChat} 
                                     onChange={(e) => setTargetChat(e.target.value)}
-                                    className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 outline-none focus:border-primary/50 text-sm"
-                                    placeholder="用户ID, 频道ID或用户名"
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 text-xs"
+                                    placeholder="Peer ID or Username"
                                 />
                             )}
-                            <p className="text-[10px] text-white/20 mt-2 italic px-1">
-                                {targetChat ? `当前选中 ID: ${targetChat}` : "提示: 请先在上方搜索或选择一个目标频道"}
+                            <p className="text-xs text-white/50 pl-1 font-mono">{targetChat || 'Wait setting...'}</p>
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={handleSaveSettings}
+                        disabled={saving}
+                        className="w-full flex items-center justify-center gap-2 py-3 bg-blue-500/10 hover:bg-blue-600/20 text-blue-400 transition-all rounded-xl font-black text-xs border border-blue-500/20 mt-2"
+                    >
+                        {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                        应用推送配置
+                    </button>
+                </motion.div>
+
+                {/* Audit & Info Panel */}
+                <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2 }}
+                    className="card p-6 border border-white/5 bg-white/2 backdrop-blur-sm rounded-3xl space-y-6 flex flex-col"
+                >
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-orange-500/10 flex items-center justify-center text-orange-400">
+                            <MessageSquare size={20} />
+                        </div>
+                        <h3 className="font-bold text-lg text-white">推送说明</h3>
+                    </div>
+
+                    <div className="flex-1 pt-2 space-y-4">
+                        <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/5 space-y-2">
+                            <p className="text-xs font-bold text-white/70 flex items-center gap-2">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                                自动流转机制
+                            </p>
+                            <p className="text-xs text-white/60 leading-relaxed">
+                                开启后，每位作者的下载任务完成后，系统会自动遍历未同步文件并投递，图文内容将自动按序分段。
                             </p>
                         </div>
-
-                        <button
-                            onClick={handleSaveSettings}
-                            disabled={saving}
-                            className="w-full btn-primary py-4 mt-2 flex items-center justify-center gap-2"
-                        >
-                            {saving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
-                            保存同步设置
-                        </button>
+                        <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/5 space-y-2">
+                            <p className="text-xs font-bold text-white/70 flex items-center gap-2">
+                                <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+                                全量审计提示
+                            </p>
+                            <p className="text-xs text-white/60 leading-relaxed">
+                                如需对历史存量作品进行追溯推送，请前往「任务控制台」执行「TG 同步审计」任务。
+                            </p>
+                        </div>
                     </div>
                 </motion.div>
-            </div>
-            
-            <div className="mt-8 p-6 rounded-2xl bg-primary/5 border border-primary/10 text-primary/80 text-sm">
-                <div className="flex gap-3">
-                    <MessageSquare size={20} className="shrink-0" />
-                    <p>
-                        自动同步启用后，DySyncEngine 将在每次成功拉取作者更新并下载到本地后，自动将文件队列推送到您指定的 Telegram 目標。图文内容将自动分段发送。
-                    </p>
-                </div>
             </div>
         </div>
     );

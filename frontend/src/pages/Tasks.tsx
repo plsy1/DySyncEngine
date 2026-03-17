@@ -67,8 +67,8 @@ export function Tasks({ onNotify, activeTasks }: TasksProps) {
         <div className="space-y-8 pb-20">
             <header className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-3xl font-bold tracking-tight">任务控制台</h2>
-                    <p className="text-white/40 mt-1">管理后台更新计划与实时任务状态</p>
+                    <h2 className="text-3xl font-black tracking-tight text-white">任务控制台</h2>
+                    <p className="text-white/60 mt-1">管理后台更新计划与实时任务状态</p>
                 </div>
             </header>
 
@@ -91,13 +91,13 @@ export function Tasks({ onNotify, activeTasks }: TasksProps) {
                     </div>
 
                     <div className="space-y-4 pt-2 flex-1">
-                        <div className="flex justify-between items-center text-sm">
-                            <span className="text-white/40">上次运行</span>
-                            <span className="font-medium">{formatTime(schedulerStatus?.last_run || null)}</span>
+                        <div className="flex justify-between items-center text-base">
+                            <span className="text-white/60 font-semibold">上次运行</span>
+                            <span className="font-medium text-white/60">{formatTime(schedulerStatus?.last_run || null)}</span>
                         </div>
-                        <div className="flex justify-between items-center text-sm">
-                            <span className="text-white/40">下次运行</span>
-                            <span className="font-medium text-primary">{formatTime(schedulerStatus?.next_run || null)}</span>
+                        <div className="flex justify-between items-center text-base">
+                            <span className="text-white/60 font-semibold">下次运行</span>
+                            <span className="font-bold text-primary">{formatTime(schedulerStatus?.next_run || null)}</span>
                         </div>
                     </div>
 
@@ -124,7 +124,7 @@ export function Tasks({ onNotify, activeTasks }: TasksProps) {
                         <h3 className="font-semibold text-lg">本地补漏审计</h3>
                     </div>
 
-                    <p className="text-xs text-white/40 leading-relaxed flex-1 pt-2">
+                    <p className="text-sm text-white/60 leading-relaxed flex-1 pt-2">
                         扫描库中所有“未下载”的作品，重新尝试补齐。不涉及任何社交平台上传逻辑，仅针对本地存储。
                     </p>
 
@@ -147,12 +147,12 @@ export function Tasks({ onNotify, activeTasks }: TasksProps) {
                     </div>
 
                     <div className="space-y-4 pt-2 flex-1">
-                        <p className="text-xs text-white/40 leading-relaxed">
+                        <p className="text-sm text-white/60 leading-relaxed">
                             扫描所有已下载但在数据库中标记为“未导出”的作品，强制推送到指定的 Telegram 频道。
                         </p>
                         <div className="flex justify-between items-center text-sm">
-                            <span className="text-white/40 text-xs">同步周期</span>
-                            <span className="font-medium text-[10px] text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded uppercase font-mono">
+                            <span className="text-white/60 text-sm font-semibold">同步周期</span>
+                            <span className="font-medium text-xs text-blue-400 bg-blue-400/10 px-2.5 py-1 rounded uppercase font-mono">
                                 Follows Scheduler
                             </span>
                         </div>
@@ -194,13 +194,13 @@ export function Tasks({ onNotify, activeTasks }: TasksProps) {
                                                  task.target_id === 'tg_global_audit' ? 'TG 全量同步审计' : 
                                                  `同步任务: ${task.target_id}`}
                                             </span>
-                                            <span className="text-[10px] text-white/20 font-mono bg-white/5 px-2 py-0.5 rounded uppercase tracking-tighter">
+                                            <span className="text-xs text-white/50 font-mono bg-white/10 px-2.5 py-1 rounded uppercase tracking-tighter">
                                                 {task.id.split('-')[0]}
                                             </span>
                                         </div>
-                                        <p className="text-xs text-white/40 mt-1">{task.message}</p>
+                                        <p className="text-sm text-white/60 mt-1">{task.message}</p>
                                     </div>
-                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider border ${task.status === 'running' ? 'bg-primary/10 text-primary border-primary/20' :
+                                    <span className={`text-xs px-2.5 py-1 rounded-full font-bold uppercase tracking-wider border ${task.status === 'running' ? 'bg-primary/10 text-primary border-primary/20' :
                                         task.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
                                             'bg-red-500/10 text-red-400 border-red-500/20'
                                         }`}>
@@ -209,7 +209,7 @@ export function Tasks({ onNotify, activeTasks }: TasksProps) {
                                 </div>
 
                                 <div className="space-y-2">
-                                    <div className="flex justify-between text-xs font-mono text-white/40">
+                                    <div className="flex justify-between text-sm font-mono text-white/40">
                                         <span>PROGRESS</span>
                                         <span>{task.progress}%</span>
                                     </div>
@@ -224,9 +224,9 @@ export function Tasks({ onNotify, activeTasks }: TasksProps) {
                             </motion.div>
                         ))
                     ) : (
-                        <div className="text-center py-16 border border-dashed border-white/5 rounded-3xl">
-                            <CheckCircle className="mx-auto text-white/10 mb-3" size={32} />
-                            <p className="text-white/20 text-sm font-medium">当前没有任何活跃任务</p>
+                        <div className="text-center py-16 border border-dashed border-white/10 rounded-3xl">
+                            <CheckCircle className="mx-auto text-white/20 mb-3" size={32} />
+                            <p className="text-white/50 text-sm font-black">当前没有任何活跃任务</p>
                         </div>
                     )}
                 </div>

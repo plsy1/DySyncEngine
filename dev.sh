@@ -29,10 +29,10 @@ trap cleanup SIGINT SIGTERM
 echo "🚀 Starting DySyncEngine in Development Mode..."
 
 # Start Frontend (Vite) in background
-echo "✨ Starting Frontend (Port 5173)..."
-(cd frontend && npm run dev) &
+echo "✨ Starting Frontend (Port 5173 on 0.0.0.0)..."
+(cd frontend && npm run dev -- --host 0.0.0.0) &
 
 # Start Backend (Uvicorn)
-echo "🐍 Starting Backend (Port 8000)..."
+echo "🐍 Starting Backend (Port 8000 on 0.0.0.0)..."
 export PYTHONPATH=$PYTHONPATH:$(pwd)/backend
 uvicorn main:app --app-dir ./backend --host 0.0.0.0 --port ${PORT:-8000} --reload

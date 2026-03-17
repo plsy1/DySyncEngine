@@ -963,94 +963,102 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
             style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none' } as any}
         >
             {/* Top Navigation Bar - Douyin Style */}
-            <div className="absolute top-0 left-0 right-0 z-50 flex items-center justify-center p-6 bg-gradient-to-b from-black/60 to-transparent pointer-events-none"
-                style={{ paddingTop: 'calc(env(safe-area-inset-top) + 24px)' }}>
-                <button
-                    onClick={onBack}
-                    className="absolute p-3 text-white transition-all pointer-events-auto drop-shadow-lg opacity-80 hover:opacity-100 hover:bg-white/10 rounded-full"
-                    style={{ top: 'calc(env(safe-area-inset-top) + 12px)', left: '20px' }}
-                >
-                    <ArrowLeft size={28} />
-                </button>
+            <div className="absolute top-0 left-0 right-0 z-50 pointer-events-none bg-gradient-to-b from-black/80 via-black/40 to-transparent"
+                style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+                <div className="flex items-center justify-between px-4 sm:px-6 h-14 sm:h-16">
+                    {/* Left: Back Button */}
+                    <div className="flex-1 flex justify-start items-center">
+                        <button
+                            onClick={onBack}
+                            className="p-2 sm:p-3 text-white transition-all pointer-events-auto drop-shadow-lg opacity-80 hover:opacity-100 hover:bg-white/10 rounded-full"
+                        >
+                            <ArrowLeft size={28} />
+                        </button>
+                    </div>
 
-                {/* Filter Tabs in Center */}
-                <div className="pointer-events-auto">
-                    <div className="flex items-center bg-white/5 backdrop-blur-md rounded-full px-1 py-1 border border-white/10 shadow-lg">
-                        {[
-                            { id: 'video', label: '视频' },
-                            { id: 'mixed', label: '混合' },
-                            { id: 'photo', label: '图片' }
-                        ].map((m) => (
-                            <button
-                                key={m.id}
-                                onClick={() => {
-                                    setFilterMode(m.id as any);
-                                    onNotify(`切换至: ${m.label}模式`, 'success');
-                                }}
-                                className={`px-4 py-1.5 rounded-full text-xs sm:text-sm font-bold transition-all duration-300 ${filterMode === m.id
-                                    ? 'bg-white text-black shadow-lg scale-105'
-                                    : 'text-white/60 hover:text-white hover:bg-white/5'
-                                    }`}
-                            >
-                                {m.label}
-                            </button>
-                        ))}
+                    {/* Center: Filter Tabs */}
+                    <div className="flex-none pointer-events-auto">
+                        <div className="flex items-center bg-white/10 backdrop-blur-xl rounded-full px-1 py-1 border border-white/10 shadow-lg">
+                            {[
+                                { id: 'video', label: '视频' },
+                                { id: 'mixed', label: '综合' },
+                                { id: 'photo', label: '图片' }
+                            ].map((m) => (
+                                <button
+                                    key={m.id}
+                                    onClick={() => {
+                                        setFilterMode(m.id as any);
+                                        onNotify(`切换至: ${m.label}模式`, 'success');
+                                    }}
+                                    className={`px-4 sm:px-5 py-1.5 rounded-full text-xs sm:text-sm font-black tracking-tight transition-all duration-300 ${filterMode === m.id
+                                        ? 'bg-white text-black shadow-lg scale-105'
+                                        : 'text-white/60 hover:text-white hover:bg-white/5'
+                                        }`}
+                                >
+                                    {m.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Right: PC Version Utilities or Empty Spacer for Mobile to keep Center centered */}
+                    <div className="flex-1 flex justify-end items-center pointer-events-auto">
+                        {!isMobile ? (
+                            <div className="flex items-center gap-3">
+                                <button
+                                    onClick={() => {
+                                        const newTab = tab === 'latest' ? 'random' : 'latest';
+                                        setTab(newTab);
+                                        onNotify(`排序切换至: ${newTab === 'latest' ? '最新发布' : '随机推荐'}`, 'success');
+                                    }}
+                                    className="p-2.5 text-white/70 hover:text-white transition-all bg-white/5 hover:bg-white/10 rounded-full"
+                                    title={tab === 'latest' ? '切换至随机推荐' : '切换至最新发布'}
+                                >
+                                    {tab === 'latest' ? <Clock size={20} /> : <Shuffle size={20} className="text-primary" />}
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        const newMode = playbackMode === 'loop' ? 'next' : 'loop';
+                                        setPlaybackMode(newMode);
+                                        onNotify(`播放模式: ${newMode === 'loop' ? '单片循环' : '自动连播'}`, 'success');
+                                    }}
+                                    className="p-2.5 text-white/70 hover:text-white transition-all bg-white/5 hover:bg-white/10 rounded-full"
+                                    title="播放模式"
+                                >
+                                    {playbackMode === 'loop' ? <Repeat size={20} /> : <ArrowRightCircle size={20} className="text-primary" />}
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        const modes: ('smart' | 'cover' | 'contain')[] = ['smart', 'cover', 'contain'];
+                                        const nextIndex = (modes.indexOf(displayMode) + 1) % modes.length;
+                                        setDisplayMode(modes[nextIndex]);
+                                        onNotify(`适配模式: ${modes[nextIndex]}`, 'success');
+                                    }}
+                                    className="p-2.5 text-white/70 hover:text-white transition-all bg-white/5 hover:bg-white/10 rounded-full"
+                                    title="画面占比"
+                                >
+                                    {displayMode === 'smart' ? <Monitor size={20} /> : <Maximize2 size={20} />}
+                                </button>
+                                <button
+                                    onClick={() => setIsMuted(!isMuted)}
+                                    className="p-2.5 text-white/70 hover:text-white transition-all bg-white/5 hover:bg-white/10 rounded-full"
+                                    title="静音开关"
+                                >
+                                    {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+                                </button>
+                                <button
+                                    onClick={() => setIsSidebarOpen(true)}
+                                    className="p-2.5 text-white/70 hover:text-white transition-all bg-white/10 hover:bg-white/20 rounded-full ml-1 border border-white/10"
+                                    title="选择目录"
+                                >
+                                    <Menu size={20} />
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="w-10" /> // Spacer for balance
+                        )}
                     </div>
                 </div>
-
-                {/* PC Version Utilities (Right Side) */}
-                {!isMobile && (
-                    <div className="absolute right-6 flex items-center gap-4 pointer-events-auto">
-                        <button
-                            onClick={() => {
-                                const newTab = tab === 'latest' ? 'random' : 'latest';
-                                setTab(newTab);
-                                onNotify(`排序切换至: ${newTab === 'latest' ? '最新发布' : '随机推荐'}`, 'success');
-                            }}
-                            className="p-2.5 text-white/70 hover:text-white transition-all bg-white/5 hover:bg-white/10 rounded-full"
-                            title={tab === 'latest' ? '切换至随机推荐' : '切换至最新发布'}
-                        >
-                            {tab === 'latest' ? <Clock size={20} /> : <Shuffle size={20} className="text-primary" />}
-                        </button>
-                        <button
-                            onClick={() => {
-                                const newMode = playbackMode === 'loop' ? 'next' : 'loop';
-                                setPlaybackMode(newMode);
-                                onNotify(`播放模式: ${newMode === 'loop' ? '单片循环' : '自动连播'}`, 'success');
-                            }}
-                            className="p-2.5 text-white/70 hover:text-white transition-all bg-white/5 hover:bg-white/10 rounded-full"
-                            title="播放模式"
-                        >
-                            {playbackMode === 'loop' ? <Repeat size={20} /> : <ArrowRightCircle size={20} className="text-primary" />}
-                        </button>
-                        <button
-                            onClick={() => {
-                                const modes: ('smart' | 'cover' | 'contain')[] = ['smart', 'cover', 'contain'];
-                                const nextIndex = (modes.indexOf(displayMode) + 1) % modes.length;
-                                setDisplayMode(modes[nextIndex]);
-                                onNotify(`适配模式: ${modes[nextIndex]}`, 'success');
-                            }}
-                            className="p-2.5 text-white/70 hover:text-white transition-all bg-white/5 hover:bg-white/10 rounded-full"
-                            title="画面占比"
-                        >
-                            {displayMode === 'smart' ? <Monitor size={20} /> : <Maximize2 size={20} />}
-                        </button>
-                        <button
-                            onClick={() => setIsMuted(!isMuted)}
-                            className="p-2.5 text-white/70 hover:text-white transition-all bg-white/5 hover:bg-white/10 rounded-full"
-                            title="静音开关"
-                        >
-                            {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
-                        </button>
-                        <button
-                            onClick={() => setIsSidebarOpen(true)}
-                            className="p-2.5 text-white/70 hover:text-white transition-all bg-white/10 hover:bg-white/20 rounded-full ml-2 border border-white/10"
-                            title="选择目录"
-                        >
-                            <Menu size={20} />
-                        </button>
-                    </div>
-                )}
             </div>
 
             {/* Scrolling Container */}

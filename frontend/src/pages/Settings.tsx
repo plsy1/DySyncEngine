@@ -117,8 +117,8 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
     }
 
     return (
-        <div className="max-w-4xl mx-auto p-6">
-            <div className="flex items-center justify-between mb-10">
+        <div className="space-y-10 pb-20">
+            <header className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     <button
                         onClick={onBack}
@@ -126,207 +126,208 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                     >
                         <ArrowLeft size={20} />
                     </button>
-                    <div className="flex items-center gap-3">
-                        <SettingsIcon className="text-primary" size={28} />
-                        <h1 className="text-3xl font-bold text-white">系统设置</h1>
+                    <div>
+                        <h2 className="text-3xl font-black tracking-tight text-white">系统设置</h2>
+                        <p className="text-white/50 text-base mt-1">全局下载策略、媒体中心集成与安全验证</p>
                     </div>
                 </div>
-            </div>
+            </header>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {/* Global Download Settings */}
                 <motion.div
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="glass-card p-8 space-y-8"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="card p-6 border border-white/5 bg-white/2 backdrop-blur-sm rounded-3xl space-y-6 flex flex-col"
                 >
-                    <div className="flex items-center gap-3 border-b border-white/5 pb-4">
-                        <Save className="text-primary" size={20} />
-                        <h2 className="text-xl font-bold text-white">默认下载配置</h2>
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+                            <Save size={20} />
+                        </div>
+                        <h3 className="font-bold text-lg text-white">默认下载</h3>
                     </div>
 
-                    <div className="space-y-6">
+                    <div className="space-y-5 flex-1 pt-2">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-white font-medium">自动下载视频</p>
-                                <p className="text-white/40 text-sm">默认同步获取到的视频文件</p>
+                                <p className="text-white font-semibold text-base">自动下载视频</p>
+                                <p className="text-white/40 text-xs">同步获取到的视频</p>
                             </div>
                             <button
                                 onClick={() => setSettings(s => ({ ...s, download_video: !s.download_video }))}
-                                className={`w-14 h-8 rounded-full transition-all relative ${settings.download_video ? 'bg-primary' : 'bg-white/10'}`}
+                                className={`w-10 h-6 rounded-full transition-all relative ${settings.download_video ? 'bg-primary' : 'bg-white/10'}`}
                             >
-                                <div className={`absolute top-1 w-6 h-6 rounded-full bg-white transition-all ${settings.download_video ? 'left-7' : 'left-1'}`} />
+                                <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${settings.download_video ? 'left-4.5' : 'left-0.5'}`} />
                             </button>
                         </div>
 
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-white font-medium">自动下载图文</p>
-                                <p className="text-white/40 text-sm">默认同步获取到的图文 ZIP 包并解压</p>
+                                <p className="text-white font-semibold text-base">自动下载图文</p>
+                                <p className="text-white/40 text-xs">获取 ZIP 并解压</p>
                             </div>
                             <button
                                 onClick={() => setSettings(s => ({ ...s, download_note: !s.download_note }))}
-                                className={`w-14 h-8 rounded-full transition-all relative ${settings.download_note ? 'bg-primary' : 'bg-white/10'}`}
+                                className={`w-10 h-6 rounded-full transition-all relative ${settings.download_note ? 'bg-primary' : 'bg-white/10'}`}
                             >
-                                <div className={`absolute top-1 w-6 h-6 rounded-full bg-white transition-all ${settings.download_note ? 'left-7' : 'left-1'}`} />
+                                <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${settings.download_note ? 'left-4.5' : 'left-0.5'}`} />
                             </button>
                         </div>
 
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-white font-medium">自动更新间隔 (分钟)</p>
-                                <p className="text-white/40 text-sm">每隔多久自动检查一次作者视频更新</p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <input
-                                    type="number"
-                                    min="1"
-                                    value={settings.auto_update_interval}
-                                    onChange={(e) => setSettings(s => ({ ...s, auto_update_interval: parseInt(e.target.value) || 1 }))}
-                                    className="w-24 bg-white/5 border border-white/10 rounded-xl py-2 px-3 outline-none focus:border-primary/50 transition-all text-white text-center text-sm"
-                                />
-                            </div>
+                        <div className="space-y-2">
+                            <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">监测周期 (分钟)</label>
+                            <input
+                                type="number"
+                                min="1"
+                                value={settings.auto_update_interval}
+                                onChange={(e) => setSettings(s => ({ ...s, auto_update_interval: parseInt(e.target.value) || 1 }))}
+                                className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 transition-all font-bold text-base"
+                            />
                         </div>
-
-                        <button
-                            onClick={handleSaveSettings}
-                            disabled={saving}
-                            className="w-full btn-primary py-4 mt-4 flex items-center justify-center gap-2"
-                        >
-                            {saving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
-                            保存默认设置
-                        </button>
                     </div>
+
+                    <button
+                        onClick={handleSaveSettings}
+                        disabled={saving}
+                        className="w-full flex items-center justify-center gap-2 py-3 bg-primary/10 hover:bg-primary/20 text-primary disabled:opacity-50 transition-all rounded-xl font-black text-xs border border-primary/20 mt-2"
+                    >
+                        {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                        保存下载配置
+                    </button>
+                </motion.div>
+
+                {/* Password Security */}
+                <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                    className="card p-6 border border-white/5 bg-white/2 backdrop-blur-sm rounded-3xl space-y-6 flex flex-col"
+                >
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500">
+                            <Lock size={20} />
+                        </div>
+                        <h3 className="font-bold text-lg text-white">管理员安全</h3>
+                    </div>
+
+                    <form onSubmit={handleChangePassword} className="space-y-4 flex-1 pt-2">
+                        <div className="space-y-2">
+                            <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">当前密码</label>
+                            <input
+                                type="password"
+                                value={oldPassword}
+                                onChange={(e) => setOldPassword(e.target.value)}
+                                className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 text-sm"
+                                required
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">新密码</label>
+                            <input
+                                type="password"
+                                value={newPassword}
+                                onChange={(e) => setNewPassword(e.target.value)}
+                                className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 text-sm"
+                                required
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">重复新密码</label>
+                            <input
+                                type="password"
+                                value={confirmPassword}
+                                onChange={(e) => setConfirmPassword(e.target.value)}
+                                className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 text-sm"
+                                required
+                            />
+                        </div>
+                        <button
+                            type="submit"
+                            disabled={changingPwd}
+                            className="w-full flex items-center justify-center gap-2 py-3 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 disabled:opacity-50 transition-all rounded-xl font-black text-xs border border-amber-500/20 mt-2"
+                        >
+                            {changingPwd ? <Loader2 size={16} className="animate-spin" /> : <Lock size={16} />}
+                            更新验证凭据
+                        </button>
+                    </form>
                 </motion.div>
 
                 {/* Emby Integration Settings */}
                 <motion.div
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="glass-card p-8 space-y-8"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2 }}
+                    className="card p-6 border border-white/5 bg-white/2 backdrop-blur-sm rounded-3xl space-y-6 flex flex-col"
                 >
-                    <div className="flex items-center gap-3 border-b border-white/5 pb-4">
-                        <Save className="text-primary" size={20} />
-                        <h2 className="text-xl font-bold text-white">Emby 集成配置</h2>
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-500">
+                            <SettingsIcon size={20} />
+                        </div>
+                        <h3 className="font-bold text-lg text-white">Emby 媒体集成</h3>
                     </div>
 
-                    <div className="space-y-6">
-                        <div>
-                            <label className="block text-sm font-medium text-white/60 mb-2">Emby 服务器地址 (例如: http://192.168.1.100:8096)</label>
+                    <div className="space-y-4 flex-1 pt-2">
+                        <div className="space-y-2">
+                            <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">服务器 URL</label>
                             <input
                                 type="text"
                                 value={settings.emby_server_url || ''}
                                 onChange={(e) => setSettings(s => ({ ...s, emby_server_url: e.target.value }))}
-                                className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 outline-none focus:border-primary/50 transition-all text-white text-sm"
-                                placeholder="http://..."
+                                className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 transition-all text-sm"
+                                placeholder="http://ip:port"
                             />
                         </div>
-                        <div>
-                            <label className="block text-sm font-medium text-white/60 mb-2">Emby API Key</label>
+                        <div className="space-y-2">
+                            <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">API Key</label>
                             <input
                                 type="password"
                                 value={settings.emby_api_key || ''}
                                 onChange={(e) => setSettings(s => ({ ...s, emby_api_key: e.target.value }))}
-                                className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 outline-none focus:border-primary/50 transition-all text-white text-sm"
-                                placeholder="输入您的 API Key"
+                                className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 transition-all text-sm"
+                                placeholder="Emby API Key"
                             />
                         </div>
-                        <div>
-                            <label className="block text-sm font-medium text-white/60 mb-2">默认媒体库 (锁定播放范围)</label>
+                        <div className="space-y-2">
+                            <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">默认库</label>
                             <div className="relative">
                                 <select
                                     value={settings.emby_default_library || ''}
                                     onChange={(e) => setSettings(s => ({ ...s, emby_default_library: e.target.value }))}
-                                    className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 outline-none focus:border-primary/50 transition-all text-white text-sm appearance-none cursor-pointer"
+                                    className="w-full appearance-none bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 transition-all text-sm cursor-pointer"
                                 >
-                                    <option value="" className="bg-[#1a1a1a]">-- 不限制 (扫描所有媒体库) --</option>
+                                    <option value="" className="bg-[#1a1a1a]">-- 所有媒体库 --</option>
                                     {libraries.map(lib => (
                                         <option key={lib.id} value={lib.id} className="bg-[#1a1a1a]">
                                             {lib.name}
                                         </option>
                                     ))}
                                 </select>
-                                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-white/20">
-                                    {fetchingLibraries ? <Loader2 size={16} className="animate-spin" /> : <SettingsIcon size={16} />}
+                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-white/40">
+                                    <ArrowLeft size={16} className="-rotate-90" />
                                 </div>
                             </div>
-                            <p className="mt-2 text-[10px] text-white/20 italic">
-                                {libraries.length === 0 ? '填写服务器地址和 API Key 后将自动加载媒体库列表' : '选择后，播放器将强制仅从此媒体库检索视频。'}
+                            <p className="text-xs text-white/50 pl-1 mt-1 font-medium min-h-[15px]">
+                                {fetchingLibraries ? '正在获取媒体库...' : libraries.length === 0 ? '填写凭据后自动加载' : '播放器将优先检索此库'}
                             </p>
                         </div>
-
-                        <button
-                            onClick={handleSaveSettings}
-                            disabled={saving}
-                            className="w-full btn-primary py-4 mt-4 flex items-center justify-center gap-2"
-                        >
-                            {saving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
-                            保存 Emby 设置
-                        </button>
-                    </div>
-                </motion.div>
-
-                {/* Password Security */}
-                <motion.div
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="glass-card p-8 space-y-8"
-                >
-                    <div className="flex items-center gap-3 border-b border-white/5 pb-4">
-                        <Lock className="text-primary" size={20} />
-                        <h2 className="text-xl font-bold text-white">安全与账户</h2>
                     </div>
 
-                    <form onSubmit={handleChangePassword} className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium text-white/60 mb-2">当前密码</label>
-                            <input
-                                type="password"
-                                value={oldPassword}
-                                onChange={(e) => setOldPassword(e.target.value)}
-                                className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 outline-none focus:border-primary/50 transition-all text-white text-sm"
-                                required
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-white/60 mb-2">新密码</label>
-                            <input
-                                type="password"
-                                value={newPassword}
-                                onChange={(e) => setNewPassword(e.target.value)}
-                                className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 outline-none focus:border-primary/50 transition-all text-white text-sm"
-                                required
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-white/60 mb-2">确认新密码</label>
-                            <input
-                                type="password"
-                                value={confirmPassword}
-                                onChange={(e) => setConfirmPassword(e.target.value)}
-                                className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 outline-none focus:border-primary/50 transition-all text-white text-sm"
-                                required
-                            />
-                        </div>
-
-                        <button
-                            type="submit"
-                            disabled={changingPwd}
-                            className="w-full btn-primary bg-white/10 hover:bg-white/20 text-white border-white/10 py-4 mt-2 flex items-center justify-center gap-2"
-                        >
-                            {changingPwd ? <Loader2 className="animate-spin" size={20} /> : <Lock size={20} />}
-                            修改管理员密码
-                        </button>
-                    </form>
+                    <button
+                        onClick={handleSaveSettings}
+                        disabled={saving}
+                        className="w-full flex items-center justify-center gap-2 py-3 bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 disabled:opacity-50 transition-all rounded-xl font-black text-xs border border-blue-500/20 mt-2"
+                    >
+                        {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                        更新集成配置
+                    </button>
                 </motion.div>
             </div>
 
-            <div className="mt-8 p-6 rounded-2xl bg-amber-500/5 border border-amber-500/10 text-amber-500/80 text-sm">
-                <div className="flex gap-3">
-                    <AlertCircle size={20} className="shrink-0" />
-                    <p>
-                        注意：此处设置的是全局默认行为。如果您为特定用户单独设置了下载偏好，则该用户的偏好将优先于此处设置。
-                    </p>
+            <div className="p-5 rounded-2xl bg-white/[0.04] border border-white/10 flex gap-4 items-start">
+                <AlertCircle size={18} className="text-primary shrink-0 mt-0.5" />
+                <div className="text-xs text-white/50 leading-relaxed">
+                    <p className="font-black text-white/60 mb-1 uppercase tracking-tighter text-sm">Priority Note</p>
+                    <p>全局设置仅作为默认行为。若在“发现 & 下载”中为特定账号设置了独立偏好，则以该账号的专项配置为准，系统将自动覆盖全局设定。</p>
                 </div>
             </div>
         </div>

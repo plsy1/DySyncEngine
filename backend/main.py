@@ -15,7 +15,8 @@ class InterceptHandler(logging.Handler):
     def emit(self, record):
         # 过滤掉高频轮询的 API 日志，减少干扰
         msg = record.getMessage()
-        if '"GET /api/tasks/active' in msg or '"GET /api/logs' in msg:
+        skip_paths = ['"GET /api/tasks/active', '"GET /api/logs', '"GET /api/login/status', '"GET /api/users', '"GET /api/scheduler/status']
+        if any(path in msg for path in skip_paths):
             return
 
         # Get corresponding Loguru level if it exists
@@ -35,14 +36,14 @@ class InterceptHandler(logging.Handler):
 # 基础输出配置
 logger.remove()
 # 终端输出 (带颜色)
-logger.add(sys.stderr, format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>")
+logger.add(sys.stderr, format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>", level="INFO")
 
 # 文件持久化输出 (位于 /app/backend/data，确保 Volume 映射能看到)
 log_path = os.path.join(os.path.dirname(__file__), "data", "app.log")
-logger.add(log_path, rotation="10 MB", retention="1 week", enqueue=True, format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}")
+logger.add(log_path, rotation="10 MB", retention="1 week", enqueue=True, format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}", level="INFO")
 
 # 拦截 uvicorn 等日志
-logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+logging.basicConfig(handlers=[InterceptHandler()], level=logging.INFO, force=True)
 for _log in ["uvicorn", "uvicorn.error", "uvicorn.access", "fastapi"]:
     _logger = logging.getLogger(_log)
     _logger.handlers = [InterceptHandler()]

@@ -473,11 +473,12 @@ async def download_proxy_api(share_url: str = Query(..., description="抖音分�
 @router.post("/download_share_url", response_model=ShareDownloadResult)
 def download_from_share_url(share_url: str = Query(..., description="抖音分享链接")):
     """
-    直接下载单个抖音分享链接视频
+    直接下载单个抖音分享链接视频，并同步存储用户信息与视频记录到数据库
     """
 
     share_url = extract_share_url(share_url)
     share_url = resolve_redirect(share_url)
+    platform = get_url_platform(share_url)
     video_data = fetch_video_profile(share_url, minimal=False)
 
     aweme_id = video_data.get("aweme_id")
@@ -485,29 +486,62 @@ def download_from_share_url(share_url: str = Query(..., description="抖音分�
     desc = video_data.get("desc", "") or ""
     filename = desc if desc else aweme_id
 
-    nickname = video_data.get("author", {}).get("nickname")
-    uid = video_data.get("author", {}).get("uid")
-
-    # 抓取完整 Profile 以获取最新的 nickname 用于文件夹名
     author_info = video_data.get("author", {})
+    nickname = author_info.get("nickname")
+    uid = author_info.get("uid")
     sec_user_id = author_info.get("sec_uid")
+
+    # 1. 抓取/补充完整 Profile 以确保数据库信息的完整性
     if sec_user_id:
         try:
-            profile = fetch_user_profile(sec_user_id)
+            profile = fetch_user_profile(sec_user_id, platform=platform)
             full_user_info = profile.get("user", {})
             if full_user_info:
                 author_info.update(full_user_info)
         except Exception as e:
-            logger.error(f"enrichment 失败: {e}")
+            logger.error(f"Enrichment author info failed: {e}")
 
-    # 重新获取最新的 nickname 以构建文件夹名（如果 enrichment 更新了它）
     final_nickname = author_info.get("nickname", nickname)
-    type_folder = "notes" if aweme_type == 68 else "videos"
-    author_folder = os.path.join(f"{final_nickname}_{uid}", type_folder)
+    
+    # 2. 同步到数据库
+    with next(get_session()) as session:
+        # 存储/更新用户
+        add_or_update_user(session, {
+            "uid": uid,
+            "sec_user_id": sec_user_id,
+            "nickname": final_nickname,
+            "avatar_url": author_info.get("avatar_thumb", {}).get("url_list", [None])[0] if isinstance(author_info.get("avatar_thumb"), dict) else author_info.get("avatar_thumb"),
+            "signature": author_info.get("signature"),
+            "platform": platform
+        })
+        
+        # 存储/更新 Aweme 记录
+        add_aweme(session, {
+            "aweme_id": aweme_id,
+            "desc": desc,
+            "share_url": share_url,
+            "nickname": final_nickname,
+            "uid": uid,
+            "create_time": video_data.get("create_time", 0),
+            "aweme_type": aweme_type,
+            "platform": platform
+        })
+        
+        # 3. 执行下载
+        type_folder = "notes" if aweme_type == 68 else "videos"
+        author_folder = os.path.join(f"{final_nickname}_{uid}", type_folder)
+        saved_path = download_video(share_url, author_folder, filename, aweme_id)
+        
+        if saved_path:
+            # 更新下载状态和路径
+            aweme = session.query(Aweme).filter_by(aweme_id=aweme_id).first()
+            if aweme:
+                aweme.downloaded = True
+                aweme.local_path = saved_path
+                session.commit()
+            return ShareDownloadResult(filename=filename, downloaded=True)
 
-    success = download_video(share_url, author_folder, filename, aweme_id)
-
-    return ShareDownloadResult(filename=filename, downloaded=bool(success))
+    return ShareDownloadResult(filename=filename, downloaded=bool(saved_path))
 
 
 # ----------------------------

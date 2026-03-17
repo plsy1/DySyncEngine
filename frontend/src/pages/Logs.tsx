@@ -41,35 +41,33 @@ export const Logs = () => {
     });
 
     return (
-        <div className="max-w-6xl mx-auto space-y-6">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-8 pb-20">
+            <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <div>
-                    <h1 className="text-3xl font-bold bg-gradient-to-r from-white to-white/40 bg-clip-text text-transparent">
-                        系统日志
-                    </h1>
-                    <p className="text-white/40 mt-1">监控后台运行状态与错误信息</p>
+                    <h2 className="text-3xl font-black tracking-tight text-white">系统审计日志</h2>
+                    <p className="text-white/60 text-base mt-1">监控后台运行状态与实时错误报告</p>
                 </div>
 
                 <div className="flex items-center gap-3">
                     <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" size={16} />
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40" size={18} />
                         <input
                             type="text"
                             placeholder="过滤内容..."
                             value={filter}
                             onChange={(e) => setFilter(e.target.value)}
-                            className="pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-primary/50 text-sm transition-all w-48"
+                            className="pl-11 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-primary/50 text-sm transition-all w-48 font-medium"
                         />
                     </div>
 
                     <div className="relative">
-                        <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" size={16} />
+                        <Filter className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40" size={18} />
                         <select
                             value={logLevel}
                             onChange={(e) => setLogLevel(e.target.value)}
-                            className="pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-primary/50 text-sm transition-all cursor-pointer appearance-none hover:bg-white/10 w-32"
+                            className="pl-11 pr-8 py-2.5 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-primary/50 text-sm transition-all cursor-pointer appearance-none hover:bg-white/10 w-36 font-bold"
                         >
-                            <option value="ALL" className="bg-[#1a1a1a]">ALL</option>
+                            <option value="ALL" className="bg-[#1a1a1a]">ALL LEVELS</option>
                             <option value="INFO" className="bg-[#1a1a1a]">INFO</option>
                             <option value="SUCCESS" className="bg-[#1a1a1a]">SUCCESS</option>
                             <option value="WARNING" className="bg-[#1a1a1a]">WARNING</option>
@@ -93,30 +91,37 @@ export const Logs = () => {
                         <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
                     </button>
                 </div>
-            </div>
+            </header>
 
-            <div className="glass-card p-1 overflow-hidden h-[70vh] flex flex-col">
-                <div className="flex items-center gap-2 px-4 py-2 bg-white/5 border-b border-white/5">
-                    <Terminal size={14} className="text-primary" />
-                    <span className="text-[10px] uppercase tracking-widest font-bold text-white/40">Terminal Output</span>
+            <div className="card p-1 overflow-hidden h-[75vh] flex flex-col border border-white/5 bg-white/2 backdrop-blur-sm rounded-3xl">
+                <div className="flex items-center justify-between px-6 py-4 bg-white/5 border-b border-white/5">
+                    <div className="flex items-center gap-3">
+                        <Terminal size={18} className="text-primary" />
+                        <span className="text-xs uppercase tracking-widest font-black text-white/60">Audit Terminal Output</span>
+                    </div>
+                    <div className="flex gap-2">
+                        <div className="w-3 h-3 rounded-full bg-red-500/20 border border-red-500/40" />
+                        <div className="w-3 h-3 rounded-full bg-amber-500/20 border border-amber-500/40" />
+                        <div className="w-3 h-3 rounded-full bg-emerald-500/20 border border-emerald-500/40" />
+                    </div>
                 </div>
 
                 <div
                     ref={scrollRef}
-                    className="flex-1 overflow-y-auto p-4 font-mono text-xs space-y-1 selection:bg-primary/30"
+                    className="flex-1 overflow-y-auto p-6 font-mono text-sm space-y-1.5 selection:bg-primary/30 custom-scrollbar"
                     onWheel={() => setAutoScroll(false)}
                 >
                     {filteredLogs.length > 0 ? (
                         filteredLogs.map((log, i) => (
-                            <div key={i} className="whitespace-pre-wrap break-all border-l-2 border-transparent hover:border-white/10 hover:bg-white/5 px-2 transition-colors">
+                            <div key={i} className="whitespace-pre-wrap break-all border-l-2 border-transparent hover:border-white/10 hover:bg-white/5 px-3 py-0.5 transition-colors rounded-lg">
                                 {log.includes('| ERROR    |') ? (
-                                    <span className="text-red-400">{log}</span>
+                                    <span className="text-red-400 font-bold">{log}</span>
                                 ) : log.includes('| WARNING  |') ? (
-                                    <span className="text-yellow-400">{log}</span>
+                                    <span className="text-amber-400 font-bold">{log}</span>
                                 ) : log.includes('| SUCCESS  |') ? (
-                                    <span className="text-green-400">{log}</span>
+                                    <span className="text-emerald-400 font-bold">{log}</span>
                                 ) : (
-                                    <span className="text-white/60">{log}</span>
+                                    <span className="text-white/70">{log}</span>
                                 )}
                             </div>
                         ))

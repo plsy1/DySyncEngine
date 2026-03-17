@@ -175,7 +175,10 @@ function App() {
   return (
     <div className="min-h-screen bg-[#050505] text-white selection:bg-primary/30 flex overflow-hidden">
       {/* Sidebar Navigation - Fixed on Left for Desktop */}
-      <nav className="fixed left-0 top-0 bottom-0 w-20 lg:w-64 bg-black/40 backdrop-blur-2xl border-r border-white/5 z-50 flex flex-col transition-all duration-500 ease-in-out group">
+      <nav 
+        style={{ paddingTop: 'var(--sat)' }}
+        className="fixed left-0 top-0 bottom-0 w-20 lg:w-64 bg-black/40 backdrop-blur-2xl border-r border-white/5 z-50 flex flex-col transition-all duration-500 ease-in-out group"
+      >
         <div className="p-6 mb-8 flex items-center gap-3 overflow-hidden">
           <div className="w-10 h-10 min-w-[40px] rounded-2xl bg-gradient-to-br from-primary to-primary/40 p-[1px]">
             <div className="w-full h-full bg-black rounded-2xl flex items-center justify-center overflow-hidden">
@@ -209,8 +212,14 @@ function App() {
       </nav>
 
       {/* Main Content Area */}
-      <main className="flex-1 ml-20 lg:ml-64 min-h-screen overflow-y-auto custom-scrollbar">
-        <div className="max-w-[1920px] mx-auto p-6 lg:p-10 space-y-10">
+      <main 
+        style={{ paddingTop: 'var(--sat)' }}
+        className="flex-1 ml-20 lg:ml-64 min-h-screen overflow-y-auto custom-scrollbar"
+      >
+        <div 
+            style={{ paddingBottom: 'var(--sab)' }}
+            className="max-w-[1920px] mx-auto p-6 lg:p-10 space-y-10"
+        >
           <AnimatePresence mode="wait">
             <motion.div
               key={view}
@@ -220,7 +229,7 @@ function App() {
               transition={{ duration: 0.3, ease: "easeOut" }}
             >
               {view === 'settings' ? (
-                <div className="max-w-4xl"><Settings onBack={() => setView('dashboard')} onNotify={showToast} /></div>
+                <Settings onBack={() => setView('dashboard')} onNotify={showToast} />
               ) : view === 'player' ? (
                 <EmbyPlayer onBack={() => setView('dashboard')} onNotify={showToast} />
               ) : view === 'tasks' ? (
@@ -228,7 +237,7 @@ function App() {
               ) : view === 'logs' ? (
                 <Logs />
               ) : view === 'telegram' ? (
-                <div className="max-w-4xl"><Telegram onBack={() => setView('dashboard')} onNotify={showToast} /></div>
+                <Telegram onBack={() => setView('dashboard')} onNotify={showToast} />
               ) : (
                 <div className="space-y-12">
                   <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
