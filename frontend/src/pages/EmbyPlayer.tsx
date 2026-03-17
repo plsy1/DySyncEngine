@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Loader2, Play, AlertCircle, Menu, X, Folder, Volume2, VolumeX, Maximize2, Monitor, Repeat, ArrowRightCircle, Trash2, Home, Plus, Clock, Shuffle } from 'lucide-react';
+import { ArrowLeft, Loader2, Play, AlertCircle, Menu, X, Folder, Volume2, VolumeX, Maximize2, Monitor, Repeat, ArrowRightCircle, Trash2, Home, Plus, Clock, Shuffle, Maximize, Minimize } from 'lucide-react';
 import * as api from '../api';
 import type { GlobalSettings } from '../types';
 import axios from 'axios';
@@ -82,15 +82,36 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         const saved = localStorage.getItem('emby_player_filter_mode');
         return (saved as any) || 'mixed';
     });
+    const [isFullscreen, setIsFullscreen] = useState(false);
 
     useEffect(() => {
         const handleResize = () => {
             setIsScreenLandscape(window.innerWidth > window.innerHeight);
             setIsMobile(window.innerWidth < 768);
         };
+        const handleFullscreenChange = () => {
+            setIsFullscreen(!!document.fullscreenElement);
+        };
+
         window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        return () => {
+            window.removeEventListener('resize', handleResize);
+            document.removeEventListener('fullscreenchange', handleFullscreenChange);
+        }
     }, []);
+
+    const toggleFullscreen = useCallback(() => {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(err => {
+                onNotify(`无法进入全屏: ${err.message}`, 'error');
+            });
+        } else {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            }
+        }
+    }, [onNotify]);
 
     const getFolderName = (path?: string) => {
         if (!path) return '';
@@ -919,11 +940,14 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                         setGalleryIndexes(prev => ({ ...prev, [item.Id]: current - 1 }));
                     }
                 }
+            } else if (e.key === 'f' || e.key === 'F') {
+                e.preventDefault();
+                toggleFullscreen();
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [activeVideoIndex, items.length, isSidebarOpen, deleteConfirmItem]);
+    }, [activeVideoIndex, items.length, isSidebarOpen, deleteConfirmItem, toggleFullscreen]);
 
 
     if (loading) {
@@ -1038,6 +1062,13 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                     title="画面占比"
                                 >
                                     {displayMode === 'smart' ? <Monitor size={20} /> : <Maximize2 size={20} />}
+                                </button>
+                                <button
+                                    onClick={toggleFullscreen}
+                                    className="p-2.5 text-white/70 hover:text-white transition-all bg-white/5 hover:bg-white/10 rounded-full"
+                                    title={isFullscreen ? "退出全屏" : "全屏模式"}
+                                >
+                                    {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
                                 </button>
                                 <button
                                     onClick={() => setIsMuted(!isMuted)}
