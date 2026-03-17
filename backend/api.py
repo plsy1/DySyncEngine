@@ -401,6 +401,7 @@ class VideoParseInfo(BaseModel):
     author_name: str | None
     author_avatar: str | None
     platform: str = "douyin"
+    create_time: int = 0
 
 
 @router.post("/parse_video", response_model=VideoParseInfo)
@@ -425,7 +426,8 @@ def parse_video_api(share_url: str = Query(..., description="分享链接")):
         cover_url=video.get("origin_cover", {}).get("url_list", [None])[0],
         author_name=author.get("nickname"),
         author_avatar=author.get("avatar_thumb", {}).get("url_list", [None])[0],
-        platform=platform
+        platform=platform,
+        create_time=video_data.get("create_time", 0)
     )
 
 
@@ -677,7 +679,8 @@ def lookup_videos_by_path(req: VideoLookupRequest, session: Session = Depends(ge
                 "sec_user_id": user.sec_user_id,
                 "avatar_url": user.avatar_url,
                 "platform": aweme.platform,
-                "share_url": aweme.share_url
+                "share_url": aweme.share_url,
+                "create_time": aweme.create_time
             }
         
         # 填充结果并移除已匹配的路径
@@ -728,7 +731,8 @@ def lookup_videos_by_path(req: VideoLookupRequest, session: Session = Depends(ge
                         "sec_user_id": user.sec_user_id,
                         "avatar_url": user.avatar_url,
                         "platform": aweme.platform,
-                        "share_url": aweme.share_url
+                        "share_url": aweme.share_url,
+                        "create_time": aweme.create_time
                     }
                     break
                     

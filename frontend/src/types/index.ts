@@ -66,6 +66,7 @@ export interface VideoParseInfo {
   author_name: string | null;
   author_avatar: string | null;
   platform: string;
+  create_time: number;
 }
 
 export interface ApiResponse<T = any> {

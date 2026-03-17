@@ -49,6 +49,10 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     const [sidebarPath, setSidebarPath] = useState<{ id: string, name: string }[]>([]);
     const [foldersLoading, setFoldersLoading] = useState(false);
     const [isMuted, setIsMuted] = useState(true);
+    const [volume, setVolume] = useState(() => Number(localStorage.getItem('emby_player_volume') || '1'));
+    const [showVolumeSlider, setShowVolumeSlider] = useState(false);
+    const [isPCVolumeVisible, setIsPCVolumeVisible] = useState(false);
+    const volumeHideTimerRef = useRef<any>(null);
     const [videoMetadata, setVideoMetadata] = useState<Record<string, any>>({});
 
     // Progress State
@@ -77,6 +81,8 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         typeof window !== 'undefined' ? window.innerWidth > window.innerHeight : false
     );
     const [galleryIndexes, setGalleryIndexes] = useState<{ [key: string]: number }>({});
+    const [isGalleryManual, setIsGalleryManual] = useState<{ [key: string]: boolean }>({});
+    const galleryTimerRef = useRef<any>(null);
     const [fetchState, setFetchState] = useState<{ [key: string]: number }>({}); // Track next StartIndex per folderId
     const [filterMode, setFilterMode] = useState<'video' | 'photo' | 'mixed'>(() => {
         const saved = localStorage.getItem('emby_player_filter_mode');
@@ -101,6 +107,16 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         }
     }, []);
 
+    useEffect(() => {
+        localStorage.setItem('emby_player_volume', volume.toString());
+        videoRefs.current.forEach(v => {
+            if (v) {
+                v.volume = volume;
+                v.muted = isMuted;
+            }
+        });
+    }, [volume, isMuted]);
+
     const toggleFullscreen = useCallback(() => {
         if (!document.fullscreenElement) {
             document.documentElement.requestFullscreen().catch(err => {
@@ -113,10 +129,73 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         }
     }, [onNotify]);
 
+    const goToNextContent = useCallback(() => {
+        if (activeVideoIndex < items.length - 1) {
+            const nextIndex = activeVideoIndex + 1;
+            itemRefs.current[nextIndex]?.scrollIntoView({ behavior: 'smooth' });
+            // safePlay(nextIndex) is handled by video el's ref or other logic if needed, 
+            // but setting active index via scroll observer is usually how this app works.
+        }
+    }, [activeVideoIndex, items.length]);
+
+    useEffect(() => {
+        if (galleryTimerRef.current) clearTimeout(galleryTimerRef.current);
+
+        const currentItem = items[activeVideoIndex];
+        if (currentItem?.Type === 'Gallery' && !isGalleryManual[currentItem.Id] && !isUserPaused) {
+            const currentIndex = galleryIndexes[currentItem.Id] || 0;
+            const totalImages = currentItem.Children?.length || 0;
+
+            galleryTimerRef.current = setTimeout(() => {
+                if (currentIndex < totalImages - 1) {
+                    setGalleryIndexes(prev => ({ ...prev, [currentItem.Id]: currentIndex + 1 }));
+                } else {
+                    // Last image, go to next content
+                    goToNextContent();
+                }
+            }, 1500); // 5 seconds per image
+        }
+
+        return () => {
+            if (galleryTimerRef.current) clearTimeout(galleryTimerRef.current);
+        };
+    }, [activeVideoIndex, galleryIndexes, isGalleryManual, isUserPaused, items, goToNextContent]);
+
+    useEffect(() => {
+        const item = items[activeVideoIndex];
+        if (item?.Type === 'Gallery') {
+            // Reset manual flag and index when we first land on a gallery
+            setIsGalleryManual(prev => ({ ...prev, [item.Id]: false }));
+            setGalleryIndexes(prev => ({ ...prev, [item.Id]: 0 }));
+        }
+    }, [activeVideoIndex]); // Only depend on active index to reset when switching between cards
+
+    // Preload next image in current gallery
+    useEffect(() => {
+        const currentItem = items[activeVideoIndex];
+        if (currentItem?.Type === 'Gallery' && currentItem.Children) {
+            const currentIndex = galleryIndexes[currentItem.Id] || 0;
+            const nextIndex = currentIndex + 1;
+            if (nextIndex < currentItem.Children.length) {
+                const url = getPosterUrl(currentItem.Children[nextIndex], true);
+                if (url) {
+                    const img = new Image();
+                    img.src = url;
+                }
+            }
+        }
+    }, [activeVideoIndex, galleryIndexes, items]);
+
     const getFolderName = (path?: string) => {
         if (!path) return '';
         const parts = path.replace(/\\/g, '/').split('/');
         return parts.length > 1 ? parts[parts.length - 2] : '';
+    };
+
+    const formatDate = (timestamp?: number) => {
+        if (!timestamp) return '';
+        const date = new Date(timestamp * 1000);
+        return date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
     };
 
     const handlePlaying = (itemId: string) => {
@@ -561,6 +640,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         try {
             // Set initial muted state based on global preference
             video.muted = isMuted;
+            video.volume = volume;
             await video.play();
         } catch (err: any) {
             console.warn(`Playback failed for video ${index}:`, err);
@@ -840,11 +920,25 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                         loadMoreVideos();
                     }
 
-                    // Preload adjacent videos (next and previous)
-                    [index - 1, index + 1].forEach(adjIndex => {
-                        const adjVideo = videoRefs.current[adjIndex];
-                        if (adjVideo && adjVideo.paused) {
-                            adjVideo.preload = 'auto';
+                    // Advanced Preloading: 3 items ahead, 1 item behind
+                    [index - 1, index + 1, index + 2, index + 3].forEach(adjIndex => {
+                        const adjItem = items[adjIndex];
+                        if (!adjItem) return;
+
+                        if (adjItem.MediaType === 'Video' || adjItem.Type === 'Video') {
+                            const adjVideo = videoRefs.current[adjIndex];
+                            if (adjVideo && adjVideo.paused) {
+                                adjVideo.preload = 'auto';
+                            }
+                        } else if (adjItem.Type === 'Gallery' && adjItem.Children) {
+                            // Preload first 2 images of upcoming galleries
+                            adjItem.Children.slice(0, 2).forEach(child => {
+                                const url = getPosterUrl(child, true);
+                                if (url) {
+                                    const img = new Image();
+                                    img.src = url;
+                                }
+                            });
                         }
                     });
                 } else {
@@ -930,6 +1024,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                     const current = galleryIndexes[item.Id] || 0;
                     if (current < (item.Children?.length || 0) - 1) {
                         setGalleryIndexes(prev => ({ ...prev, [item.Id]: current + 1 }));
+                        setIsGalleryManual(prev => ({ ...prev, [item.Id]: true }));
                     }
                 }
             } else if (e.key === 'ArrowLeft') {
@@ -938,6 +1033,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                     const current = galleryIndexes[item.Id] || 0;
                     if (current > 0) {
                         setGalleryIndexes(prev => ({ ...prev, [item.Id]: current - 1 }));
+                        setIsGalleryManual(prev => ({ ...prev, [item.Id]: true }));
                     }
                 }
             } else if (e.key === 'f' || e.key === 'F') {
@@ -1070,13 +1166,54 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                 >
                                     {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
                                 </button>
-                                <button
-                                    onClick={() => setIsMuted(!isMuted)}
-                                    className="p-2.5 text-white/70 hover:text-white transition-all bg-white/5 hover:bg-white/10 rounded-full"
-                                    title="静音开关"
+                                <div
+                                    className="relative flex items-center"
+                                    onMouseEnter={() => {
+                                        if (volumeHideTimerRef.current) clearTimeout(volumeHideTimerRef.current);
+                                        setIsPCVolumeVisible(true);
+                                    }}
+                                    onMouseLeave={() => {
+                                        volumeHideTimerRef.current = setTimeout(() => setIsPCVolumeVisible(false), 800);
+                                    }}
                                 >
-                                    {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
-                                </button>
+                                    <AnimatePresence>
+                                        {isPCVolumeVisible && (
+                                            <motion.div
+                                                initial={{ opacity: 0, x: 10, scale: 0.95 }}
+                                                animate={{ opacity: 1, x: 0, scale: 1 }}
+                                                exit={{ opacity: 0, x: 10, scale: 0.9 }}
+                                                className="absolute right-full mr-3 bg-black/80 backdrop-blur-xl rounded-full px-4 py-2 flex items-center gap-3 border border-white/10 shadow-2xl z-[100]"
+                                            >
+                                                <span className="text-[10px] font-bold text-white/70 w-8">{Math.round(volume * 100)}%</span>
+                                                <input
+                                                    type="range"
+                                                    min="0"
+                                                    max="1"
+                                                    step="0.01"
+                                                    value={isMuted ? 0 : volume}
+                                                    onChange={(e) => {
+                                                        const v = parseFloat(e.target.value);
+                                                        setVolume(v);
+                                                        if (v > 0) setIsMuted(false);
+                                                        else setIsMuted(true);
+                                                    }}
+                                                    onMouseDown={() => {
+                                                        if (volumeHideTimerRef.current) clearTimeout(volumeHideTimerRef.current);
+                                                    }}
+                                                    className="w-24 volume-slider appearance-none cursor-pointer"
+                                                    style={{ backgroundSize: `${(isMuted ? 0 : volume) * 100}% 100%` }}
+                                                />
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                    <button
+                                        onClick={() => setIsMuted(!isMuted)}
+                                        className={`p-2.5 transition-all rounded-full ${!isMuted ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-white/5 text-white/70 hover:bg-white/10'}`}
+                                        title="音量控制"
+                                    >
+                                        {isMuted || volume === 0 ? <VolumeX size={20} /> : <Volume2 size={20} />}
+                                    </button>
+                                </div>
                                 <button
                                     onClick={() => setIsSidebarOpen(true)}
                                     className="p-2.5 text-white/70 hover:text-white transition-all bg-white/10 hover:bg-white/20 rounded-full ml-1 border border-white/10"
@@ -1146,6 +1283,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                             const current = galleryIndexes[item.Id] || 0;
                                             const next = (current + 1) % (item.Children?.length || 1);
                                             setGalleryIndexes(prev => ({ ...prev, [item.Id]: next }));
+                                            setIsGalleryManual(prev => ({ ...prev, [item.Id]: true }));
                                         }
                                     }}
                                 >
@@ -1227,9 +1365,11 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                                 const current = galleryIndexes[item.Id] || 0;
                                                                 if (diff < 0 && current < count - 1) {
                                                                     setGalleryIndexes(prev => ({ ...prev, [item.Id]: current + 1 }));
+                                                                    setIsGalleryManual(prev => ({ ...prev, [item.Id]: true }));
                                                                     if (window.navigator.vibrate) window.navigator.vibrate(10);
                                                                 } else if (diff > 0 && current > 0) {
                                                                     setGalleryIndexes(prev => ({ ...prev, [item.Id]: current - 1 }));
+                                                                    setIsGalleryManual(prev => ({ ...prev, [item.Id]: true }));
                                                                     if (window.navigator.vibrate) window.navigator.vibrate(10);
                                                                 }
                                                             }
@@ -1396,6 +1536,11 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                     {videoMetadata[item.Path].platform}
                                                 </span>
                                             )}
+                                            {item.Path && videoMetadata[item.Path]?.create_time > 0 && (
+                                                <span className="text-white/40 text-[10px] font-medium ml-1">
+                                                    · {formatDate(videoMetadata[item.Path].create_time)}
+                                                </span>
+                                            )}
                                         </div>
                                         <p className="text-white/80 text-sm line-clamp-3 drop-shadow-md">
                                             {(item.Path && videoMetadata[item.Path]?.desc) || item.Overview}
@@ -1535,16 +1680,45 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                         <span className="text-[10px] font-medium">画面比例</span>
                     </button>
 
-                    <button
-                        onClick={() => {
-                            setIsMuted(!isMuted);
-                            onNotify(!isMuted ? '已静音' : '音量已开启', 'success');
-                        }}
-                        className={`flex-1 flex flex-col items-center justify-center gap-1 transition-all active:scale-95 ${!isMuted ? 'text-white' : 'text-white/50'}`}
-                    >
-                        {isMuted ? <VolumeX size={22} /> : <Volume2 size={22} />}
-                        <span className="text-[10px] font-medium">{isMuted ? '静音' : '音量'}</span>
-                    </button>
+                    <div className="flex-1 relative flex flex-col items-center justify-center">
+                        <AnimatePresence>
+                            {showVolumeSlider && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                    className="absolute bottom-full right-0 mb-4 bg-black/80 backdrop-blur-xl rounded-2xl p-4 flex flex-col items-center gap-3 border border-white/10 shadow-2xl z-[100]"
+                                >
+                                    <div className="flex justify-between w-full px-1">
+                                        <span className="text-[10px] font-bold text-white/50">音量</span>
+                                        <span className="text-[10px] font-bold text-primary">{Math.round(volume * 100)}%</span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="1"
+                                        step="0.01"
+                                        value={isMuted ? 0 : volume}
+                                        onChange={(e) => {
+                                            const v = parseFloat(e.target.value);
+                                            setVolume(v);
+                                            if (v > 0) setIsMuted(false);
+                                            else setIsMuted(true);
+                                        }}
+                                        className="w-28 volume-slider appearance-none cursor-pointer"
+                                        style={{ backgroundSize: `${(isMuted ? 0 : volume) * 100}% 100%` }}
+                                    />
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                        <button
+                            onClick={() => setShowVolumeSlider(!showVolumeSlider)}
+                            className={`flex flex-col items-center justify-center gap-1 transition-all active:scale-95 ${!isMuted ? 'text-white' : 'text-white/50'}`}
+                        >
+                            {isMuted || volume === 0 ? <VolumeX size={22} /> : <Volume2 size={22} />}
+                            <span className="text-[10px] font-medium">{isMuted ? '静音' : '音量'}</span>
+                        </button>
+                    </div>
                 </div>
             )}
 
@@ -1556,6 +1730,32 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                 .no-scrollbar {
                     -ms-overflow-style: none;
                     scrollbar-width: none;
+                }
+                
+                input[type='range'].volume-slider {
+                    -webkit-appearance: none;
+                    height: 6px;
+                    background: rgba(255, 255, 255, 0.1);
+                    border-radius: 5px;
+                    background-image: linear-gradient(#fe2c55, #fe2c55);
+                    background-repeat: no-repeat;
+                }
+
+                input[type='range'].volume-slider::-webkit-slider-thumb {
+                    -webkit-appearance: none;
+                    height: 14px;
+                    width: 14px;
+                    border-radius: 50%;
+                    background: #fff;
+                    cursor: pointer;
+                    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+                }
+
+                input[type='range'].volume-slider::-webkit-slider-runnable-track {
+                    -webkit-appearance: none;
+                    box-shadow: none;
+                    border: none;
+                    background: transparent;
                 }
             `}</style>
 

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Download, Server, Link, Loader2, Sparkles, User, FileVideo } from 'lucide-react';
+import { Download, Server, Link, Loader2, Sparkles, User, FileVideo, Clock } from 'lucide-react';
 import type { VideoParseInfo } from '../types';
 import * as api from '../api';
 
@@ -13,6 +13,12 @@ export const SingleDownload = ({ onNotify }: SingleDownloadProps) => {
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [videoData, setVideoData] = useState<VideoParseInfo | null>(null);
+
+    const formatDate = (timestamp?: number) => {
+        if (!timestamp) return '';
+        const date = new Date(timestamp * 1000);
+        return date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
+    };
 
     const handleParse = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -109,6 +115,15 @@ export const SingleDownload = ({ onNotify }: SingleDownloadProps) => {
                                     <div className="flex items-center gap-2 text-white/40 text-sm">
                                         <FileVideo size={14} />
                                         <span>Aweme ID: {videoData.aweme_id}</span>
+                                        {videoData.create_time > 0 && (
+                                            <>
+                                                <span className="text-white/20">|</span>
+                                                <div className="flex items-center gap-1">
+                                                    <Clock size={12} />
+                                                    <span>{formatDate(videoData.create_time)}</span>
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
 
