@@ -196,7 +196,7 @@ function App() {
           </div>
           <div className="hidden lg:block whitespace-nowrap">
             <h1 className="text-lg font-bold tracking-tight">DySync<span className="text-primary text-xl">.</span></h1>
-            <p className="text-[10px] text-white/30 font-bold uppercase tracking-widest mt-[-4px]">Core v2.0</p>
+            <p className="text-[10px] text-white/30 font-bold uppercase tracking-widest mt-[-4px]">Core v{__APP_VERSION__}</p>
           </div>
         </div>
 
