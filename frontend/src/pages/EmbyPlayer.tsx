@@ -82,6 +82,11 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     const [isScreenLandscape, setIsScreenLandscape] = useState(
         typeof window !== 'undefined' ? window.innerWidth > window.innerHeight : false
     );
+    const [isIOS] = useState(() => {
+        if (typeof window === 'undefined') return false;
+        return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    });
+    const [isAudioUnlocked, setIsAudioUnlocked] = useState(false);
     const [galleryIndexes, setGalleryIndexes] = useState<{ [key: string]: number }>({});
     const [isGalleryManual, setIsGalleryManual] = useState<{ [key: string]: boolean }>({});
     const galleryTimerRef = useRef<any>(null);
@@ -646,19 +651,34 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         try {
             // Set initial muted state based on global preference
             video.muted = isMuted;
-            video.volume = volume;
+            // On iOS, changing volume via JS has no effect, so we skip it to avoid any overhead
+            if (!isIOS) video.volume = volume;
             await video.play();
         } catch (err: any) {
             console.warn(`Playback failed for video ${index}:`, err);
-            // If blocked by browser (NotAllowedError), fallback to muted auto-play
+            // If blocked by browser (NotAllowedError/iOS policy), fallback to muted auto-play
             if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
                 video.muted = true;
-                // If the user *thought* they were unmuted, we might want to sync back or show a hint
-                // For now, just ensure it plays
                 video.play().catch(e => console.error("Muted fallback failed too:", e));
             }
         }
     };
+
+    // Helper to unlock all video elements on first interaction
+    const unlockAudio = useCallback(() => {
+        if (isAudioUnlocked) return;
+        videoRefs.current.forEach(v => {
+            if (v) {
+                // Prime the audio context by playing/pausing once in a user-gesture handler
+                v.muted = isMuted;
+                const p = v.play();
+                if (p !== undefined) {
+                    p.then(() => v.pause()).catch(() => { });
+                }
+            }
+        });
+        setIsAudioUnlocked(true);
+    }, [isAudioUnlocked, isMuted]);
 
     const handleTimeUpdate = (itemId: string, e: React.SyntheticEvent<HTMLVideoElement>) => {
         if (isDragging) return;
@@ -1257,6 +1277,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                         ref={containerRef}
                         className="h-full overflow-y-scroll snap-y snap-mandatory no-scrollbar scroll-smooth"
                         onWheel={handleWheel}
+                        onClick={unlockAudio}
                     >
                         <div className="min-h-full">
                             {items.map((item, index) => (
@@ -1268,10 +1289,13 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     overflow-hidden bg-black
     h-[calc(100vh-56px-env(safe-area-inset-bottom))]
     md:h-screen
-  "
+"
                                     style={{ scrollSnapStop: 'always' }}
                                     data-index={index}
-                                    onTouchStart={(e) => handleGlobalTouchStart(index, e)}
+                                    onTouchStart={(e) => {
+                                        unlockAudio();
+                                        handleGlobalTouchStart(index, e);
+                                    }}
                                     onTouchMove={(e) => handleGlobalTouchMove(item.Id, index, e)}
                                     onTouchEnd={(e) => handleGlobalTouchEnd(item.Id, index, e)}
                                     onClick={() => {
@@ -1439,6 +1463,29 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                             >
                                                 <Play size={40} className="ml-2" />
                                             </motion.div>
+                                        )}
+
+                                        {/* iOS Autoplay / Muted hint */}
+                                        {(activeVideoIndex === index && !isUserPaused && !isMuted && videoRefs.current[index]?.muted) && (
+                                            <motion.button
+                                                initial={{ y: 20, opacity: 0 }}
+                                                animate={{ y: 0, opacity: 1 }}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setIsMuted(false);
+                                                    if (videoRefs.current[index]) {
+                                                        const v = videoRefs.current[index]!;
+                                                        v.muted = false;
+                                                        v.play().catch(() => { });
+                                                    }
+                                                }}
+                                                onTouchStart={(e) => e.stopPropagation()}
+                                                onTouchEnd={(e) => e.stopPropagation()}
+                                                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 pointer-events-auto bg-primary text-white px-6 py-3 rounded-full font-bold flex items-center gap-2 shadow-2xl active:scale-95 transition-transform"
+                                            >
+                                                <Volume2 size={24} />
+                                                点击开启声音
+                                            </motion.button>
                                         )}
 
                                         {/* Right Action Buttons */}
@@ -1639,7 +1686,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
             {/* Dedicated Bottom Navigation Bar - Mobile ONLY */}
             {isMobile && (
-                <div className="h-[calc(env(safe-area-inset-bottom)+56px)] bg-[#050505] border-t border-white/5 flex items-stretch px-2 z-50 pointer-events-auto">
+                <div className="h-[calc(env(safe-area-inset-bottom)+56px)] bg-[#050505] border-t border-white/5 flex items-stretch px-2 z-[60] pointer-events-auto">
                     <button
                         onClick={() => {
                             const newTab = tab === 'latest' ? 'random' : 'latest';
@@ -1689,7 +1736,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
                     <div className="flex-1 relative flex flex-col items-center justify-center">
                         <AnimatePresence>
-                            {showVolumeSlider && (
+                            {(showVolumeSlider && !isIOS) && (
                                 <motion.div
                                     initial={{ opacity: 0, y: 10, scale: 0.95 }}
                                     animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -1719,11 +1766,18 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                             )}
                         </AnimatePresence>
                         <button
-                            onClick={() => setShowVolumeSlider(!showVolumeSlider)}
-                            className={`flex flex-col items-center justify-center gap-1 transition-all active:scale-95 ${!isMuted ? 'text-white' : 'text-white/50'}`}
+                            onClick={() => {
+                                if (isIOS) {
+                                    setIsMuted(!isMuted);
+                                    if (window.navigator.vibrate) window.navigator.vibrate(10);
+                                } else {
+                                    setShowVolumeSlider(!showVolumeSlider);
+                                }
+                            }}
+                            className={`flex flex-col items-center justify-center gap-2 transition-all active:scale-95 ${!isMuted ? 'text-white' : 'text-white/50'}`}
                         >
                             {isMuted || volume === 0 ? <VolumeX size={22} /> : <Volume2 size={22} />}
-                            <span className="text-[10px] font-medium">{isMuted ? '静音' : '音量'}</span>
+                            <span className="text-[10px] font-medium">{isMuted ? '静音' : (isIOS ? '声音已开' : '音量')}</span>
                         </button>
                     </div>
                 </div>
