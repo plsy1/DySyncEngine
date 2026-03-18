@@ -1107,7 +1107,11 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         <div
             className="fixed inset-0 bg-black z-[100] overflow-hidden flex flex-col select-none"
             onContextMenu={(e) => e.preventDefault()}
-            style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none' } as any}
+            style={{ 
+                WebkitTouchCallout: 'none', 
+                WebkitUserSelect: 'none',
+                height: isMobile ? '100dvh' : '100vh'
+            } as any}
         >
             {/* Top Navigation Bar - Douyin Style */}
             <div className="absolute top-0 left-0 right-0 z-50 pointer-events-none bg-gradient-to-b from-black/80 via-black/40 to-transparent"
@@ -1287,7 +1291,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                     className="
     w-full snap-start relative flex items-center justify-center
     overflow-hidden bg-black
-    h-[calc(100vh-56px-env(safe-area-inset-bottom))]
+    h-[calc(100dvh-56px-env(safe-area-inset-bottom))]
     md:h-screen
 "
                                     style={{ scrollSnapStop: 'always' }}
@@ -1728,10 +1732,10 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                             setDisplayMode(modes[nextIndex]);
                             onNotify(`适配: ${modes[nextIndex]}`, 'success');
                         }}
-                        className="flex-1 flex flex-col items-center justify-center gap-1 transition-all active:scale-95 text-white/50"
+                        className="flex-1 flex flex-col items-center justify-center gap-1 transition-all active:scale-95 text-white/50 shrink-0"
                     >
                         {displayMode === 'smart' ? <Monitor size={22} /> : <Maximize2 size={22} />}
-                        <span className="text-[10px] font-medium">画面比例</span>
+                        <span className="text-[10px] font-medium leading-none">画面比例</span>
                     </button>
 
                     <div className="flex-1 relative flex flex-col items-center justify-center">
