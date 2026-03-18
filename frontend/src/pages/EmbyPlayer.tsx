@@ -20,6 +20,7 @@ interface EmbyItem {
     Container?: string;
     Width?: number;
     Height?: number;
+    PrimaryImageAspectRatio?: number;
     DateCreated?: string;
     Path?: string;
     ImageTags?: {
@@ -58,6 +59,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     // Progress State
     const [currentTime, setCurrentTime] = useState<{ [key: string]: number }>({});
     const [duration, setDuration] = useState<{ [key: string]: number }>({});
+    const [videoDimensions, setVideoDimensions] = useState<{ [key: string]: { width: number, height: number } }>({});
     const [isDragging, setIsDragging] = useState(false);
     const [touchStartX, setTouchStartX] = useState(0);
     const [touchStartY, setTouchStartY] = useState(0);
@@ -663,6 +665,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     const handleLoadedMetadata = (itemId: string, e: React.SyntheticEvent<HTMLVideoElement>) => {
         const video = e.currentTarget;
         setDuration(prev => ({ ...prev, [itemId]: video.duration }));
+        setVideoDimensions(prev => ({ ...prev, [itemId]: { width: video.videoWidth, height: video.videoHeight } }));
     };
 
     const handleSeek = (itemId: string, index: number, e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
@@ -1313,7 +1316,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                         src={getVideoUrl(item)}
                                                         className={`relative z-10 w-full h-full pointer-events-auto bg-transparent ${displayMode === 'cover' ? 'object-cover' :
                                                             displayMode === 'contain' ? 'object-contain' :
-                                                                (isScreenLandscape || (item.Width || 0) > (item.Height || 0)) ? 'object-contain' : 'object-cover'
+                                                                (isScreenLandscape || (item.Width || 0) > (item.Height || 0) || (item.PrimaryImageAspectRatio || 0) > 1 || (videoDimensions[item.Id]?.width > videoDimensions[item.Id]?.height)) ? 'object-contain' : 'object-cover'
                                                             }`}
                                                         autoPlay={activeVideoIndex === index}
                                                         loop={playbackMode === 'loop'}
@@ -1335,7 +1338,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                             src={getPosterUrl(item)}
                                                             className={`absolute inset-0 w-full h-full z-20 pointer-events-none ${displayMode === 'cover' ? 'object-cover' :
                                                                 displayMode === 'contain' ? 'object-contain' :
-                                                                    (isScreenLandscape || (item.Width || 0) > (item.Height || 0)) ? 'object-contain' : 'object-cover'
+                                                                    (isScreenLandscape || (item.Width || 0) > (item.Height || 0) || (item.PrimaryImageAspectRatio || 0) > 1 || (videoDimensions[item.Id]?.width > videoDimensions[item.Id]?.height)) ? 'object-contain' : 'object-cover'
                                                                 }`}
                                                             alt=""
                                                         />
@@ -1385,7 +1388,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                                 transition={{ type: 'spring', damping: 25, stiffness: 300 }}
                                                                 className={`w-full h-full pointer-events-none ${displayMode === 'cover' ? 'object-cover' :
                                                                     displayMode === 'contain' ? 'object-contain' :
-                                                                        (isScreenLandscape || (item.Width || 0) > (item.Height || 0)) ? 'object-contain' : 'object-cover'
+                                                                        (isScreenLandscape || (item.Width || 0) > (item.Height || 0) || (item.PrimaryImageAspectRatio || 0) > 1) ? 'object-contain' : 'object-cover'
                                                                     }`}
                                                             />
                                                         </AnimatePresence>
@@ -1396,7 +1399,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                     src={getPosterUrl(item, true)}
                                                     className={`relative z-10 w-full h-full pointer-events-auto ${displayMode === 'cover' ? 'object-cover' :
                                                         displayMode === 'contain' ? 'object-contain' :
-                                                            (isScreenLandscape || (item.Width || 0) > (item.Height || 0)) ? 'object-contain' : 'object-cover'
+                                                            (isScreenLandscape || (item.Width || 0) > (item.Height || 0) || (item.PrimaryImageAspectRatio || 0) > 1) ? 'object-contain' : 'object-cover'
                                                         }`}
                                                     alt=""
                                                 />
