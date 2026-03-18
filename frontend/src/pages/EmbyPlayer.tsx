@@ -372,7 +372,11 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                 timeout: 15000,
             });
 
-            const folderIds = selectedFolderIds.length > 0 ? selectedFolderIds : [null];
+            let effectiveFolderId = selectedFolderIds.length > 0 ? selectedFolderIds.join(',') : null;
+            if (!effectiveFolderId && settings.emby_default_library) {
+                effectiveFolderId = settings.emby_default_library;
+            }
+            const folderIds = effectiveFolderId ? effectiveFolderId.split(',') : [null];
 
             // For multi-folder, we fetch a small batch from each to merge
             // This is a simplified pagination strategy for merged results
