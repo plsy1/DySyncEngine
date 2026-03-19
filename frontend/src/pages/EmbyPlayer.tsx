@@ -96,6 +96,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         return (saved as any) || 'mixed';
     });
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const skipClickRef = useRef(false);
 
     useEffect(() => {
         const handleResize = () => {
@@ -843,6 +844,10 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
             setTouchStartX(0);
             setTouchStartY(0);
             setSeekPreviewTime(null);
+            
+            // Flag to ignore the following click event
+            skipClickRef.current = true;
+            setTimeout(() => { skipClickRef.current = false; }, 300);
             return;
         }
 
@@ -1238,11 +1243,17 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                         )}
                                     </AnimatePresence>
                                     <button
-                                        onClick={() => setIsMuted(!isMuted)}
+                                        onClick={() => {
+                                            const nextMuted = !isMuted;
+                                            setIsMuted(nextMuted);
+                                            if (!nextMuted && volume === 0) {
+                                                setVolume(1.0);
+                                            }
+                                        }}
                                         className={`p-2.5 transition-all rounded-full ${!isMuted ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-white/5 text-white/70 hover:bg-white/10'}`}
                                         title="音量控制"
                                     >
-                                        {isMuted || volume === 0 ? <VolumeX size={20} /> : <Volume2 size={20} />}
+                                        {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
                                     </button>
                                 </div>
                                 <button
@@ -1303,6 +1314,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                     onTouchMove={(e) => handleGlobalTouchMove(item.Id, index, e)}
                                     onTouchEnd={(e) => handleGlobalTouchEnd(item.Id, index, e)}
                                     onClick={() => {
+                                        if (skipClickRef.current) return;
                                         // For desktop mouse clicks
                                         const video = videoRefs.current[index];
                                         if (video) {
@@ -1771,16 +1783,19 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                         </AnimatePresence>
                         <button
                             onClick={() => {
-                                if (isIOS) {
-                                    setIsMuted(!isMuted);
-                                    if (window.navigator.vibrate) window.navigator.vibrate(10);
-                                } else {
+                                const nextMuted = !isMuted;
+                                setIsMuted(nextMuted);
+                                if (!nextMuted && volume === 0) {
+                                    setVolume(1.0);
+                                }
+                                if (!isIOS) {
                                     setShowVolumeSlider(!showVolumeSlider);
                                 }
+                                if (window.navigator.vibrate) window.navigator.vibrate(10);
                             }}
                             className={`flex flex-col items-center justify-center gap-2 transition-all active:scale-95 ${!isMuted ? 'text-white' : 'text-white/50'}`}
                         >
-                            {isMuted || volume === 0 ? <VolumeX size={22} /> : <Volume2 size={22} />}
+                            {isMuted ? <VolumeX size={22} /> : <Volume2 size={22} />}
                             <span className="text-[10px] font-medium">{isMuted ? '静音' : (isIOS ? '声音已开' : '音量')}</span>
                         </button>
                     </div>
