@@ -56,35 +56,48 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
 
             {/* Header Section */}
             <div className="p-5 flex items-start gap-4">
-                {profileUrl ? (
-                    <a 
-                        href={profileUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="relative shrink-0 block group/avatar active:scale-95 transition-transform"
-                        title="在浏览器中打开主页"
-                    >
+                <div className="relative shrink-0">
+                    {profileUrl ? (
+                        <a 
+                            href={profileUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block group/avatar active:scale-95 transition-transform"
+                            title="在浏览器中打开主页"
+                        >
+                            <img
+                                src={user.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${user.nickname}`}
+                                alt={user.nickname || ''}
+                                className="w-14 h-14 rounded-2xl object-cover ring-2 ring-white/5 group-hover:ring-primary/40 transition-all duration-500 shadow-xl"
+                            />
+                        </a>
+                    ) : (
                         <img
                             src={user.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${user.nickname}`}
                             alt={user.nickname || ''}
                             className="w-14 h-14 rounded-2xl object-cover ring-2 ring-white/5 group-hover:ring-primary/40 transition-all duration-500 shadow-xl"
                         />
-                        <div className={`absolute -bottom-1 -right-1 p-1 rounded-lg shadow-lg ${user.platform === 'tiktok' ? 'bg-black text-white' : 'bg-red-500'} scale-75 border border-white/10`}>
-                            {user.platform === 'tiktok' ? <ExternalLink size={10} /> : <div className="w-2.5 h-2.5 bg-white rounded-full scale-75" />}
+                    )}
+                    
+                    {/* Status Indicator: 4 States */}
+                    {(user.auto_update || user.tg_sync_enabled) && (
+                        <div className={`absolute -top-1.5 -right-1.5 z-10 w-4.5 h-4.5 rounded-full backdrop-blur-md border flex items-center justify-center transition-all duration-500 ${
+                            user.auto_update && user.tg_sync_enabled 
+                                ? 'bg-primary/10 border-primary/40' 
+                                : user.tg_sync_enabled 
+                                    ? 'bg-blue-500/10 border-blue-500/40' 
+                                    : 'bg-emerald-500/10 border-emerald-500/40'
+                        }`}>
+                            <div className={`w-2 h-2 rounded-full animate-pulse shadow-lg ${
+                                user.auto_update && user.tg_sync_enabled 
+                                    ? 'bg-primary shadow-primary/50' 
+                                    : user.tg_sync_enabled 
+                                        ? 'bg-blue-400 shadow-blue-500/50' 
+                                        : 'bg-emerald-500 shadow-emerald-500/50'
+                            }`} />
                         </div>
-                    </a>
-                ) : (
-                    <div className="relative shrink-0">
-                        <img
-                            src={user.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${user.nickname}`}
-                            alt={user.nickname || ''}
-                            className="w-14 h-14 rounded-2xl object-cover ring-2 ring-white/5 group-hover:ring-primary/40 transition-all duration-500 shadow-xl"
-                        />
-                        <div className={`absolute -bottom-1 -right-1 p-1 rounded-lg shadow-lg ${user.platform === 'tiktok' ? 'bg-black text-white' : 'bg-red-500'} scale-75 border border-white/10`}>
-                            {user.platform === 'tiktok' ? <ExternalLink size={10} /> : <div className="w-2.5 h-2.5 bg-white rounded-full scale-75" />}
-                        </div>
-                    </div>
-                )}
+                    )}
+                </div>
 
                 <div className="flex-1 min-w-0 pt-0.5">
                     <div className="flex items-center justify-between mb-0.5">
