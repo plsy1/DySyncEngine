@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import type { User, Task } from '../types';
-import { RefreshCw, Trash2, Video, FileText, ChevronDown, Send, Settings2, ExternalLink, ShieldCheck } from 'lucide-react';
+import { RefreshCw, Trash2, Video, FileText, ChevronDown, Send, Settings2, ShieldCheck } from 'lucide-react';
 import dayjs from 'dayjs';
 import { ProgressBar } from './ProgressBar';
 import { useState, useEffect } from 'react';
