@@ -22,6 +22,7 @@ function App() {
   const [activeTasks, setActiveTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [newUserUrl, setNewUserUrl] = useState('');
+  const [maxFetch, setMaxFetch] = useState<number>(0);
   const [search, setSearch] = useState('');
 
   // Notification state
@@ -93,9 +94,10 @@ function App() {
     if (!newUserUrl) return;
 
     try {
-      await api.downloadUserVideos(newUserUrl);
+      await api.downloadUserVideos(newUserUrl, maxFetch);
       showToast('已加入后台下载队列');
       setNewUserUrl('');
+      setMaxFetch(0);
       // 立即拉取一次列表，以便看到新创建的“占位”卡片
       loadUsers();
     } catch (err) {
@@ -103,10 +105,10 @@ function App() {
     }
   };
 
-  const handleRefresh = async (secUserId: string) => {
+  const handleRefresh = async (secUserId: string, maxFetch: number = 0, forceFull: boolean = false) => {
     try {
-      await api.refreshUserVideos(secUserId);
-      showToast('增量同步已启动');
+      await api.refreshUserVideos(secUserId, maxFetch, forceFull);
+      showToast(forceFull ? '补漏/全量同步已启动' : '增量同步已启动');
     } catch (err) {
       showToast('同步失败', 'error');
     }
@@ -289,6 +291,19 @@ function App() {
                           placeholder="粘贴抖音主页链接以开始自动同步..."
                           className="w-full bg-transparent py-2 pl-12 pr-4 outline-none text-white font-medium placeholder:text-white/20"
                         />
+                      </div>
+                      <div className="w-full md:w-40 relative md:border-l border-white/10 md:pl-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-white/30 text-xs font-bold uppercase lg:hidden">数量:</span>
+                          <input
+                            type="number"
+                            value={maxFetch || ''}
+                            onChange={(e) => setMaxFetch(parseInt(e.target.value) || 0)}
+                            placeholder="数量 (0=全量)"
+                            className="w-full bg-transparent py-2 outline-none text-white font-medium placeholder:text-white/20"
+                            title="最大抓取作品数量，0 表示抓取全部"
+                          />
+                        </div>
                       </div>
                       <button type="submit" className="w-full md:w-auto px-8 py-3 bg-primary text-black font-black rounded-xl hover:scale-105 active:scale-95 transition-all shadow-xl shadow-primary/20">
                         添加作者

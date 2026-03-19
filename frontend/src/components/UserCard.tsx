@@ -4,11 +4,12 @@ import { RefreshCw, Trash2, Video, FileText, ChevronDown, Send, Settings2, Exter
 import dayjs from 'dayjs';
 import { ProgressBar } from './ProgressBar';
 import { useState, useEffect } from 'react';
+import { Modal } from './Modal';
 
 interface UserCardProps {
     user: User;
     task?: Task;
-    onRefresh: (secUserId: string) => void;
+    onRefresh: (secUserId: string, maxFetch?: number, forceFull?: boolean) => void;
     onDelete: (user: User) => void;
     onToggleAutoUpdate: (uid: string, enabled: boolean) => void;
     onPreferenceChange?: (uid: string, video: boolean | null, note: boolean | null, tgSync: boolean | null, tgChat: string | null) => void;
@@ -20,6 +21,7 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
     const [isPending, setIsPending] = useState(false);
     const [isMarking, setIsMarking] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
+    const [tgModalOpen, setTgModalOpen] = useState(false);
     const isSyncing = task?.status === 'running' || task?.status === 'pending';
 
     useEffect(() => {
@@ -235,14 +237,7 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
                                     <button
                                         onClick={async (e) => {
                                             e.stopPropagation();
-                                            if (window.confirm('确定要将该用户所有作品标记为已上传吗？这会阻止它们再次被自动同步。')) {
-                                                setIsMarking(true);
-                                                try {
-                                                    await onMarkTgExported?.(user.uid);
-                                                } finally {
-                                                    setIsMarking(false);
-                                                }
-                                            }
+                                            setTgModalOpen(true);
                                         }}
                                         disabled={isMarking}
                                         className="px-3 rounded-xl bg-blue-500/10 border border-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-[10px] font-bold transition-all whitespace-nowrap"
@@ -252,10 +247,54 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
                                     </button>
                                 </div>
                             </div>
+                            {/* Row 4: Historical Sync */}
+                            <div className="pt-2 border-t border-white/5 space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-bold text-white/20 uppercase tracking-widest pl-1">回溯抓取 (全量/补漏)</span>
+                                </div>
+                                <div className="flex flex-col sm:flex-row gap-2">
+                                    <div className="relative flex-1">
+                                        <input
+                                            id={`max-fetch-${user.uid}`}
+                                            type="number"
+                                            placeholder="同步数量 (0=全量)"
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-xs text-white/70 outline-none focus:border-primary/40 transition-all placeholder:text-white/10 font-bold"
+                                        />
+                                    </div>
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            const input = document.getElementById(`max-fetch-${user.uid}`) as HTMLInputElement;
+                                            const count = parseInt(input?.value) || 0;
+                                            onRefresh(user.sec_user_id || '', count, true);
+                                            if (input) input.value = '';
+                                        }}
+                                        className="py-3 px-6 rounded-xl bg-primary/20 border border-primary/30 text-primary text-[10px] font-black hover:bg-primary/30 transition-all active:scale-95 whitespace-nowrap uppercase tracking-widest"
+                                    >
+                                        立即执行
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            <Modal 
+                isOpen={tgModalOpen}
+                onClose={() => setTgModalOpen(false)}
+                title="标记为已同步"
+                description={`确定要将作者 "${user.nickname}" 的所有已有作品标记为已同步到 Telegram 吗？这会阻止现有内容再次被自动上传，但不会影响未来的新作品。`}
+                confirmText="立即标记"
+                onConfirm={async () => {
+                    setIsMarking(true);
+                    try {
+                        await onMarkTgExported?.(user.uid);
+                    } finally {
+                        setIsMarking(false);
+                    }
+                }}
+            />
 
             {/* Footer Status */}
             <div className="px-5 py-3 bg-white/2 border-t border-white/5 flex items-center justify-between text-[10px] font-medium text-white/20 tracking-tighter uppercase">

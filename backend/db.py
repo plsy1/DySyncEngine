@@ -416,6 +416,8 @@ def init_defaults(session: Session):
         set_config(session, "download_note", "true")
     if not get_config(session, "auto_update_interval"):
         set_config(session, "auto_update_interval", "120")
+    if not get_config(session, "max_initial_fetch"):
+        set_config(session, "max_initial_fetch", "0")
     
     # 初始化默认管理员 (如果不存在任何账户)
     if session.query(Account).count() == 0:

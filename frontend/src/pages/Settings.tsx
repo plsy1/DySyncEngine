@@ -15,6 +15,7 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
         download_video: true,
         download_note: true,
         auto_update_interval: 120,
+        max_initial_fetch: 0,
         emby_server_url: '',
         emby_api_key: '',
         emby_default_library: '',
@@ -181,6 +182,17 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                                 min="1"
                                 value={settings.auto_update_interval}
                                 onChange={(e) => setSettings(s => ({ ...s, auto_update_interval: parseInt(e.target.value) || 1 }))}
+                                className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 transition-all font-bold text-base"
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">默认初始抓取数量 (0=全量)</label>
+                            <input
+                                type="number"
+                                min="0"
+                                value={settings.max_initial_fetch || 0}
+                                onChange={(e) => setSettings(s => ({ ...s, max_initial_fetch: parseInt(e.target.value) || 0 }))}
                                 className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 transition-all font-bold text-base"
                             />
                         </div>

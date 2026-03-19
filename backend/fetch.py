@@ -55,12 +55,12 @@ def fetch_user_profile(sec_user_id: str, platform: str = "douyin") -> dict:
         data = resp.json().get("data", {})
         return data
 
-def fetch_all_awemes(sec_user_id: str, platform: str = "douyin", latest_create_time: int = 0, count: int = 20):
+def fetch_all_awemes(sec_user_id: str, platform: str = "douyin", latest_create_time: int = 0, count: int = 20, max_fetch: int = 0):
     """
     抓取用户作品，支持 Douyin 和 TikTok
     """
     if platform == "tiktok":
-        return fetch_tiktok_all_awemes(sec_user_id, latest_create_time, count)
+        return fetch_tiktok_all_awemes(sec_user_id, latest_create_time, count, max_fetch)
     
     # 以下为 Douyin 逻辑 (原逻辑)
     max_cursor = 0
@@ -96,6 +96,10 @@ def fetch_all_awemes(sec_user_id: str, platform: str = "douyin", latest_create_t
                     "aweme_type": item.get("aweme_type", 0)
                 })
             
+            if max_fetch > 0 and len(all_awemes) >= max_fetch:
+                all_awemes = all_awemes[:max_fetch]
+                break
+
             if any(item.get("create_time", 0) <= latest_create_time for item in aweme_list):
                 break
             
@@ -116,7 +120,7 @@ def fetch_all_awemes(sec_user_id: str, platform: str = "douyin", latest_create_t
             time.sleep(0.3)
     return {"awemes": all_awemes, "author": author_profile}
 
-def fetch_tiktok_all_awemes(sec_user_id: str, latest_create_time: int = 0, count: int = 35):
+def fetch_tiktok_all_awemes(sec_user_id: str, latest_create_time: int = 0, count: int = 35, max_fetch: int = 0):
     """
     抓取 TikTok 用户作品
     """
@@ -157,6 +161,10 @@ def fetch_tiktok_all_awemes(sec_user_id: str, latest_create_time: int = 0, count
                     "aweme_type": item.get("aweme_type", 0)
                 })
             
+            if max_fetch > 0 and len(all_awemes) >= max_fetch:
+                all_awemes = all_awemes[:max_fetch]
+                break
+
             if any(item.get("createTime", 0) <= latest_create_time for item in item_list):
                 break
             

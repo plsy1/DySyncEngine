@@ -60,13 +60,13 @@ export const getUsers = async (): Promise<User[]> => {
   return data;
 };
 
-export const downloadUserVideos = async (url: string): Promise<ApiResponse> => {
-  const { data } = await api.post<ApiResponse>(`download_user_videos?url=${encodeURIComponent(url)}`);
+export const downloadUserVideos = async (url: string, maxFetch: number = 0): Promise<ApiResponse> => {
+  const { data } = await api.post<ApiResponse>(`download_user_videos?url=${encodeURIComponent(url)}&max_fetch=${maxFetch}`);
   return data;
 };
 
-export const refreshUserVideos = async (secUserId: string): Promise<ApiResponse> => {
-  const { data } = await api.post<ApiResponse>(`refresh_user_videos?sec_user_id=${encodeURIComponent(secUserId)}`);
+export const refreshUserVideos = async (secUserId: string, maxFetch: number = 0, forceFull: boolean = false): Promise<ApiResponse> => {
+  const { data } = await api.post<ApiResponse>(`refresh_user_videos?sec_user_id=${encodeURIComponent(secUserId)}&max_fetch=${maxFetch}&force_full=${forceFull}`);
   return data;
 };
 

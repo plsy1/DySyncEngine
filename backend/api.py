@@ -95,7 +95,7 @@ def process_single_aweme_download(session: Session, aweme: Any) -> bool:
         return False
 
 
-def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_id: str = None):
+def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_id: str = None, max_fetch: int = 0, force_full: bool = False):
     """
     同步指定用户的视频：拉取 Profile、增量抓取 Awemes、下载未下载的视频
     """
@@ -108,13 +108,13 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
     uid = user.uid if user else None
         
     # 获取作者最新作品时间
-    last_create_time = get_latest_create_time(session, uid) if uid else 0
+    last_create_time = 0 if force_full else (get_latest_create_time(session, uid) if uid else 0)
     
     if task_id:
         update_task_progress(session, task_id, 20, message="正在抓取视频列表...")
 
     # 执行抓取
-    result = fetch_all_awemes(sec_user_id, platform=platform, latest_create_time=last_create_time, count=20)
+    result = fetch_all_awemes(sec_user_id, platform=platform, latest_create_time=last_create_time, count=20, max_fetch=max_fetch)
     new_data = result.get("awemes", [])
     author_info = result.get("author", {})
 
@@ -187,13 +187,13 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
             update_task_progress(session, task_id, 100, status="completed", message="同步完成")
 
 
-def download_user_videos_task(sec_user_id: str, platform: str, task_id: str):
+def download_user_videos_task(sec_user_id: str, platform: str, task_id: str, max_fetch: int = 0):
     """
     后台抓取用户视频任务
     """
     try:
         with next(get_session()) as session:
-            sync_user_videos(session, sec_user_id, platform=platform, task_id=task_id)
+            sync_user_videos(session, sec_user_id, platform=platform, task_id=task_id, max_fetch=max_fetch)
     except Exception as e:
         with next(get_session()) as session:
             update_task_progress(session, task_id, 100, status="failed", message=str(e))
@@ -245,12 +245,18 @@ def check_undownloaded_api(background_tasks: BackgroundTasks):
 @router.post("/download_user_videos")
 def download_user_videos_api(
     url: str = Query(..., description="抖音用户主页URL"),
+    max_fetch: int = Query(0, description="最大抓取作品数，0表示不限制"),
     background_tasks: BackgroundTasks = None,
 ) -> dict[str, Any]:
     """
     触发后台下载用户所有视频（通过 URL）
     """
     task_id = str(uuid.uuid4())
+    
+    # 如果用户没传，先看全局设置
+    if max_fetch <= 0:
+        with next(get_session()) as session:
+            max_fetch = int(get_config(session, "max_initial_fetch", "0"))
     
     # 为了让前端立即看到卡片，我们在同步请求里先完成基础信息的解析和 User 记录创建
     try:
@@ -278,7 +284,7 @@ def download_user_videos_api(
             # 创建任务记录
             create_task(session, task_id, target_id=uid)
             
-        background_tasks.add_task(download_user_videos_task, sec_user_id, platform, task_id)
+        background_tasks.add_task(download_user_videos_task, sec_user_id, platform, task_id, max_fetch)
         return {"started": True, "task_id": task_id}
         
     except Exception as e:
@@ -290,6 +296,8 @@ def download_user_videos_api(
 @router.post("/refresh_user_videos")
 def refresh_user_videos_api(
     sec_user_id: str = Query(..., description="用户的 sec_user_id"),
+    max_fetch: int = Query(0, description="本次抓取的最大数量"),
+    force_full: bool = Query(False, description="是否忽略增量时间检查（全量/回溯同步）"),
     background_tasks: BackgroundTasks = None,
 ) -> dict[str, Any]:
     """
@@ -297,9 +305,9 @@ def refresh_user_videos_api(
     """
     task_id = str(uuid.uuid4())
     
-    def task_wrapper(sec_user_id: str, platform: str, task_id: str):
+    def task_wrapper(sec_user_id: str, platform: str, task_id: str, max_fetch: int, force_full: bool):
         with next(get_session()) as session:
-            sync_user_videos(session, sec_user_id, platform=platform, task_id=task_id)
+            sync_user_videos(session, sec_user_id, platform=platform, task_id=task_id, max_fetch=max_fetch, force_full=force_full)
 
     with next(get_session()) as session:
         # 检查是否已有该用户的任务正在运行
@@ -315,7 +323,7 @@ def refresh_user_videos_api(
         platform = user.platform if user else "douyin"
         create_task(session, task_id, target_id=target_id)
 
-    background_tasks.add_task(task_wrapper, sec_user_id, platform, task_id)
+    background_tasks.add_task(task_wrapper, sec_user_id, platform, task_id, max_fetch, force_full)
     return {"started": True, "task_id": task_id}
 
 
@@ -564,6 +572,7 @@ class GlobalSettings(BaseModel):
     download_video: bool
     download_note: bool
     auto_update_interval: int
+    max_initial_fetch: int = 0
     emby_server_url: str | None = None
     emby_api_key: str | None = None
     emby_default_library: str | None = None
@@ -602,6 +611,7 @@ def get_settings_api(session: Session = Depends(get_session), _ = Depends(get_cu
         download_video=get_config(session, "download_video", "true") == "true",
         download_note=get_config(session, "download_note", "true") == "true",
         auto_update_interval=int(get_config(session, "auto_update_interval", "120")),
+        max_initial_fetch=int(get_config(session, "max_initial_fetch", "0")),
         emby_server_url=get_config(session, "emby_server_url", ""),
         emby_api_key=get_config(session, "emby_api_key", ""),
         emby_default_library=get_config(session, "emby_default_library", "")
@@ -612,6 +622,7 @@ def update_settings_api(req: GlobalSettings, session: Session = Depends(get_sess
     set_config(session, "download_video", "true" if req.download_video else "false")
     set_config(session, "download_note", "true" if req.download_note else "false")
     set_config(session, "auto_update_interval", str(req.auto_update_interval))
+    set_config(session, "max_initial_fetch", str(req.max_initial_fetch))
     if req.emby_server_url is not None:
         set_config(session, "emby_server_url", req.emby_server_url)
     if req.emby_api_key is not None:
