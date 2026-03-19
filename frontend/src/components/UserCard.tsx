@@ -95,7 +95,7 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
                                 user.nickname || '未命名'
                             )}
                         </h3>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
                             <button
                                 onClick={() => setShowSettings(!showSettings)}
                                 className={`p-1.5 rounded-lg transition-colors ${showSettings ? 'bg-primary/20 text-primary' : 'hover:bg-white/5 text-white/40'}`}
