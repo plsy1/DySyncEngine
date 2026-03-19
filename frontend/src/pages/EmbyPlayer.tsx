@@ -1302,8 +1302,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                     className="
     w-full snap-start relative flex items-center justify-center
     overflow-hidden bg-black
-    h-[calc(100dvh-56px-env(safe-area-inset-bottom))]
-    md:h-screen
+    h-[100dvh]
 "
                                     style={{ scrollSnapStop: 'always' }}
                                     data-index={index}
@@ -1505,8 +1504,8 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                         )}
 
                                         {/* Right Action Buttons */}
-                                        <div className="absolute right-4 bottom-12 flex flex-col gap-6 items-center pointer-events-auto z-40">
-                                            {/* Utility buttons moved to bottom footer */}
+                                        <div className="absolute right-3 md:right-4 bottom-[120px] md:bottom-12 flex flex-col gap-6 items-center pointer-events-auto z-40">
+                                            {/* Avatar */}
                                             {item.Path && videoMetadata[item.Path]?.avatar_url && (
                                                 <div className="flex flex-col items-center mb-2">
                                                     <button
@@ -1520,7 +1519,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                                 window.open(`https://www.tiktok.com/@${m.nickname}`, '_blank');
                                                             }
                                                         }}
-                                                        className="w-14 h-14 rounded-full border-2 border-white overflow-hidden shadow-xl hover:scale-110 transition-transform active:scale-90"
+                                                        className="w-12 h-12 rounded-full border-2 border-white overflow-hidden shadow-xl hover:scale-110 transition-transform active:scale-90"
                                                     >
                                                         <img
                                                             src={videoMetadata[item.Path!].avatar_url}
@@ -1542,18 +1541,18 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                     onTouchMove={(e) => e.stopPropagation()}
                                                     onTouchEnd={(e) => e.stopPropagation()}
                                                     disabled={sharingId === item.Id}
-                                                    className="flex items-center justify-center w-12 h-12 text-white transition-all active:scale-95 drop-shadow-xl"
+                                                    className="flex items-center justify-center w-10 h-10 text-white transition-all active:scale-95 drop-shadow-xl"
                                                 >
                                                     {sharingId === item.Id ? (
-                                                        <Loader2 size={32} className="animate-spin opacity-80" />
+                                                        <Loader2 size={24} className="animate-spin opacity-80" />
                                                     ) : (
-                                                        <svg width="34" height="34" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                        <svg width="28" height="28" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
                                                             <path d="M26 6L42 22L26 38" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
                                                             <path d="M6 42C6 42 10 30 20 25C30 20 42 22 42 22" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
                                                         </svg>
                                                     )}
                                                 </button>
-                                                <span className="text-white text-[11px] font-bold mt-1 drop-shadow-md">分享</span>
+                                                <span className="text-white text-[10px] font-black mt-1 drop-shadow-md opacity-80">分享</span>
                                             </div>
 
                                             {/* Delete Button */}
@@ -1566,9 +1565,9 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                     onTouchStart={(e) => e.stopPropagation()}
                                                     onTouchMove={(e) => e.stopPropagation()}
                                                     onTouchEnd={(e) => e.stopPropagation()}
-                                                    className="flex items-center justify-center w-12 h-12 text-white transition-all active:scale-95 drop-shadow-xl"
+                                                    className="flex items-center justify-center w-10 h-10 text-white transition-all active:scale-95 drop-shadow-xl"
                                                 >
-                                                    <svg width="32" height="32" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                    <svg width="28" height="28" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
                                                         <path d="M9 10V44H39V10H9Z" fill="none" stroke="white" strokeWidth="4" strokeLinejoin="round" />
                                                         <path d="M20 20V34" stroke="white" strokeWidth="4" strokeLinecap="round" />
                                                         <path d="M28 20V34" stroke="white" strokeWidth="4" strokeLinecap="round" />
@@ -1576,14 +1575,14 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                         <path d="M16 10L19.289 4H28.7771L32 10H16Z" fill="none" stroke="white" strokeWidth="4" strokeLinejoin="round" />
                                                     </svg>
                                                 </button>
-                                                <span className="text-white text-[11px] font-bold mt-1 drop-shadow-md">删除</span>
+                                                <span className="text-white text-[10px] font-black mt-1 drop-shadow-md opacity-80">删除</span>
                                             </div>
                                         </div>
                                     </div>
 
 
                                     {/* Video Info Overlay */}
-                                    <div className="absolute bottom-0 left-0 right-0 p-6 pb-6 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none flex flex-col justify-end z-30">
+                                    <div className="absolute bottom-0 left-0 right-0 p-6 pb-[100px] md:pb-6 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none flex flex-col justify-end z-30">
                                         <div className="flex items-center gap-2 mb-2 drop-shadow-md">
                                             <button
                                                 onClick={(e) => {
@@ -1700,19 +1699,25 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
             </div>
 
-            {/* Dedicated Bottom Navigation Bar - Mobile ONLY */}
-            {isMobile && (
-                <div className="h-[calc(env(safe-area-inset-bottom)+56px)] bg-[#050505] border-t border-white/5 flex items-stretch px-2 z-[60] pointer-events-auto">
+            {/* Dedicated Bottom Navigation Bar - Mobile ONLY - Floating Capsule */}
+            {isMobile && !isFullscreen && (
+                <div 
+                    style={{ marginBottom: 'max(var(--sab), 16px)' }}
+                    className="fixed bottom-0 left-6 right-6 h-16 bg-black/40 backdrop-blur-3xl border border-white/5 z-[60] flex items-center justify-around px-2 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.5)] pointer-events-auto"
+                >
                     <button
                         onClick={() => {
                             const newTab = tab === 'latest' ? 'random' : 'latest';
                             setTab(newTab);
                             onNotify(`排序切换至: ${newTab === 'latest' ? '最新发布' : '随机推荐'}`, 'success');
                         }}
-                        className={`flex-1 flex flex-col items-center justify-center gap-1 transition-all active:scale-95 ${tab === 'random' ? 'text-white' : 'text-white/50'}`}
+                        className={`flex-1 flex flex-col items-center justify-center transition-all active:scale-95 ${tab === 'latest' ? 'text-white' : 'text-primary'}`}
                     >
-                        <Home size={22} className={tab === 'random' ? 'fill-white' : ''} />
-                        <span className="text-[10px] font-medium">{tab === 'random' ? '随机' : '最新'}</span>
+                        <div className="relative">
+                            <Home size={22} className={tab === 'latest' ? '' : 'fill-primary'} />
+                            {tab === 'latest' && <div className="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full" />}
+                        </div>
+                        <span className="text-[10px] font-black mt-0.5 tracking-tighter opacity-80">{tab === 'latest' ? '最新' : '随机'}</span>
                     </button>
 
                     <button
@@ -1721,19 +1726,20 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                             setPlaybackMode(newMode);
                             onNotify(`播放模式: ${newMode === 'loop' ? '单片循环' : '自动连播'}`, 'success');
                         }}
-                        className={`flex-1 flex flex-col items-center justify-center gap-1 transition-all active:scale-95 ${playbackMode === 'next' ? 'text-white' : 'text-white/50'}`}
+                        className={`flex-1 flex flex-col items-center justify-center transition-all active:scale-95 ${playbackMode === 'next' ? 'text-primary' : 'text-white/40'}`}
                     >
-                        {playbackMode === 'loop' ? <Repeat size={22} opacity={0.6} /> : <ArrowRightCircle size={22} className="text-white" />}
-                        <span className="text-[10px] font-medium">播放模式</span>
+                        {playbackMode === 'next' ? <ArrowRightCircle size={22} className="fill-primary/20" /> : <Repeat size={22} />}
+                        <span className="text-[10px] font-black mt-0.5 tracking-tighter opacity-80">
+                            {playbackMode === 'next' ? '连播' : '循环'}
+                        </span>
                     </button>
 
-                    <div className="flex-1 flex items-center justify-center">
+                    <div className="flex-1 flex items-center justify-center -translate-y-1">
                         <button
                             onClick={() => setIsSidebarOpen(true)}
-                            className="w-12 h-8 bg-white rounded-lg flex items-center justify-center transition-all active:scale-90 group relative overflow-hidden"
+                            className="w-12 h-10 bg-white rounded-2xl flex items-center justify-center transition-all active:scale-90 shadow-xl shadow-white/10"
                         >
-                            <div className="absolute inset-x-0 top-0 bottom-0 bg-primary/20 opacity-0 group-hover:opacity-100 transition-opacity" />
-                            <Plus size={24} className="text-black font-bold relative z-10" />
+                            <Plus size={26} className="text-black font-black" />
                         </button>
                     </div>
 
@@ -1744,10 +1750,12 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                             setDisplayMode(modes[nextIndex]);
                             onNotify(`适配: ${modes[nextIndex]}`, 'success');
                         }}
-                        className="flex-1 flex flex-col items-center justify-center gap-1 transition-all active:scale-95 text-white/50 shrink-0"
+                        className="flex-1 flex flex-col items-center justify-center transition-all active:scale-95 text-white/40"
                     >
-                        {displayMode === 'smart' ? <Monitor size={22} /> : <Maximize2 size={22} />}
-                        <span className="text-[10px] font-medium leading-none">画面比例</span>
+                        <div className="relative">
+                            {displayMode === 'smart' ? <Monitor size={22} /> : <Maximize2 size={22} className="text-primary" />}
+                        </div>
+                        <span className="text-[10px] font-black mt-0.5 tracking-tighter opacity-80">画面</span>
                     </button>
 
                     <div className="flex-1 relative flex flex-col items-center justify-center">
@@ -1757,7 +1765,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                     initial={{ opacity: 0, y: 10, scale: 0.95 }}
                                     animate={{ opacity: 1, y: 0, scale: 1 }}
                                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                    className="absolute bottom-full right-0 mb-4 bg-black/80 backdrop-blur-xl rounded-2xl p-4 flex flex-col items-center gap-3 border border-white/10 shadow-2xl z-[100]"
+                                    className="absolute bottom-full mb-4 bg-black/80 backdrop-blur-xl rounded-2xl p-4 flex flex-col items-center gap-3 border border-white/10 shadow-2xl z-[100]"
                                 >
                                     <div className="flex justify-between w-full px-1">
                                         <span className="text-[10px] font-bold text-white/50">音量</span>
@@ -1785,18 +1793,14 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                             onClick={() => {
                                 const nextMuted = !isMuted;
                                 setIsMuted(nextMuted);
-                                if (!nextMuted && volume === 0) {
-                                    setVolume(1.0);
-                                }
-                                if (!isIOS) {
-                                    setShowVolumeSlider(!showVolumeSlider);
-                                }
+                                if (!nextMuted && volume === 0) setVolume(1.0);
+                                if (!isIOS) setShowVolumeSlider(!showVolumeSlider);
                                 if (window.navigator.vibrate) window.navigator.vibrate(10);
                             }}
-                            className={`flex flex-col items-center justify-center gap-2 transition-all active:scale-95 ${!isMuted ? 'text-white' : 'text-white/50'}`}
+                            className={`flex flex-col items-center justify-center transition-all active:scale-95 ${!isMuted ? 'text-white' : 'text-red-500'}`}
                         >
                             {isMuted ? <VolumeX size={22} /> : <Volume2 size={22} />}
-                            <span className="text-[10px] font-medium">{isMuted ? '静音' : (isIOS ? '声音已开' : '音量')}</span>
+                            <span className="text-[10px] font-black mt-0.5 tracking-tighter opacity-80">{isMuted ? '静音' : '音量'}</span>
                         </button>
                     </div>
                 </div>
