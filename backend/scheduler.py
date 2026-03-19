@@ -66,20 +66,36 @@ class SchedulerManager:
         """
         try:
             from api import sync_user_videos
+            # 1. 临时获取需要更新的用户清单 (避免长连接占用和跨线程共享 session)
             with next(get_session()) as session:
                 users = get_auto_update_users(session)
-                if users:
-                    logger.info(f"开始自动更新 {len(users)} 个用户的视频...")
-                    for user in users:
-                        try:
-                            logger.info(f"正在自动更新用户: {user.nickname} ({user.uid})")
-                            # 这里运行在协程中，如果 sync_user_videos 是阻塞的，可能需要 run_in_executor
-                            # 但目前 main.py 中也是直接调用的，所以我们维持原样
-                            sync_user_videos(session, user.sec_user_id)
-                        except Exception as e:
-                            logger.error(f"更新用户 {user.uid} 失败: {e}")
-                else:
-                    logger.info("没有需要自动更新的用户")
+                update_list = []
+                for u in users:
+                    update_list.append({
+                        "sec_user_id": u.sec_user_id, 
+                        "platform": u.platform, 
+                        "nickname": u.nickname, 
+                        "uid": u.uid
+                    })
+                    
+            if update_list:
+                logger.info(f"开始自动更新 {len(update_list)} 个用户的视频...")
+                for item in update_list:
+                    try:
+                        logger.info(f"正在自动更新用户: {item['nickname']} ({item['uid']})")
+                        
+                        # 定义在后台线程执行的任务，为其分配独立的会话
+                        def sync_in_thread():
+                            with next(get_session()) as session:
+                                sync_user_videos(session, item['sec_user_id'], platform=item['platform'])
+                        
+                        # 使用 to_thread 避免阻塞事件循环，特别是处理 13+ 用户时
+                        await asyncio.to_thread(sync_in_thread)
+                        
+                    except Exception as e:
+                        logger.error(f"更新用户 {item['uid']} 失败: {e}")
+            else:
+                logger.info("没有需要自动更新的用户")
         except Exception as e:
             logger.error(f"执行更新逻辑时出错: {e}")
 

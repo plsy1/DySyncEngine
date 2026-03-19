@@ -49,7 +49,7 @@ def fetch_user_profile(sec_user_id: str, platform: str = "douyin") -> dict:
     
     # 抖音逻辑
     params = {"sec_user_id": sec_user_id}
-    with httpx.Client(timeout=10) as client:
+    with httpx.Client(timeout=30) as client:
         resp = client.get(PROFILE_API, params=params, headers=headers)
         resp.raise_for_status()
         data = resp.json().get("data", {})
@@ -68,7 +68,7 @@ def fetch_all_awemes(sec_user_id: str, platform: str = "douyin", latest_create_t
     author_profile = {}
     headers = {"accept": "application/json"}
 
-    with httpx.Client(timeout=10) as client:
+    with httpx.Client(timeout=30) as client:
         while True:
             params = {
                 "sec_user_id": sec_user_id,
@@ -193,7 +193,7 @@ def fetch_video_profile(share_url: str, minimal: bool = True) -> dict:
     }
 
     try:
-        with httpx.Client(timeout=10) as client:
+        with httpx.Client(timeout=30) as client:
             resp = client.get(HYBRID_VIDEO_API, params=params)
             resp.raise_for_status()
             data = resp.json().get("data", {})
