@@ -2,6 +2,11 @@
 
 **DySyncEngine** 是一款专为高效同步、管理与沉浸式播放网络视频设计的现代化全栈引擎。它不仅支持 **抖音 (Douyin)** 和 **TikTok** 的全量/增量视频抓取与下载，还集成了一个媲美原生的 **PWA 沉浸式视频播放器**，并支持将内容自动/手动推送至 **Telegram**。
 
+<p align="center">
+  <img src="./screenshort/main-page.png" width="76.5%" alt="Dashboard" />
+  <img src="./screenshort/player.PNG" width="22.5%" alt="Mobile Player" />
+</p>
+
 ---
 
 ## ✨ 核心特性
