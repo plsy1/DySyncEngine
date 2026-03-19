@@ -97,6 +97,34 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     });
     const [isFullscreen, setIsFullscreen] = useState(false);
     const skipClickRef = useRef(false);
+    const [expandedDescs, setExpandedDescs] = useState<{ [key: string]: boolean }>({});
+    const [isTruncated, setIsTruncated] = useState<{ [key: string]: boolean }>({});
+    const descRefs = useRef<{ [key: string]: HTMLParagraphElement | null }>({});
+
+    // Effect to check if descriptions are truncated
+    useEffect(() => {
+        const checkTruncation = () => {
+            const newTruncated: { [key: string]: boolean } = {};
+            items.forEach(item => {
+                const el = descRefs.current[item.Id];
+                if (el) {
+                    // Temporarily set to line-clamp-3 to measure its original state
+                    // if it's already expanded, it might not show scrollHeight correctly for collapsed state.
+                    // But scrollHeight is usually the total height regardless of clamp.
+                    newTruncated[item.Id] = el.scrollHeight > el.clientHeight + 2; // +2 for potential sub-pixel differences
+                }
+            });
+            setIsTruncated(newTruncated);
+        };
+
+        // Small delay to ensure items are rendered and CSS is applied
+        const timer = setTimeout(checkTruncation, 300);
+        window.addEventListener('resize', checkTruncation);
+        return () => {
+            clearTimeout(timer);
+            window.removeEventListener('resize', checkTruncation);
+        };
+    }, [items, videoMetadata, activeVideoIndex]); // Re-check when items/metadata or active index changes
 
     useEffect(() => {
         const handleResize = () => {
@@ -844,7 +872,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
             setTouchStartX(0);
             setTouchStartY(0);
             setSeekPreviewTime(null);
-            
+
             // Flag to ignore the following click event
             skipClickRef.current = true;
             setTimeout(() => { skipClickRef.current = false; }, 300);
@@ -1112,8 +1140,8 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         <div
             className="fixed inset-0 bg-black z-[100] overflow-hidden flex flex-col select-none"
             onContextMenu={(e) => e.preventDefault()}
-            style={{ 
-                WebkitTouchCallout: 'none', 
+            style={{
+                WebkitTouchCallout: 'none',
                 WebkitUserSelect: 'none',
                 height: isMobile ? '100dvh' : '100vh'
             } as any}
@@ -1504,7 +1532,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                         )}
 
                                         {/* Right Action Buttons */}
-                                        <div className="absolute right-3 md:right-4 bottom-[120px] md:bottom-12 flex flex-col gap-6 items-center pointer-events-auto z-40">
+                                        <div className="absolute right-3 md:right-4 bottom-[180px] md:bottom-12 flex flex-col gap-6 items-center pointer-events-auto z-40">
                                             {/* Avatar */}
                                             {item.Path && videoMetadata[item.Path]?.avatar_url && (
                                                 <div className="flex flex-col items-center mb-2">
@@ -1583,7 +1611,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
                                     {/* Video Info Overlay */}
                                     <div className="absolute bottom-0 left-0 right-0 p-6 pb-[100px] md:pb-6 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none flex flex-col justify-end z-30">
-                                        <div className="flex items-center gap-2 mb-2 drop-shadow-md">
+                                        <div className="flex items-center gap-2 mb-2 drop-shadow-md overflow-x-auto no-scrollbar w-full scroll-smooth pointer-events-auto">
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
@@ -1596,24 +1624,52 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                         }
                                                     }
                                                 }}
-                                                className="text-white font-bold text-lg hover:text-primary transition-colors pointer-events-auto"
+                                                className="text-white font-bold text-lg hover:text-primary transition-colors pointer-events-auto whitespace-nowrap flex-shrink-0 px-0.5"
                                             >
-                                                @{item.Path && videoMetadata[item.Path]?.nickname ? videoMetadata[item.Path].nickname : item.Name}
+                                                @{item.Path && videoMetadata[item.Path]?.nickname ? videoMetadata[item.Path].nickname : (getFolderName(item.Path) || 'Emby Video')}
                                             </button>
                                             {item.Path && videoMetadata[item.Path]?.platform && (
-                                                <span className="px-1.5 py-0.5 bg-primary/20 text-primary text-[10px] rounded border border-primary/20 uppercase">
+                                                <span className="flex-shrink-0 px-1.5 py-0.5 bg-primary/20 text-primary text-[10px] rounded border border-primary/20 uppercase">
                                                     {videoMetadata[item.Path].platform}
                                                 </span>
                                             )}
                                             {item.Path && videoMetadata[item.Path]?.create_time > 0 && (
-                                                <span className="text-white/40 text-[10px] font-medium ml-1">
+                                                <span className="flex-shrink-0 text-white/40 text-[10px] font-medium ml-1 whitespace-nowrap">
                                                     · {formatDate(videoMetadata[item.Path].create_time)}
                                                 </span>
                                             )}
                                         </div>
-                                        <p className="text-white/80 text-sm line-clamp-3 drop-shadow-md">
-                                            {(item.Path && videoMetadata[item.Path]?.desc) || item.Overview}
-                                        </p>
+                                        <div 
+                                            className="flex flex-col items-start gap-1 pointer-events-auto"
+                                            onClick={(e) => {
+                                                if (!isTruncated[item.Id]) return;
+                                                e.stopPropagation();
+                                                setExpandedDescs(prev => ({ ...prev, [item.Id]: !prev[item.Id] }));
+                                            }}
+                                            onTouchStart={(e) => {
+                                                if (isTruncated[item.Id]) e.stopPropagation();
+                                            }}
+                                        >
+                                            <p
+                                                ref={(el) => { descRefs.current[item.Id] = el; }}
+                                                className={`text-white/80 text-sm drop-shadow-md transition-all ${
+                                                    isTruncated[item.Id] ? 'cursor-pointer' : ''
+                                                } ${
+                                                    expandedDescs[item.Id] 
+                                                        ? 'whitespace-pre-wrap max-h-[40vh] overflow-y-auto no-scrollbar py-2' 
+                                                        : 'line-clamp-3'
+                                                }`}
+                                            >
+                                                {(item.Path && videoMetadata[item.Path]?.desc) || item.Overview || item.Name}
+                                            </p>
+                                            {isTruncated[item.Id] && (
+                                                <button
+                                                    className="text-white/40 text-[11px] font-bold hover:text-white transition-colors py-2 px-1 -ml-1 flex items-center gap-1 active:opacity-50"
+                                                >
+                                                    {expandedDescs[item.Id] ? '[ 收起文本 ]' : '...... [ 展开全文 ]'}
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
 
                                     {/* Progress Bar - Bottom (Douyin Style) */}
@@ -1701,7 +1757,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
             {/* Dedicated Bottom Navigation Bar - Mobile ONLY - Floating Capsule */}
             {isMobile && !isFullscreen && (
-                <div 
+                <div
                     style={{ marginBottom: 'max(var(--sab), 16px)' }}
                     className="fixed bottom-0 left-6 right-6 h-16 bg-black/40 backdrop-blur-3xl border border-white/5 z-[60] flex items-center justify-around px-2 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.5)] pointer-events-auto"
                 >
