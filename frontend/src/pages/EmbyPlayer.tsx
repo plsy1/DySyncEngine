@@ -1147,7 +1147,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
             } as any}
         >
             {/* Top Navigation Bar - Douyin Style */}
-            <div className="absolute top-0 left-0 right-0 z-50 pointer-events-none bg-gradient-to-b from-black/80 via-black/40 to-transparent"
+            <div className="absolute top-0 left-0 right-0 z-50 pointer-events-none"
                 style={{ paddingTop: 'env(safe-area-inset-top)' }}>
                 <div className="flex items-center justify-between px-4 sm:px-6 h-14 sm:h-16">
                     {/* Left: Back Button */}
@@ -1162,7 +1162,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
                     {/* Center: Filter Tabs */}
                     <div className="flex-none pointer-events-auto">
-                        <div className="flex items-center bg-white/10 backdrop-blur-xl rounded-full px-1 py-1 border border-white/10 shadow-lg">
+                        <div className="flex items-center bg-white/5 backdrop-blur-xl rounded-full px-1 py-1 border border-white/20 ring-1 ring-inset ring-white/10 shadow-xl">
                             {[
                                 { id: 'video', label: '视频' },
                                 { id: 'mixed', label: '综合' },
@@ -1323,15 +1323,19 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                         onClick={unlockAudio}
                     >
                         <div className="min-h-full">
-                            {items.map((item, index) => (
+                            {items.map((item, index) => {
+                                const isSmartContain = (isScreenLandscape || (item.Width || 0) > (item.Height || 0) || (item.PrimaryImageAspectRatio || 0) > 0.65 || (videoDimensions[item.Id]?.width / videoDimensions[item.Id]?.height) > 0.65);
+                                const isContain = displayMode === 'contain' || (displayMode === 'smart' && isSmartContain);
+                                
+                                return (
                                 <div
                                     key={item.Id}
                                     ref={(el) => { itemRefs.current[index] = el; }}
-                                    className="
-    w-full snap-start relative flex items-center justify-center
-    overflow-hidden bg-black
-    h-[100dvh]
-"
+                                    className={`
+                                        w-full snap-start relative flex items-center justify-center
+                                        overflow-hidden bg-black h-[100dvh]
+                                        ${isContain && isMobile && !isFullscreen ? 'pb-[120px]' : ''}
+                                    `}
                                     style={{ scrollSnapStop: 'always' }}
                                     data-index={index}
                                     onTouchStart={(e) => {
@@ -1387,7 +1391,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                         src={getVideoUrl(item)}
                                                         className={`relative z-10 w-full h-full pointer-events-auto bg-transparent ${displayMode === 'cover' ? 'object-cover' :
                                                             displayMode === 'contain' ? 'object-contain' :
-                                                                (isScreenLandscape || (item.Width || 0) > (item.Height || 0) || (item.PrimaryImageAspectRatio || 0) > 1 || (videoDimensions[item.Id]?.width > videoDimensions[item.Id]?.height)) ? 'object-contain' : 'object-cover'
+                                                                (isScreenLandscape || (item.Width || 0) > (item.Height || 0) || (item.PrimaryImageAspectRatio || 0) > 0.65 || (videoDimensions[item.Id]?.width / videoDimensions[item.Id]?.height) > 0.65) ? 'object-contain' : 'object-cover'
                                                             }`}
                                                         autoPlay={activeVideoIndex === index}
                                                         loop={playbackMode === 'loop'}
@@ -1409,7 +1413,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                             src={getPosterUrl(item)}
                                                             className={`absolute inset-0 w-full h-full z-20 pointer-events-none ${displayMode === 'cover' ? 'object-cover' :
                                                                 displayMode === 'contain' ? 'object-contain' :
-                                                                    (isScreenLandscape || (item.Width || 0) > (item.Height || 0) || (item.PrimaryImageAspectRatio || 0) > 1 || (videoDimensions[item.Id]?.width > videoDimensions[item.Id]?.height)) ? 'object-contain' : 'object-cover'
+                                                                    (isScreenLandscape || (item.Width || 0) > (item.Height || 0) || (item.PrimaryImageAspectRatio || 0) > 0.65 || (videoDimensions[item.Id]?.width / videoDimensions[item.Id]?.height) > 0.65) ? 'object-contain' : 'object-cover'
                                                                 }`}
                                                             alt=""
                                                         />
@@ -1610,7 +1614,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
 
                                     {/* Video Info Overlay */}
-                                    <div className="absolute bottom-0 left-0 right-0 p-6 pb-[100px] md:pb-6 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none flex flex-col justify-end z-30">
+                                    <div className="absolute bottom-0 left-0 right-0 p-6 pb-[100px] md:pb-6 pointer-events-none flex flex-col justify-end z-30">
                                         <div className="flex items-center gap-2 mb-2 drop-shadow-md overflow-x-auto no-scrollbar w-full scroll-smooth pointer-events-auto">
                                             <button
                                                 onClick={(e) => {
@@ -1742,7 +1746,8 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                         </>
                                     )}
                                 </div>
-                            ))}
+                            );
+                        })}
                         </div>
 
                         {items.length === 0 && !loading && !error && (
@@ -1759,7 +1764,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
             {isMobile && !isFullscreen && (
                 <div
                     style={{ marginBottom: 'max(var(--sab), 16px)' }}
-                    className="fixed bottom-0 left-6 right-6 h-16 bg-black/40 backdrop-blur-3xl border border-white/5 z-[60] flex items-center justify-around px-2 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.5)] pointer-events-auto"
+                    className="fixed bottom-0 left-6 right-6 h-16 bg-white/5 backdrop-blur-xl border border-white/20 ring-1 ring-inset ring-white/10 z-[60] flex items-center justify-around px-2 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.2)] pointer-events-auto"
                 >
                     <button
                         onClick={() => {

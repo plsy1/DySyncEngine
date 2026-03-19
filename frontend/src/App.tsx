@@ -394,7 +394,7 @@ function App() {
       {/* Bottom Navigation for Mobile/PWA - Minimalist Floating Island */}
       <nav 
         style={{ marginBottom: 'max(var(--sab), 16px)' }}
-        className="md:hidden fixed bottom-0 left-6 right-6 h-16 bg-black/40 backdrop-blur-3xl border border-white/5 z-[60] flex items-center justify-around px-2 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.5)]"
+        className="md:hidden fixed bottom-0 left-6 right-6 h-16 bg-white/5 backdrop-blur-xl border border-white/20 ring-1 ring-inset ring-white/10 z-[60] flex items-center justify-around px-2 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.2)]"
       >
         <MobileNavButton active={view === 'dashboard'} onClick={() => { setView('dashboard'); setShowMoreMenu(false); }} icon={<Search size={22} />} label="首页" />
         <MobileNavButton active={view === 'tasks'} onClick={() => { setView('tasks'); setShowMoreMenu(false); }} icon={<Activity size={22} />} label="任务" />
@@ -424,7 +424,7 @@ function App() {
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0a0a0c]/95 backdrop-blur-3xl border-t border-white/10 rounded-t-[40px] z-[80] p-7 pb-[calc(28px+var(--sab))] shadow-2xl"
+              className="md:hidden fixed bottom-0 left-0 right-0 bg-[#060608]/80 backdrop-blur-2xl border-t border-white/20 rounded-t-[40px] z-[80] p-7 pb-[calc(28px+var(--sab))] shadow-2xl"
             >
               <div className="w-12 h-1 bg-white/10 rounded-full mx-auto mb-8" />
               <div className="grid grid-cols-1 gap-2">
