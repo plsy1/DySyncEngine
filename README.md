@@ -42,6 +42,14 @@
 
 ---
 
+## 📢 特别说明
+
+本项目中的 **抖音和 TikTok 内容抓取** 功能基于开源项目 [Douyin_TikTok_Download_API](https://github.com/Evil0ctal/Douyin_TikTok_Download_API) 实现。
+- 关于抓取引擎的具体配置、Cookie 维护及底层原理，请参考 [Douyin_TikTok_Download_API 项目说明](https://github.com/Evil0ctal/Douyin_TikTok_Download_API/blob/main/README.md)。
+- **配置与挂载**：若需修改抓取引擎的底层设置（如 `config.yaml`），可通过 `docker-compose.yaml` 中的 `volumes` 节点将本地配置文件挂载至容器内的相应位置（例如：`./config/douyin_web/config.yaml:/app/3rd/douyin_api/crawlers/douyin/web/config.yaml`）。
+
+---
+
 ## 🚀 快速启动
 
 ### 🐳 使用 Docker (推荐)
