@@ -41,33 +41,33 @@ export const Logs = () => {
     });
 
     return (
-        <div className="space-y-8 pb-20">
-            <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                <div>
-                    <h2 className="text-3xl font-black tracking-tight text-white">系统审计日志</h2>
-                    <p className="text-white/60 text-base mt-1">监控后台运行状态与实时错误报告</p>
+        <div className="space-y-6 pb-20">
+            <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                <div className="space-y-1">
+                    <h2 className="text-2xl md:text-3xl font-black tracking-tight text-white">系统审计日志</h2>
+                    <p className="text-white/60 text-sm md:text-base">监控后台运行状态与实时错误报告</p>
                 </div>
 
-                <div className="flex items-center gap-3">
-                    <div className="relative">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40" size={18} />
+                <div className="flex flex-wrap items-center gap-2 md:gap-3">
+                    <div className="relative flex-1 min-w-[140px] md:flex-initial md:w-48">
+                        <Search className="absolute left-3 md:left-4 top-1/2 -translate-y-1/2 text-white/40" size={16} />
                         <input
                             type="text"
-                            placeholder="过滤内容..."
+                            placeholder="过滤..."
                             value={filter}
                             onChange={(e) => setFilter(e.target.value)}
-                            className="pl-11 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-primary/50 text-sm transition-all w-48 font-medium"
+                            className="w-full pl-10 md:pl-11 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-primary/50 text-xs md:text-sm transition-all font-medium"
                         />
                     </div>
 
-                    <div className="relative">
-                        <Filter className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40" size={18} />
+                    <div className="relative flex-1 min-w-[120px] md:flex-initial md:w-36">
+                        <Filter className="absolute left-3 md:left-4 top-1/2 -translate-y-1/2 text-white/40" size={16} />
                         <select
                             value={logLevel}
                             onChange={(e) => setLogLevel(e.target.value)}
-                            className="pl-11 pr-8 py-2.5 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-primary/50 text-sm transition-all cursor-pointer appearance-none hover:bg-white/10 w-36 font-bold"
+                            className="w-full pl-10 md:pl-11 pr-8 py-2 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-primary/50 text-xs md:text-sm transition-all cursor-pointer appearance-none hover:bg-white/10 font-bold"
                         >
-                            <option value="ALL" className="bg-[#1a1a1a]">ALL LEVELS</option>
+                            <option value="ALL" className="bg-[#1a1a1a]">ALL</option>
                             <option value="INFO" className="bg-[#1a1a1a]">INFO</option>
                             <option value="SUCCESS" className="bg-[#1a1a1a]">SUCCESS</option>
                             <option value="WARNING" className="bg-[#1a1a1a]">WARNING</option>
@@ -75,21 +75,23 @@ export const Logs = () => {
                         </select>
                     </div>
 
-                    <button
-                        onClick={() => setAutoScroll(!autoScroll)}
-                        className={`p-2 rounded-xl border transition-all ${autoScroll ? 'bg-primary/20 border-primary text-primary' : 'bg-white/5 border-white/10 text-white/40 hover:text-white'}`}
-                        title={autoScroll ? "已开启自动滚动" : "已关闭自动滚动"}
-                    >
-                        <ArrowDown size={20} className={autoScroll ? 'animate-bounce' : ''} />
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                        <button
+                            onClick={() => setAutoScroll(!autoScroll)}
+                            className={`p-2 rounded-xl border transition-all ${autoScroll ? 'bg-primary/20 border-primary text-primary' : 'bg-white/5 border-white/10 text-white/40 hover:text-white'}`}
+                            title={autoScroll ? "已开启自动滚动" : "已关闭自动滚动"}
+                        >
+                            <ArrowDown size={18} className={autoScroll ? 'animate-bounce' : ''} />
+                        </button>
 
-                    <button
-                        onClick={fetchLogs}
-                        disabled={loading}
-                        className="p-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all disabled:opacity-50"
-                    >
-                        <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
-                    </button>
+                        <button
+                            onClick={fetchLogs}
+                            disabled={loading}
+                            className="p-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all disabled:opacity-50"
+                        >
+                            <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+                        </button>
+                    </div>
                 </div>
             </header>
 

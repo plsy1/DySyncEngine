@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Search, RefreshCw, LogOut, Settings as SettingsIcon, Loader2, Activity, Terminal, Play, Send } from 'lucide-react';
+import { Plus, Search, RefreshCw, LogOut, Settings as SettingsIcon, Loader2, Activity, Terminal, Play, Send, MoreHorizontal } from 'lucide-react';
 import type { User, ToastType, Task } from './types';
 import * as api from './api';
 import { UserCard } from './components/UserCard';
@@ -18,6 +18,7 @@ import ReloadPrompt from './components/ReloadPrompt';
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
   const [view, setView] = useState<'dashboard' | 'settings' | 'tasks' | 'logs' | 'player' | 'telegram'>('dashboard');
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [activeTasks, setActiveTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -188,7 +189,7 @@ function App() {
       {/* Sidebar Navigation - Fixed on Left for Desktop */}
       <nav 
         style={{ paddingTop: 'var(--sat)' }}
-        className="fixed left-0 top-0 bottom-0 w-20 lg:w-64 bg-black/40 backdrop-blur-2xl border-r border-white/5 z-50 flex flex-col transition-all duration-500 ease-in-out group"
+        className="hidden md:flex fixed left-0 top-0 bottom-0 w-20 lg:w-64 bg-black/40 backdrop-blur-2xl border-r border-white/5 z-50 flex-col transition-all duration-500 ease-in-out group"
       >
         <div className="p-6 mb-8 flex items-center gap-3 overflow-hidden">
           <div className="w-10 h-10 min-w-[40px] rounded-2xl bg-gradient-to-br from-primary to-primary/40 p-[1px]">
@@ -232,7 +233,7 @@ function App() {
       {/* Main Content Area */}
       <main 
         style={{ paddingTop: 'var(--sat)' }}
-        className="flex-1 ml-20 lg:ml-64 min-h-screen overflow-y-auto custom-scrollbar"
+        className="flex-1 md:ml-20 lg:ml-64 min-h-screen overflow-y-auto custom-scrollbar"
       >
         <div 
             style={{ paddingBottom: 'var(--sab)' }}
@@ -389,6 +390,87 @@ function App() {
         onConfirm={confirmDelete}
       />
       <ReloadPrompt />
+
+      {/* Bottom Navigation for Mobile/PWA - Minimalist Floating Island */}
+      <nav 
+        style={{ marginBottom: 'max(var(--sab), 16px)' }}
+        className="md:hidden fixed bottom-0 left-6 right-6 h-16 bg-black/40 backdrop-blur-3xl border border-white/5 z-[60] flex items-center justify-around px-2 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.5)]"
+      >
+        <MobileNavButton active={view === 'dashboard'} onClick={() => { setView('dashboard'); setShowMoreMenu(false); }} icon={<Search size={22} />} label="首页" />
+        <MobileNavButton active={view === 'tasks'} onClick={() => { setView('tasks'); setShowMoreMenu(false); }} icon={<Activity size={22} />} label="任务" />
+        <MobileNavButton active={view === 'player'} onClick={() => { setView('player'); setShowMoreMenu(false); }} icon={<Play size={22} />} label="播放" />
+        <MobileNavButton active={view === 'settings'} onClick={() => { setView('settings'); setShowMoreMenu(false); }} icon={<SettingsIcon size={22} />} label="配置" />
+        <MobileNavButton 
+          active={showMoreMenu} 
+          onClick={() => setShowMoreMenu(!showMoreMenu)} 
+          icon={<MoreHorizontal size={22} />} 
+          label="更多" 
+        />
+      </nav>
+
+      {/* More Menu Bottom Sheet */}
+      <AnimatePresence>
+        {showMoreMenu && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowMoreMenu(false)}
+              className="md:hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-[70]" 
+            />
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0a0a0c]/95 backdrop-blur-3xl border-t border-white/10 rounded-t-[40px] z-[80] p-7 pb-[calc(28px+var(--sab))] shadow-2xl"
+            >
+              <div className="w-12 h-1 bg-white/10 rounded-full mx-auto mb-8" />
+              <div className="grid grid-cols-1 gap-2">
+                <button
+                  onClick={() => { setView('logs'); setShowMoreMenu(false); }}
+                  className="flex items-center gap-4 p-4 rounded-2xl hover:bg-white/5 transition-all text-left"
+                >
+                  <div className="p-3 rounded-xl bg-primary/10 text-primary">
+                    <Terminal size={20} />
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold text-white">审计日志</div>
+                    <div className="text-xs text-white/40">查看后台实时运行记录</div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => { setView('telegram'); setShowMoreMenu(false); }}
+                  className="flex items-center gap-4 p-4 rounded-2xl hover:bg-white/5 transition-all text-left"
+                >
+                  <div className="p-3 rounded-xl bg-blue-500/10 text-blue-400">
+                    <Send size={20} />
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold text-white">TG 集成</div>
+                    <div className="text-xs text-white/40">配置自动化推送服务</div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => { handleLogout(); setShowMoreMenu(false); }}
+                  className="flex items-center gap-4 p-4 rounded-2xl hover:bg-red-500/10 transition-all text-left group"
+                >
+                  <div className="p-3 rounded-xl bg-red-500/10 text-red-500">
+                    <LogOut size={20} />
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold text-red-500">退出系统</div>
+                    <div className="text-xs text-red-500/40">清除登录凭证</div>
+                  </div>
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -407,6 +489,28 @@ function NavButton({ active, onClick, icon, label }: { active: boolean, onClick:
         {label}
       </span>
       {active && <motion.div layoutId="nav-glow" className="absolute inset-0 bg-white/10 rounded-2xl -z-10" />}
+    </button>
+  );
+}
+
+function MobileNavButton({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex-1 flex flex-col items-center justify-center transition-all duration-300 relative ${active ? 'text-primary' : 'text-white/20'}`}
+    >
+      <div className={`transition-all duration-300 ${active ? 'scale-110' : 'active:scale-90'}`}>
+        {icon}
+      </div>
+      {active && (
+        <motion.span 
+          initial={{ opacity: 0, y: 5 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-[10px] font-black mt-0.5 tracking-tighter"
+        >
+          {label}
+        </motion.span>
+      )}
     </button>
   );
 }

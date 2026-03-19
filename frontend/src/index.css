@@ -77,4 +77,12 @@ html {
   .form-label {
     @apply block text-sm font-semibold text-white/50 mb-3 tracking-wide uppercase;
   }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
 }
