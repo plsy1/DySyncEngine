@@ -1334,7 +1334,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                     className={`
                                         w-full snap-start relative flex items-center justify-center
                                         overflow-hidden bg-black h-[100dvh]
-                                        ${isContain && isMobile && !isFullscreen ? 'pb-[120px]' : ''}
+                                        ${isContain && isMobile && !isFullscreen ? 'pb-[100px] pt-[env(safe-area-inset-top)]' : ''}
                                     `}
                                     style={{ scrollSnapStop: 'always' }}
                                     data-index={index}
@@ -1380,7 +1380,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                             )}
 
                                             {item.MediaType === 'Video' ? (
-                                                <>
+                                                <div className="relative z-10 w-full h-full flex items-center justify-center">
                                                     <video
                                                         ref={(el) => {
                                                             videoRefs.current[index] = el;
@@ -1389,7 +1389,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                             }
                                                         }}
                                                         src={getVideoUrl(item)}
-                                                        className={`relative z-10 w-full h-full pointer-events-auto bg-transparent ${displayMode === 'cover' ? 'object-cover' :
+                                                        className={`w-full h-full pointer-events-auto bg-transparent ${displayMode === 'cover' ? 'object-cover' :
                                                             displayMode === 'contain' ? 'object-contain' :
                                                                 (isScreenLandscape || (item.Width || 0) > (item.Height || 0) || (item.PrimaryImageAspectRatio || 0) > 0.65 || (videoDimensions[item.Id]?.width / videoDimensions[item.Id]?.height) > 0.65) ? 'object-contain' : 'object-cover'
                                                             }`}
@@ -1418,7 +1418,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                             alt=""
                                                         />
                                                     )}
-                                                </>
+                                                </div>
                                             ) : item.Type === 'Gallery' ? (
                                                 <div className="relative z-10 w-full h-full flex items-center justify-center">
                                                     {/* Progress indicators at top */}
