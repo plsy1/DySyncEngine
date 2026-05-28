@@ -219,8 +219,8 @@ class TelegramUploader:
                 # --- Fallback logic for old records ---
                 if not target_path or not os.path.exists(target_path):
                     # 尝试重新构造可能的文件路径
-                    type_folder = "videos" if aweme.aweme_type == 0 else "notes"
-                    author_folder_name = f"{aweme.nickname}_{aweme.uid}"
+                    from utils import get_author_folder_name
+                    author_folder_name = get_author_folder_name(aweme.nickname, aweme.uid, aweme.platform or "douyin", session)
                     
                     # 按照 downloader.py 的逻辑构造路径
                     path_parts = [sanitize_filename(p) for p in [author_folder_name, type_folder] if p]

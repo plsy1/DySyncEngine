@@ -187,8 +187,21 @@ def add_or_update_user(session: Session, user_data: dict):
     # 仅更新非空值
     if user_data.get("sec_user_id"):
         user.sec_user_id = user_data["sec_user_id"]
-    if user_data.get("nickname"):
-        user.nickname = user_data["nickname"]
+    
+    # 检测昵称变更并触发本地存储及数据库路径重命名迁移
+    new_nickname = user_data.get("nickname")
+    if new_nickname and user.nickname and user.nickname != new_nickname:
+        old_nickname = user.nickname
+        try:
+            from utils import handle_nickname_change
+            platform = user.platform or user_data.get("platform") or "douyin"
+            handle_nickname_change(session, uid, old_nickname, new_nickname, platform)
+        except Exception as e:
+            from loguru import logger
+            logger.error(f"处理作者昵称更新迁移失败: {e}")
+
+    if new_nickname:
+        user.nickname = new_nickname
     if user_data.get("avatar_url"):
         user.avatar_url = user_data["avatar_url"]
     if user_data.get("signature"):

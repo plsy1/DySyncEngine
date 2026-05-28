@@ -15,6 +15,33 @@ import { EmbyPlayer } from './pages/EmbyPlayer';
 import { Telegram } from './pages/Telegram';
 import ReloadPrompt from './components/ReloadPrompt';
 
+const LATEST_VERSION_URL = 'https://raw.githubusercontent.com/plsy1/DySyncEngine/refs/heads/main/VERSION';
+
+type VersionState = {
+  latest: string | null;
+  hasUpdate: boolean;
+  isChecking: boolean;
+  error: boolean;
+};
+
+const normalizeVersion = (version: string) => version.trim().replace(/^v/i, '');
+
+const compareVersions = (current: string, latest: string) => {
+  const currentParts = normalizeVersion(current).split(/[.-]/).map(part => Number.parseInt(part, 10) || 0);
+  const latestParts = normalizeVersion(latest).split(/[.-]/).map(part => Number.parseInt(part, 10) || 0);
+  const length = Math.max(currentParts.length, latestParts.length);
+
+  for (let index = 0; index < length; index += 1) {
+    const currentPart = currentParts[index] ?? 0;
+    const latestPart = latestParts[index] ?? 0;
+
+    if (latestPart > currentPart) return 1;
+    if (latestPart < currentPart) return -1;
+  }
+
+  return 0;
+};
+
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
   const [view, setView] = useState<'dashboard' | 'settings' | 'tasks' | 'logs' | 'player' | 'telegram'>('dashboard');
@@ -25,6 +52,63 @@ function App() {
   const [newUserUrl, setNewUserUrl] = useState('');
   const [maxFetch, setMaxFetch] = useState<number>(0);
   const [search, setSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [versionState, setVersionState] = useState<VersionState>({
+    latest: null,
+    hasUpdate: false,
+    isChecking: true,
+    error: false,
+  });
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    const checkLatestVersion = async () => {
+      try {
+        const response = await fetch(`${LATEST_VERSION_URL}?t=${Date.now()}`, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Version check failed: ${response.status}`);
+        }
+
+        const latest = (await response.text()).trim();
+
+        if (!latest) {
+          throw new Error('Version check returned empty content');
+        }
+
+        setVersionState({
+          latest,
+          hasUpdate: compareVersions(__APP_VERSION__, latest) > 0,
+          isChecking: false,
+          error: false,
+        });
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return;
+        }
+
+        console.error('Failed to check latest version:', error);
+        setVersionState({
+          latest: null,
+          hasUpdate: false,
+          isChecking: false,
+          error: true,
+        });
+      }
+    };
+
+    checkLatestVersion();
+
+    return () => controller.abort();
+  }, []);
 
   // Notification state
   const [toast, setToast] = useState<{ message: string; type: ToastType; isVisible: boolean } | null>(null);
@@ -199,14 +283,7 @@ function App() {
           </div>
           <div className="hidden lg:block whitespace-nowrap">
             <h1 className="text-lg font-bold tracking-tight">DySync<span className="text-primary text-xl">.</span></h1>
-            <a 
-              href="https://github.com/plsy1/DySyncEngine" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="block hover:text-primary/80 transition-colors"
-            >
-              <p className="text-[10px] text-white/30 font-bold uppercase tracking-widest mt-[-4px]">Core v{__APP_VERSION__}</p>
-            </a>
+            <p className="text-[10px] text-white/30 font-bold uppercase tracking-widest mt-[-4px]">Sync Engine</p>
           </div>
         </div>
 
@@ -218,7 +295,7 @@ function App() {
           <NavButton active={view === 'telegram'} onClick={() => setView('telegram')} icon={<Send size={20} />} label="TG 集成" />
         </div>
 
-        <div className="p-3 space-y-2 mb-6">
+        <div className="p-3 space-y-3 mb-6">
           <NavButton active={view === 'settings'} onClick={() => setView('settings')} icon={<SettingsIcon size={20} />} label="全局配置" />
           <button
             onClick={handleLogout}
@@ -227,6 +304,7 @@ function App() {
             <LogOut size={20} />
             <span className="hidden lg:block text-sm font-bold">退出系统</span>
           </button>
+          <VersionBadge versionState={versionState} />
         </div>
       </nav>
 
@@ -319,40 +397,107 @@ function App() {
                         <RefreshCw size={40} className="animate-spin text-primary" />
                       </div>
                     ) : filteredUsers.length > 0 ? (
-                      <motion.div
-                        layout
-                        className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 3xl:grid-cols-5 4xl:grid-cols-6 gap-6"
-                      >
-                        <AnimatePresence mode="popLayout">
-                          {filteredUsers.map(user => (
-                            <UserCard
-                              key={user.uid}
-                              user={user}
-                              task={activeTasks.find(t => t.target_id === user.uid || t.target_id === user.sec_user_id)}
-                              onRefresh={handleRefresh}
-                              onToggleAutoUpdate={handleToggleAuto}
-                              onPreferenceChange={async (uid, v, n, tgS, tgC) => {
-                                try {
-                                  await api.updateUserPreference(uid, v, n, tgS, tgC);
-                                  setUsers(prev => prev.map(u => u.uid === uid ? { 
-                                    ...u, 
-                                    download_video_override: v, 
-                                    download_note_override: n,
-                                    tg_sync_enabled: tgS,
-                                    tg_target_chat: tgC
-                                  } : u));
-                                  showToast('个人偏好设置已更新');
-                                } catch (err) {
-                                  showToast('更新失败', 'error');
-                                }
-                              }}
-                              onDelete={(u) => setModal({ isOpen: true, user: u })}
-                              onTgSync={handleTgSync}
-                              onMarkTgExported={handleMarkTgExported}
-                            />
-                          ))}
-                        </AnimatePresence>
-                      </motion.div>
+                      <div>
+                        {(() => {
+                          const ITEMS_PER_PAGE = 12;
+                          const totalPages = Math.ceil(filteredUsers.length / ITEMS_PER_PAGE);
+                          const activePage = currentPage > totalPages ? Math.max(1, totalPages) : currentPage;
+                          const paginatedUsers = filteredUsers.slice((activePage - 1) * ITEMS_PER_PAGE, activePage * ITEMS_PER_PAGE);
+
+                          return (
+                            <>
+                              <motion.div
+                                layout
+                                className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 3xl:grid-cols-5 4xl:grid-cols-6 gap-6"
+                              >
+                                <AnimatePresence mode="popLayout">
+                                  {paginatedUsers.map(user => (
+                                    <UserCard
+                                      key={user.uid}
+                                      user={user}
+                                      task={activeTasks.find(t => t.target_id === user.uid || t.target_id === user.sec_user_id)}
+                                      onRefresh={handleRefresh}
+                                      onToggleAutoUpdate={handleToggleAuto}
+                                      onPreferenceChange={async (uid, v, n, tgS, tgC) => {
+                                        try {
+                                          await api.updateUserPreference(uid, v, n, tgS, tgC);
+                                          setUsers(prev => prev.map(u => u.uid === uid ? { 
+                                            ...u, 
+                                            download_video_override: v, 
+                                            download_note_override: n,
+                                            tg_sync_enabled: tgS,
+                                            tg_target_chat: tgC
+                                          } : u));
+                                          showToast('个人偏好设置已更新');
+                                        } catch (err) {
+                                          showToast('更新失败', 'error');
+                                        }
+                                      }}
+                                      onDelete={(u) => setModal({ isOpen: true, user: u })}
+                                      onTgSync={handleTgSync}
+                                      onMarkTgExported={handleMarkTgExported}
+                                    />
+                                  ))}
+                                </AnimatePresence>
+                              </motion.div>
+
+                              {/* Modern Pagination Controls */}
+                              {totalPages > 1 && (
+                                <div className="flex items-center justify-center gap-2 mt-10 pb-24 md:pb-0">
+                                  <button
+                                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                    disabled={activePage === 1}
+                                    className="px-4 py-2.5 bg-white/5 hover:bg-white/10 disabled:hover:bg-white/5 border border-white/10 rounded-2xl disabled:opacity-30 disabled:cursor-not-allowed transition-all text-xs font-black text-white/60 hover:text-white"
+                                  >
+                                    上一页
+                                  </button>
+                                  <div className="flex items-center gap-1.5 px-2">
+                                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => {
+                                      if (
+                                        page === 1 ||
+                                        page === totalPages ||
+                                        Math.abs(page - activePage) <= 1
+                                      ) {
+                                        return (
+                                          <button
+                                            key={page}
+                                            onClick={() => setCurrentPage(page)}
+                                            className={`w-9 h-9 flex items-center justify-center font-black text-xs rounded-xl transition-all border ${
+                                              page === activePage
+                                                ? 'bg-primary text-black border-primary shadow-lg shadow-primary/20'
+                                                : 'bg-white/5 hover:bg-white/10 border-white/10 text-white/60 hover:text-white'
+                                            }`}
+                                          >
+                                            {page}
+                                          </button>
+                                        );
+                                      }
+                                      if (
+                                        (page === 2 && activePage > 3) ||
+                                        (page === totalPages - 1 && activePage < totalPages - 2)
+                                      ) {
+                                        return (
+                                          <span key={page} className="px-1 text-white/20 font-black text-xs select-none">
+                                            ...
+                                          </span>
+                                        );
+                                      }
+                                      return null;
+                                    })}
+                                  </div>
+                                  <button
+                                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                    disabled={activePage === totalPages}
+                                    className="px-4 py-2.5 bg-white/5 hover:bg-white/10 disabled:hover:bg-white/5 border border-white/10 rounded-2xl disabled:opacity-30 disabled:cursor-not-allowed transition-all text-xs font-black text-white/60 hover:text-white"
+                                  >
+                                    下一页
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
+                      </div>
                     ) : (
                       <div className="text-center py-40 border-2 border-dashed border-white/5 rounded-[40px] bg-white/[0.01]">
                         <p className="text-white/20 font-bold text-xl mb-2">
@@ -476,6 +621,41 @@ function App() {
 }
 
 // Sub-component for navigation buttons
+function VersionBadge({ versionState }: { versionState: VersionState }) {
+  const title = versionState.hasUpdate && versionState.latest
+    ? `发现新版本 v${normalizeVersion(versionState.latest)}`
+    : versionState.error
+      ? '版本检查失败'
+      : versionState.isChecking
+        ? '正在检查版本'
+        : '当前已是最新版本';
+
+  return (
+    <a
+      href="https://github.com/plsy1/DySyncEngine"
+      target="_blank"
+      rel="noopener noreferrer"
+      title={title}
+      className={`version-badge group/version ${versionState.hasUpdate ? 'version-badge-update' : ''}`}
+    >
+      <span className="version-dot" />
+      <span className="hidden lg:flex min-w-0 flex-col leading-none">
+        <span className="text-[10px] font-black uppercase tracking-widest text-white/30 group-hover/version:text-white/60 transition-colors">
+          Core Version
+        </span>
+        <span className={`mt-1 text-xs font-black transition-colors ${versionState.hasUpdate ? 'text-red-200' : 'text-white/45'}`}>
+          v{normalizeVersion(__APP_VERSION__)}
+        </span>
+        {versionState.hasUpdate && versionState.latest && (
+          <span className="mt-1 text-[10px] font-bold text-red-200/80 truncate">
+            最新 v{normalizeVersion(versionState.latest)}
+          </span>
+        )}
+      </span>
+    </a>
+  );
+}
+
 function NavButton({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) {
   return (
     <button

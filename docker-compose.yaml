@@ -10,14 +10,11 @@ services:
       - ./data:/app/backend/data
       # Downloaded videos/assets
       - ./videos:/app/videos
-      # Custom config for external API
-      - ./config/douyin_web/config.yaml:/app/3rd/douyin_api/crawlers/douyin/web/config.yaml
-      - ./config/tiktok_web/config.yaml:/app/3rd/douyin_api/crawlers/tiktok/web/config.yaml
-      - ./config/tiktok_app/config.yaml:/app/3rd/douyin_api/crawlers/tiktok/app/config.yaml
-      # Custom config (optional, can also use env vars)
+      # Config directory (auto-initialized on first start if empty)
+      # Cookie 和配置修改后重启容器生效，或在设置页面直接保存
+      - ./config:/app/config
     environment:
       - PORT=80
       - PYTHONUNBUFFERED=1
-      # Example ENV overrides for config.yaml
       - SAVE_DIR=videos
     restart: unless-stopped

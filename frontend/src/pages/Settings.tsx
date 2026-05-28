@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Settings as SettingsIcon, Save, Lock, ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Lock, ArrowLeft, Loader2, AlertCircle, Cookie, CheckCircle2, XCircle, RefreshCw } from 'lucide-react';
 import * as api from '../api';
 import type { GlobalSettings } from '../types';
 import axios from 'axios';
@@ -8,6 +8,15 @@ import axios from 'axios';
 interface SettingsProps {
     onBack: () => void;
     onNotify: (msg: string, type: 'success' | 'error') => void;
+}
+
+type CookieStatus = 'valid' | 'invalid' | 'empty' | 'loading' | 'unknown';
+
+interface CookiesState {
+    douyin_status: CookieStatus;
+    tiktok_status: CookieStatus;
+    douyin_cookie_preview: string;
+    tiktok_cookie_preview: string;
 }
 
 export const Settings = ({ onBack, onNotify }: SettingsProps) => {
@@ -19,6 +28,7 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
         emby_server_url: '',
         emby_api_key: '',
         emby_default_library: '',
+        folder_name_pattern: '{nickname}_{uid}',
     });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -32,6 +42,19 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
     // Emby library selection
     const [libraries, setLibraries] = useState<{ id: string, name: string }[]>([]);
     const [fetchingLibraries, setFetchingLibraries] = useState(false);
+
+    // Cookie state
+    const [cookiesState, setCookiesState] = useState<CookiesState>({
+        douyin_status: 'loading',
+        tiktok_status: 'loading',
+        douyin_cookie_preview: '',
+        tiktok_cookie_preview: '',
+    });
+    const [douyinCookie, setDouyinCookie] = useState('');
+    const [tiktokCookie, setTiktokCookie] = useState('');
+    const [savingDouyinCookie, setSavingDouyinCookie] = useState(false);
+    const [savingTiktokCookie, setSavingTiktokCookie] = useState(false);
+    const [checkingCookies, setCheckingCookies] = useState(false);
 
     useEffect(() => {
         if (settings.emby_server_url && settings.emby_api_key) {
@@ -63,6 +86,7 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
 
     useEffect(() => {
         fetchSettings();
+        fetchCookiesStatus();
     }, []);
 
     const fetchSettings = async () => {
@@ -73,6 +97,23 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
             onNotify('获取配置失败', 'error');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const fetchCookiesStatus = async () => {
+        setCheckingCookies(true);
+        try {
+            const data = await api.getCookiesStatus();
+            setCookiesState({
+                douyin_status: data.douyin_status as CookieStatus,
+                tiktok_status: data.tiktok_status as CookieStatus,
+                douyin_cookie_preview: data.douyin_cookie_preview,
+                tiktok_cookie_preview: data.tiktok_cookie_preview,
+            });
+        } catch (err) {
+            setCookiesState(s => ({ ...s, douyin_status: 'unknown', tiktok_status: 'unknown' }));
+        } finally {
+            setCheckingCookies(false);
         }
     };
 
@@ -109,6 +150,41 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
         }
     };
 
+    const handleSaveCookie = async (platform: 'douyin' | 'tiktok') => {
+        const cookie = platform === 'douyin' ? douyinCookie : tiktokCookie;
+        if (!cookie.trim()) {
+            onNotify('Cookie 不能为空', 'error');
+            return;
+        }
+        const setSaving = platform === 'douyin' ? setSavingDouyinCookie : setSavingTiktokCookie;
+        setSaving(true);
+        try {
+            await api.updateCookie(platform, cookie.trim());
+            onNotify(`${platform === 'douyin' ? '抖音' : 'TikTok'} Cookie 已保存，正在验证...`, 'success');
+            if (platform === 'douyin') setDouyinCookie('');
+            else setTiktokCookie('');
+            // 重新检测状态
+            await fetchCookiesStatus();
+        } catch (err: any) {
+            onNotify(err.response?.data?.detail || '保存 Cookie 失败', 'error');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const CookieStatusBadge = ({ status }: { status: CookieStatus }) => {
+        if (status === 'loading' || status === 'unknown') {
+            return <span className="flex items-center gap-1 text-xs text-white/40"><Loader2 size={12} className="animate-spin" />检测中</span>;
+        }
+        if (status === 'valid') {
+            return <span className="flex items-center gap-1.5 text-xs font-bold text-emerald-400"><CheckCircle2 size={13} />有效</span>;
+        }
+        if (status === 'invalid') {
+            return <span className="flex items-center gap-1.5 text-xs font-bold text-red-400"><XCircle size={13} />已失效</span>;
+        }
+        return <span className="flex items-center gap-1.5 text-xs font-bold text-white/30"><AlertCircle size={13} />未配置</span>;
+    };
+
     if (loading) {
         return (
             <div className="flex items-center justify-center p-20">
@@ -116,6 +192,8 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
             </div>
         );
     }
+
+    const hasInvalidCookie = cookiesState.douyin_status === 'invalid' || cookiesState.tiktok_status === 'invalid';
 
     return (
         <div className="space-y-10 pb-20">
@@ -129,10 +207,148 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                     </button>
                     <div>
                         <h2 className="text-3xl font-black tracking-tight text-white">系统设置</h2>
-                        <p className="text-white/50 text-base mt-1">全局下载策略、媒体中心集成与安全验证</p>
+                        <p className="text-white/50 text-base mt-1">全局下载策略、Cookie 管理与安全验证</p>
                     </div>
                 </div>
             </header>
+
+            {/* Cookie 失效警告横幅 */}
+            {hasInvalidCookie && (
+                <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex items-start gap-3 p-4 rounded-2xl bg-red-500/10 border border-red-500/30"
+                >
+                    <XCircle size={18} className="text-red-400 shrink-0 mt-0.5" />
+                    <div className="text-sm">
+                        <p className="font-bold text-red-300 mb-0.5">Cookie 已失效，视频抓取将无法正常工作</p>
+                        <p className="text-red-400/70">请在下方 Cookie 配置区域重新填写最新的 Cookie，保存后立即生效（无需重启容器）。</p>
+                    </div>
+                </motion.div>
+            )}
+
+            {/* Cookie 管理卡片 */}
+            <div>
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-white/60 text-xs font-black uppercase tracking-widest">Cookie 配置</h3>
+                    <button
+                        onClick={fetchCookiesStatus}
+                        disabled={checkingCookies}
+                        className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/70 transition-colors disabled:opacity-50"
+                    >
+                        <RefreshCw size={12} className={checkingCookies ? 'animate-spin' : ''} />
+                        重新检测
+                    </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* 抖音 Cookie */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className={`p-6 border rounded-3xl space-y-4 flex flex-col backdrop-blur-sm ${
+                            cookiesState.douyin_status === 'invalid'
+                                ? 'border-red-500/30 bg-red-500/5'
+                                : cookiesState.douyin_status === 'valid'
+                                ? 'border-emerald-500/20 bg-emerald-500/5'
+                                : 'border-white/5 bg-white/2'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                                    cookiesState.douyin_status === 'invalid' ? 'bg-red-500/15 text-red-400'
+                                    : cookiesState.douyin_status === 'valid' ? 'bg-emerald-500/15 text-emerald-400'
+                                    : 'bg-white/8 text-white/40'
+                                }`}>
+                                    <Cookie size={18} />
+                                </div>
+                                <div>
+                                    <h4 className="font-bold text-white">抖音 Cookie</h4>
+                                    {cookiesState.douyin_cookie_preview && (
+                                        <p className="text-white/30 text-xs font-mono mt-0.5 truncate max-w-[140px]">{cookiesState.douyin_cookie_preview}</p>
+                                    )}
+                                </div>
+                            </div>
+                            <CookieStatusBadge status={cookiesState.douyin_status} />
+                        </div>
+
+                        <div className="space-y-2 flex-1">
+                            <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">粘贴新 Cookie</label>
+                            <textarea
+                                value={douyinCookie}
+                                onChange={(e) => setDouyinCookie(e.target.value)}
+                                rows={4}
+                                className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 transition-all text-xs font-mono resize-none"
+                                placeholder={cookiesState.douyin_cookie_preview ? `当前已配置: ${cookiesState.douyin_cookie_preview}` : "从浏览器开发者工具复制完整的 Cookie 字符串粘贴到此处..."}
+                            />
+                            <p className="text-white/30 text-xs pl-1">在抖音网页版登录后，F12 → Network → 任意请求 → Request Headers → Cookie</p>
+                        </div>
+
+                        <button
+                            onClick={() => handleSaveCookie('douyin')}
+                            disabled={savingDouyinCookie || !douyinCookie.trim()}
+                            className="w-full flex items-center justify-center gap-2 py-3 bg-primary/10 hover:bg-primary/20 text-primary disabled:opacity-40 transition-all rounded-xl font-black text-xs border border-primary/20"
+                        >
+                            {savingDouyinCookie ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                            保存抖音 Cookie
+                        </button>
+                    </motion.div>
+
+                    {/* TikTok Cookie */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.05 }}
+                        className={`p-6 border rounded-3xl space-y-4 flex flex-col backdrop-blur-sm ${
+                            cookiesState.tiktok_status === 'invalid'
+                                ? 'border-red-500/30 bg-red-500/5'
+                                : cookiesState.tiktok_status === 'valid'
+                                ? 'border-emerald-500/20 bg-emerald-500/5'
+                                : 'border-white/5 bg-white/2'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                                    cookiesState.tiktok_status === 'invalid' ? 'bg-red-500/15 text-red-400'
+                                    : cookiesState.tiktok_status === 'valid' ? 'bg-emerald-500/15 text-emerald-400'
+                                    : 'bg-white/8 text-white/40'
+                                }`}>
+                                    <Cookie size={18} />
+                                </div>
+                                <div>
+                                    <h4 className="font-bold text-white">TikTok Cookie</h4>
+                                    {cookiesState.tiktok_cookie_preview && (
+                                        <p className="text-white/30 text-xs font-mono mt-0.5 truncate max-w-[140px]">{cookiesState.tiktok_cookie_preview}</p>
+                                    )}
+                                </div>
+                            </div>
+                            <CookieStatusBadge status={cookiesState.tiktok_status} />
+                        </div>
+
+                        <div className="space-y-2 flex-1">
+                            <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">粘贴新 Cookie</label>
+                            <textarea
+                                value={tiktokCookie}
+                                onChange={(e) => setTiktokCookie(e.target.value)}
+                                rows={4}
+                                className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 transition-all text-xs font-mono resize-none"
+                                placeholder={cookiesState.tiktok_cookie_preview ? `当前已配置: ${cookiesState.tiktok_cookie_preview}` : "从浏览器开发者工具复制完整的 TikTok Cookie 字符串粘贴到此处..."}
+                            />
+                            <p className="text-white/30 text-xs pl-1">在 TikTok 网页版登录后，F12 → Network → 任意请求 → Request Headers → Cookie</p>
+                        </div>
+
+                        <button
+                            onClick={() => handleSaveCookie('tiktok')}
+                            disabled={savingTiktokCookie || !tiktokCookie.trim()}
+                            className="w-full flex items-center justify-center gap-2 py-3 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 disabled:opacity-40 transition-all rounded-xl font-black text-xs border border-cyan-500/20"
+                        >
+                            {savingTiktokCookie ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                            保存 TikTok Cookie
+                        </button>
+                    </motion.div>
+                </div>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {/* Global Download Settings */}
@@ -195,6 +411,23 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                                 onChange={(e) => setSettings(s => ({ ...s, max_initial_fetch: parseInt(e.target.value) || 0 }))}
                                 className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 transition-all font-bold text-base"
                             />
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">文件夹命名规则</label>
+                            <input
+                                type="text"
+                                value={settings.folder_name_pattern || ''}
+                                onChange={(e) => setSettings(s => ({ ...s, folder_name_pattern: e.target.value }))}
+                                placeholder="{nickname}_{uid}"
+                                className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 transition-all font-bold text-sm font-mono"
+                            />
+                            <p className="text-[10px] text-white/30 pl-1 leading-normal">
+                                支持替换标签：<code className="text-primary/70">{`{nickname}`}</code>（昵称）、
+                                <code className="text-primary/70">{`{uid}`}</code>（用户ID）、
+                                <code className="text-primary/70">{`{platform}`}</code>（所属平台）。<br />
+                                默认示例：<code className="text-white/50">{`{nickname}_{uid}`}</code>
+                            </p>
                         </div>
                     </div>
 
@@ -339,7 +572,7 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                 <AlertCircle size={18} className="text-primary shrink-0 mt-0.5" />
                 <div className="text-xs text-white/50 leading-relaxed">
                     <p className="font-black text-white/60 mb-1 uppercase tracking-tighter text-sm">Priority Note</p>
-                    <p>全局设置仅作为默认行为。若在“发现 & 下载”中为特定账号设置了独立偏好，则以该账号的专项配置为准，系统将自动覆盖全局设定。</p>
+                    <p>全局设置仅作为默认行为。若在"发现 & 下载"中为特定账号设置了独立偏好，则以该账号的专项配置为准，系统将自动覆盖全局设定。</p>
                 </div>
             </div>
         </div>

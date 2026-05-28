@@ -85,4 +85,49 @@ html {
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+
+  .version-badge {
+    @apply w-full flex items-center gap-4 rounded-2xl border border-white/5 bg-white/[0.03] p-4 text-white/40 transition-all;
+  }
+
+  .version-badge:hover {
+    @apply border-white/10 bg-white/[0.06] text-white/70;
+  }
+
+  .version-dot {
+    @apply block h-2.5 w-2.5 shrink-0 rounded-full bg-white/20 transition-all;
+  }
+
+  .version-badge-update {
+    border-color: rgba(248, 113, 113, 0.55);
+    background: radial-gradient(circle at 18px 18px, rgba(248, 113, 113, 0.2), rgba(127, 29, 29, 0.1) 48%, rgba(255, 255, 255, 0.03));
+    box-shadow:
+      0 0 18px rgba(248, 113, 113, 0.25),
+      inset 0 0 18px rgba(248, 113, 113, 0.08);
+    animation: version-neon-pulse 1.8s ease-in-out infinite;
+  }
+
+  .version-badge-update .version-dot {
+    background: #ff2f4f;
+    box-shadow:
+      0 0 8px rgba(255, 47, 79, 0.95),
+      0 0 20px rgba(255, 47, 79, 0.7);
+  }
+
+  @keyframes version-neon-pulse {
+    0%,
+    100% {
+      box-shadow:
+        0 0 14px rgba(248, 113, 113, 0.22),
+        inset 0 0 14px rgba(248, 113, 113, 0.07);
+      filter: saturate(1);
+    }
+    50% {
+      box-shadow:
+        0 0 26px rgba(248, 113, 113, 0.48),
+        0 0 52px rgba(248, 113, 113, 0.18),
+        inset 0 0 22px rgba(248, 113, 113, 0.14);
+      filter: saturate(1.2);
+    }
+  }
 }

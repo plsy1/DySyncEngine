@@ -75,7 +75,9 @@ def process_single_aweme_download(session: Session, aweme: Any) -> bool:
 
     filename = aweme.desc if aweme.desc else aweme.aweme_id
     type_folder = "notes" if aweme.aweme_type == 68 else "videos"
-    author_folder = os.path.join(f"{aweme.nickname}_{aweme.uid}", type_folder)
+    from utils import get_author_folder_name
+    author_folder_name = get_author_folder_name(aweme.nickname, aweme.uid, aweme.platform, session)
+    author_folder = os.path.join(author_folder_name, type_folder)
     
     try:
         saved_path = download_video(
@@ -540,7 +542,9 @@ def download_from_share_url(share_url: str = Query(..., description="抖音分�
         
         # 3. 执行下载
         type_folder = "notes" if aweme_type == 68 else "videos"
-        author_folder = os.path.join(f"{final_nickname}_{uid}", type_folder)
+        from utils import get_author_folder_name
+        author_folder_name = get_author_folder_name(final_nickname, uid, platform, session)
+        author_folder = os.path.join(author_folder_name, type_folder)
         saved_path = download_video(share_url, author_folder, filename, aweme_id)
         
         if saved_path:
@@ -576,6 +580,7 @@ class GlobalSettings(BaseModel):
     emby_server_url: str | None = None
     emby_api_key: str | None = None
     emby_default_library: str | None = None
+    folder_name_pattern: str | None = None
 
 class VideoLookupRequest(BaseModel):
     paths: list[str]
@@ -614,7 +619,8 @@ def get_settings_api(session: Session = Depends(get_session), _ = Depends(get_cu
         max_initial_fetch=int(get_config(session, "max_initial_fetch", "0")),
         emby_server_url=get_config(session, "emby_server_url", ""),
         emby_api_key=get_config(session, "emby_api_key", ""),
-        emby_default_library=get_config(session, "emby_default_library", "")
+        emby_default_library=get_config(session, "emby_default_library", ""),
+        folder_name_pattern=get_config(session, "folder_name_pattern", "{nickname}_{uid}")
     )
 
 @router.post("/settings")
@@ -629,6 +635,8 @@ def update_settings_api(req: GlobalSettings, session: Session = Depends(get_sess
         set_config(session, "emby_api_key", req.emby_api_key)
     if req.emby_default_library is not None:
         set_config(session, "emby_default_library", req.emby_default_library)
+    if req.folder_name_pattern is not None:
+        set_config(session, "folder_name_pattern", req.folder_name_pattern.strip())
     return {"success": True}
 
 @router.post("/change_password")
@@ -784,6 +792,158 @@ def get_logs_api(lines: int = Query(1000, description="读取日志的行数")):
             return {"logs": all_lines[-lines:] if len(all_lines) > lines else all_lines}
     except Exception as e:
         return {"logs": [f"读取日志失败: {str(e)}"]}
+
+
+# ----------------------------
+# Cookie 管理 API
+# ----------------------------
+
+# config 文件路径（容器内的持久化目录）
+CONFIG_BASE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config")
+COOKIE_CONFIG_PATHS = {
+    "douyin": os.path.join(CONFIG_BASE, "douyin_web", "config.yaml"),
+    "tiktok":  os.path.join(CONFIG_BASE, "tiktok_web", "config.yaml"),
+}
+
+def _read_cookie_from_yaml(platform: str) -> str:
+    """从 config.yaml 中提取 Cookie 字段值"""
+    path = COOKIE_CONFIG_PATHS.get(platform)
+    if not path or not os.path.exists(path):
+        return ""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+        import re
+        # 匹配 "      Cookie: <value>" 这一行（允许前置空格）
+        m = re.search(r"^\s+Cookie:\s*(.+)$", content, re.MULTILINE)
+        return m.group(1).strip() if m else ""
+    except Exception as e:
+        logger.error(f"读取 {platform} Cookie 失败: {e}")
+        return ""
+
+def _write_cookie_to_yaml(platform: str, cookie: str) -> bool:
+    """用正则替换 config.yaml 中的 Cookie 字段，避免破坏其他内容"""
+    path = COOKIE_CONFIG_PATHS.get(platform)
+    if not path:
+        return False
+    try:
+        # 如果文件不存在（新用户且 entrypoint 尚未运行），先确保目录存在
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        if not os.path.exists(path):
+            return False
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+        import re
+        # 替换 Cookie 行，保留原有缩进格式
+        new_content, n = re.subn(
+            r"^(\s+Cookie:\s*)(.+)$",
+            lambda m: m.group(1) + cookie,
+            content,
+            flags=re.MULTILINE
+        )
+        if n == 0:
+            logger.warning(f"未找到 {platform} config.yaml 中的 Cookie 字段")
+            return False
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        return True
+    except Exception as e:
+        logger.error(f"写入 {platform} Cookie 失败: {e}")
+        return False
+
+async def _check_cookie_validity(platform: str) -> str:
+    """
+    检测 Cookie 有效性：
+    - "valid"    Cookie 有效
+    - "invalid"  Cookie 失效或请求失败
+    - "empty"    Cookie 未配置
+    """
+    cookie = _read_cookie_from_yaml(platform)
+    if not cookie:
+        return "empty"
+    try:
+        if platform == "douyin":
+            # 优先从数据库中获取已存在用户的 sec_user_id，如果没有则使用已知有效的 Lucy🐑 用户
+            test_sec_user_id = "MS4wLjABAAAAbxl_HCzauLCqtyV_ny7VET-q8WXMBJ4lHaPIP58AeIIQHmVyLXzVa1RnHOg0NbBV"
+            try:
+                from db import SessionLocal, User
+                with SessionLocal() as db_session:
+                    db_users = db_session.query(User).all()
+                    if db_users:
+                        test_sec_user_id = db_users[0].sec_user_id
+            except Exception as db_err:
+                logger.warning(f"获取测试 sec_user_id 失败，使用 fallback: {db_err}")
+
+            from crawlers.douyin.web.web_crawler import DouyinWebCrawler
+            crawler = DouyinWebCrawler()
+            data = await crawler.handler_user_profile(test_sec_user_id)
+            
+            # 直接调用 crawler 得到的返回结果是 dict
+            status_code = data.get("status_code", -1)
+            # status_code 0 表示正常；2 表示 UserId 不合法（但能走到这一步说明 Cookie 本身是有效的，签名生成也成功了）
+            if status_code not in (0, 2):
+                return "invalid"
+        else:
+            from crawlers.tiktok.web.web_crawler import TikTokWebCrawler
+            crawler = TikTokWebCrawler()
+            data = await crawler.fetch_user_post(
+                secUid="MS4wLjABAAAAv7iSs7LeDe9rtyFi5ArbNhTLSoqgM1wXXFqWPFMECB5Glf8sXRPB1WF8ViDzRqxp",
+                cursor=0,
+                count=1,
+                coverFormat=2
+            )
+            # 直接调用 crawler 得到的返回结果包含 statusCode 和 status_code
+            status_code = data.get("statusCode", data.get("status_code", 0))
+            if status_code != 0:
+                return "invalid"
+        return "valid"
+    except Exception as e:
+        logger.warning(f"检测 {platform} Cookie 有效性时出错: {e}")
+        return "invalid"
+
+
+class CookieStatusResponse(BaseModel):
+    douyin_status: str   # "valid" | "invalid" | "empty"
+    tiktok_status: str
+    douyin_cookie_preview: str  # 前20字符预览，确认是否已填写
+    tiktok_cookie_preview: str
+
+class UpdateCookieRequest(BaseModel):
+    platform: str  # "douyin" | "tiktok"
+    cookie: str
+
+
+@router.get("/cookies/status", response_model=CookieStatusResponse)
+async def get_cookies_status(_ = Depends(get_current_user)):
+    """
+    获取各平台 Cookie 的有效性状态
+    """
+    douyin_cookie = _read_cookie_from_yaml("douyin")
+    tiktok_cookie = _read_cookie_from_yaml("tiktok")
+    
+    douyin_status = await _check_cookie_validity("douyin")
+    tiktok_status = await _check_cookie_validity("tiktok")
+    
+    return CookieStatusResponse(
+        douyin_status=douyin_status,
+        tiktok_status=tiktok_status,
+        douyin_cookie_preview=douyin_cookie[:30] + "..." if len(douyin_cookie) > 30 else douyin_cookie,
+        tiktok_cookie_preview=tiktok_cookie[:30] + "..." if len(tiktok_cookie) > 30 else tiktok_cookie,
+    )
+
+
+@router.post("/cookies")
+def update_cookie(req: UpdateCookieRequest, _ = Depends(get_current_user)):
+    """
+    更新指定平台的 Cookie（写入对应 config.yaml）
+    """
+    if req.platform not in ("douyin", "tiktok"):
+        raise HTTPException(status_code=400, detail="platform 必须为 douyin 或 tiktok")
+    success = _write_cookie_to_yaml(req.platform, req.cookie.strip())
+    if not success:
+        raise HTTPException(status_code=500, detail=f"写入 {req.platform} config.yaml 失败，请检查文件是否存在")
+    logger.info(f"已更新 {req.platform} Cookie")
+    return {"success": True}
 
 
 # ----------------------------

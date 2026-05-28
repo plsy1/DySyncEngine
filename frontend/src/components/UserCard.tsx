@@ -1,10 +1,11 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import type { User, Task } from '../types';
-import { RefreshCw, Trash2, Video, FileText, ChevronDown, Send, Settings2, ShieldCheck } from 'lucide-react';
+import { RefreshCw, Trash2, Video, FileText, ChevronDown, Send, Settings2, ShieldCheck, X } from 'lucide-react';
 import dayjs from 'dayjs';
 import { ProgressBar } from './ProgressBar';
 import { useState, useEffect } from 'react';
 import { Modal } from './Modal';
+import { createPortal } from 'react-dom';
 
 interface UserCardProps {
     user: User;
@@ -112,7 +113,10 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
                         </h3>
                         <div className="flex items-center gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
                             <button
-                                onClick={() => setShowSettings(!showSettings)}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowSettings(true);
+                                }}
                                 className={`p-1.5 rounded-lg transition-colors ${showSettings ? 'bg-primary/20 text-primary' : 'hover:bg-white/5 text-white/40'}`}
                                 title="偏好设置"
                             >
@@ -170,129 +174,6 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
                 </div>
             </div>
 
-            {/* Expandable Settings Panel */}
-            <AnimatePresence>
-                {showSettings && (
-                    <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        onAnimationComplete={() => {
-                            // After expansion, we can allow overflow so dropdowns aren't clipped
-                            // But overflow: hidden is needed during the transition itself
-                        }}
-                        className="bg-black/20 border-t border-white/5"
-                        style={{ overflow: 'visible' }} // Replaced overflow-hidden with styled overflow: visible
-                    >
-                        <div className="p-5 space-y-5">
-                            {/* Row 1: Content Overrides */}
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="space-y-1.5">
-                                    <label className="text-[10px] font-bold text-white/20 uppercase tracking-widest pl-1">视频下载</label>
-                                    <PreferenceToggle
-                                        value={user.download_video_override}
-                                        icon={<Video size={12} />}
-                                        onChange={(v) => onPreferenceChange?.(user.uid, v, user.download_note_override, user.tg_sync_enabled, user.tg_target_chat)}
-                                    />
-                                </div>
-                                <div className="space-y-1.5">
-                                    <label className="text-[10px] font-bold text-white/20 uppercase tracking-widest pl-1">图文同步</label>
-                                    <PreferenceToggle
-                                        value={user.download_note_override}
-                                        icon={<FileText size={12} />}
-                                        onChange={(v) => onPreferenceChange?.(user.uid, user.download_video_override, v, user.tg_sync_enabled, user.tg_target_chat)}
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Row 2: Automation */}
-                            <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5">
-                                <div className="flex items-center gap-2">
-                                    <RefreshCw size={14} className={`text-primary ${user.auto_update ? 'animate-spin-slow' : ''}`} />
-                                    <span className="text-xs font-bold text-white/60">后台自动更新</span>
-                                </div>
-                                <button
-                                    onClick={() => onToggleAutoUpdate(user.uid, !user.auto_update)}
-                                    className={`w-9 h-5 rounded-full transition-all relative ${user.auto_update ? 'bg-primary' : 'bg-white/10'}`}
-                                >
-                                    <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${user.auto_update ? 'left-5' : 'left-1'}`} />
-                                </button>
-                            </div>
-
-                            {/* Row 3: TG Advanced */}
-                            <div className="space-y-3">
-                                <div className="flex items-center justify-between px-1">
-                                    <div className="flex items-center gap-2">
-                                        <ShieldCheck size={14} className="text-blue-400" />
-                                        <span className="text-xs font-bold text-white/60">Telegram 推送服务</span>
-                                    </div>
-                                     <PreferenceToggle
-                                        value={user.tg_sync_enabled}
-                                        onChange={(v) => onPreferenceChange?.(user.uid, user.download_video_override, user.download_note_override, v, user.tg_target_chat)}
-                                        compact
-                                        position="top"
-                                    />
-                                </div>
-                                <div className="flex gap-2">
-                                    <div className="relative flex-1">
-                                        <input
-                                            type="text"
-                                            placeholder="目标 ID (例如: -100xxx 或 me)"
-                                            defaultValue={user.tg_target_chat || ''}
-                                            onBlur={(e) => {
-                                                if (e.target.value !== (user.tg_target_chat || '')) {
-                                                    onPreferenceChange?.(user.uid, user.download_video_override, user.download_note_override, user.tg_sync_enabled, e.target.value);
-                                                }
-                                            }}
-                                            className="w-full bg-white/5 border border-white/5 rounded-xl py-2.5 px-4 text-xs text-white/70 outline-none focus:border-primary/30 transition-all placeholder:text-white/10"
-                                        />
-                                    </div>
-                                    <button
-                                        onClick={async (e) => {
-                                            e.stopPropagation();
-                                            setTgModalOpen(true);
-                                        }}
-                                        disabled={isMarking}
-                                        className="px-3 rounded-xl bg-blue-500/10 border border-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-[10px] font-bold transition-all whitespace-nowrap"
-                                        title="一键标记所有作品为已上传"
-                                    >
-                                        {isMarking ? <RefreshCw size={12} className="animate-spin" /> : "标记已传"}
-                                    </button>
-                                </div>
-                            </div>
-                            {/* Row 4: Historical Sync */}
-                            <div className="pt-2 border-t border-white/5 space-y-3">
-                                <div className="flex items-center justify-between">
-                                    <span className="text-[10px] font-bold text-white/20 uppercase tracking-widest pl-1">回溯抓取 (全量/补漏)</span>
-                                </div>
-                                <div className="flex flex-col sm:flex-row gap-2">
-                                    <div className="relative flex-1">
-                                        <input
-                                            id={`max-fetch-${user.uid}`}
-                                            type="number"
-                                            placeholder="同步数量 (0=全量)"
-                                            className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-xs text-white/70 outline-none focus:border-primary/40 transition-all placeholder:text-white/10 font-bold"
-                                        />
-                                    </div>
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            const input = document.getElementById(`max-fetch-${user.uid}`) as HTMLInputElement;
-                                            const count = parseInt(input?.value) || 0;
-                                            onRefresh(user.sec_user_id || '', count, true);
-                                            if (input) input.value = '';
-                                        }}
-                                        className="py-3 px-6 rounded-xl bg-primary/20 border border-primary/30 text-primary text-[10px] font-black hover:bg-primary/30 transition-all active:scale-95 whitespace-nowrap uppercase tracking-widest"
-                                    >
-                                        立即执行
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
             <Modal 
                 isOpen={tgModalOpen}
                 onClose={() => setTgModalOpen(false)}
@@ -314,6 +195,164 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
                 <span>Last Activity</span>
                 <span className="font-mono">{dayjs(user.updated_at * 1000).format('MM-DD HH:mm')}</span>
             </div>
+
+            {/* Settings Modal Dialog Overlay */}
+            {createPortal(
+                <AnimatePresence>
+                    {showSettings && (
+                        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                onClick={() => setShowSettings(false)}
+                                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                            />
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                                className="relative bg-card border border-white/10 w-full max-w-md rounded-3xl shadow-2xl overflow-visible backdrop-blur-2xl bg-[#060608]/95 p-6 text-left"
+                            >
+                                <div className="flex justify-between items-center mb-1">
+                                    <h3 className="text-lg font-bold text-white truncate pr-4">
+                                        {user.nickname || '未命名'} - 偏好设置
+                                    </h3>
+                                    <button 
+                                        onClick={() => setShowSettings(false)} 
+                                        className="text-white/40 hover:text-white hover:bg-white/5 p-1.5 rounded-lg transition-all"
+                                    >
+                                        <X size={18} />
+                                    </button>
+                                </div>
+                                <div className="flex items-center gap-2 text-[10px] font-medium font-mono text-white/30 uppercase tracking-wider mb-6">
+                                    <span>{user.platform}</span>
+                                    <span>•</span>
+                                    <span className="truncate">{user.uid}</span>
+                                </div>
+
+                                <div className="space-y-5">
+                                    {/* Row 1: Content Overrides */}
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-white/20 uppercase tracking-widest pl-1">视频下载</label>
+                                            <PreferenceToggle
+                                                value={user.download_video_override}
+                                                icon={<Video size={12} />}
+                                                onChange={(v) => onPreferenceChange?.(user.uid, v, user.download_note_override, user.tg_sync_enabled, user.tg_target_chat)}
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-white/20 uppercase tracking-widest pl-1">图文同步</label>
+                                            <PreferenceToggle
+                                                value={user.download_note_override}
+                                                icon={<FileText size={12} />}
+                                                onChange={(v) => onPreferenceChange?.(user.uid, user.download_video_override, v, user.tg_sync_enabled, user.tg_target_chat)}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Row 2: Automation */}
+                                    <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5">
+                                        <div className="flex items-center gap-2">
+                                            <RefreshCw size={14} className={`text-primary ${user.auto_update ? 'animate-spin-slow' : ''}`} />
+                                            <span className="text-xs font-bold text-white/60">后台自动更新</span>
+                                        </div>
+                                        <button
+                                            onClick={() => onToggleAutoUpdate(user.uid, !user.auto_update)}
+                                            className={`w-9 h-5 rounded-full transition-all relative ${user.auto_update ? 'bg-primary' : 'bg-white/10'}`}
+                                        >
+                                            <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${user.auto_update ? 'left-5' : 'left-1'}`} />
+                                        </button>
+                                    </div>
+
+                                    {/* Row 3: TG Advanced */}
+                                    <div className="space-y-3">
+                                        <div className="flex items-center justify-between px-1">
+                                            <div className="flex items-center gap-2">
+                                                <ShieldCheck size={14} className="text-blue-400" />
+                                                <span className="text-xs font-bold text-white/60">Telegram 推送服务</span>
+                                            </div>
+                                             <PreferenceToggle
+                                                value={user.tg_sync_enabled}
+                                                onChange={(v) => onPreferenceChange?.(user.uid, user.download_video_override, user.download_note_override, v, user.tg_target_chat)}
+                                                compact
+                                                position="top"
+                                            />
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <div className="relative flex-1">
+                                                <input
+                                                    type="text"
+                                                    placeholder="目标 ID (例如: -100xxx 或 me)"
+                                                    defaultValue={user.tg_target_chat || ''}
+                                                    onBlur={(e) => {
+                                                        if (e.target.value !== (user.tg_target_chat || '')) {
+                                                            onPreferenceChange?.(user.uid, user.download_video_override, user.download_note_override, user.tg_sync_enabled, e.target.value);
+                                                        }
+                                                    }}
+                                                    className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 text-xs text-white/70 outline-none focus:border-primary/30 transition-all placeholder:text-white/10 font-bold"
+                                                />
+                                            </div>
+                                            <button
+                                                onClick={async (e) => {
+                                                    e.stopPropagation();
+                                                    setTgModalOpen(true);
+                                                }}
+                                                disabled={isMarking}
+                                                className="px-3 rounded-xl bg-blue-500/10 border border-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-[10px] font-bold transition-all whitespace-nowrap"
+                                                title="一键标记所有作品为已上传"
+                                            >
+                                                {isMarking ? <RefreshCw size={12} className="animate-spin" /> : "标记已传"}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Row 4: Historical Sync */}
+                                    <div className="pt-2 border-t border-white/5 space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-[10px] font-bold text-white/20 uppercase tracking-widest pl-1">回溯抓取 (全量/补漏)</span>
+                                        </div>
+                                        <div className="flex flex-col sm:flex-row gap-2">
+                                            <div className="relative flex-1">
+                                                <input
+                                                    id={`max-fetch-modal-${user.uid}`}
+                                                    type="number"
+                                                    placeholder="同步数量 (0=全量)"
+                                                    className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-xs text-white/70 outline-none focus:border-primary/40 transition-all placeholder:text-white/10 font-bold"
+                                                />
+                                            </div>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    const input = document.getElementById(`max-fetch-modal-${user.uid}`) as HTMLInputElement;
+                                                    const count = parseInt(input?.value) || 0;
+                                                    onRefresh(user.sec_user_id || '', count, true);
+                                                    if (input) input.value = '';
+                                                    setShowSettings(false);
+                                                }}
+                                                className="py-3 px-6 rounded-xl bg-primary/20 border border-primary/30 text-primary text-[10px] font-black hover:bg-primary/30 transition-all active:scale-95 whitespace-nowrap uppercase tracking-widest"
+                                            >
+                                                立即执行
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div className="flex gap-3 justify-end mt-8 pt-4 border-t border-white/5">
+                                    <button
+                                        onClick={() => setShowSettings(false)}
+                                        className="w-full py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold rounded-xl text-xs transition-all active:scale-[0.97]"
+                                    >
+                                        完成设置
+                                    </button>
+                                </div>
+                            </motion.div>
+                        </div>
+                    )}
+                </AnimatePresence>,
+                document.body
+            )}
         </motion.div>
     );
 };

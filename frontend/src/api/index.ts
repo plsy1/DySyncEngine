@@ -168,3 +168,19 @@ export const lookupVideos = async (paths: string[]): Promise<Record<string, any>
   const { data } = await api.post('videos/lookup', { paths });
   return data;
 };
+
+// Cookie management endpoints
+export const getCookiesStatus = async (): Promise<{
+  douyin_status: string;
+  tiktok_status: string;
+  douyin_cookie_preview: string;
+  tiktok_cookie_preview: string;
+}> => {
+  const { data } = await api.get('cookies/status');
+  return data;
+};
+
+export const updateCookie = async (platform: 'douyin' | 'tiktok', cookie: string): Promise<{ success: boolean }> => {
+  const { data } = await api.post('cookies', { platform, cookie });
+  return data;
+};

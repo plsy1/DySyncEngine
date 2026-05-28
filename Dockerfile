@@ -22,12 +22,24 @@ COPY 3rd/douyin_api/ ./3rd/douyin_api/
 # Copy built frontend from previous stage
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
+# 备份镜像内的默认 config 文件（用于首次启动时自动初始化）
+# 原始文件会被 entrypoint.sh 的软链覆盖，.default 文件保持不变供拷贝使用
+RUN cp /app/3rd/douyin_api/crawlers/douyin/web/config.yaml \
+       /app/3rd/douyin_api/crawlers/douyin/web/config.yaml.default && \
+    cp /app/3rd/douyin_api/crawlers/tiktok/web/config.yaml \
+       /app/3rd/douyin_api/crawlers/tiktok/web/config.yaml.default
+
+# Copy entrypoint script
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 # Environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app/backend
 
-ENV PORT=8000
+ENV PORT=80
 EXPOSE ${PORT}
 
-# Start server
-CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT}"]
+# Use entrypoint to auto-init configs before starting
+ENTRYPOINT ["/app/entrypoint.sh"]
+
