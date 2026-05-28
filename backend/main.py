@@ -1,8 +1,13 @@
+import warnings
+# 忽略 FastAPI example 字段弃用警告，避免日志被外部包依赖警告刷屏
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", message=".*example.*has been deprecated.*")
+
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
-from api import router, sync_user_videos
+from api import router, public_router, sync_user_videos
 from db import get_session, get_auto_update_users
 import sys
 import os
@@ -72,6 +77,7 @@ for _log in ["uvicorn", "uvicorn.error", "uvicorn.access", "fastapi"]:
 
 app = FastAPI(title="Douyin 视频抓取与下载")
 
+app.include_router(public_router, prefix="/api")
 app.include_router(router, prefix="/api")
 
 # 挂载外部 API 路由，前置路径为 /api/external

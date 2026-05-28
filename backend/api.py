@@ -39,7 +39,8 @@ from loguru import logger
 import asyncio
 from telethon.errors import SessionPasswordNeededError
 
-router = APIRouter()
+public_router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 class DownloadResult(BaseModel):
@@ -760,7 +761,7 @@ class UserPreferenceRequest(BaseModel):
     tg_sync_pref: bool | None = None
     tg_chat_pref: str | None = None
 
-@router.post("/login")
+@public_router.post("/login")
 def login(req: LoginRequest, session: Session = Depends(get_session)):
     from db import get_account
     account = get_account(session, req.username)
