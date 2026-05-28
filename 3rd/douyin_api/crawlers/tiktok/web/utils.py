@@ -50,62 +50,8 @@ class TokenManager:
         生成真实的msToken,当出现错误时返回虚假的值
         (Generate a real msToken and return a false value when an error occurs)
         """
-
-        payload = json.dumps(
-            {
-                "magic": cls.token_conf["magic"],
-                "version": cls.token_conf["version"],
-                "dataType": cls.token_conf["dataType"],
-                "strData": cls.token_conf["strData"],
-                "tspFromClient": get_timestamp(),
-            }
-        )
-
-        headers = {
-            "User-Agent": cls.token_conf["User-Agent"],
-            "Content-Type": "application/json",
-        }
-
-        transport = httpx.HTTPTransport(retries=5)
-        with httpx.Client(transport=transport, proxies=cls.proxies) as client:
-            try:
-                response = client.post(
-                    cls.token_conf["url"], headers=headers, content=payload
-                )
-                response.raise_for_status()
-
-                msToken = str(httpx.Cookies(response.cookies).get("msToken"))
-
-                return msToken
-
-            # except httpx.RequestError as exc:
-            #     # 捕获所有与 httpx 请求相关的异常情况 (Captures all httpx request-related exceptions)
-            #     raise APIConnectionError("请求端点失败，请检查当前网络环境。 链接：{0}，代理：{1}，异常类名：{2}，异常详细信息：{3}"
-            #                              .format(cls.token_conf["url"], cls.proxies, cls.__name__, exc)
-            #                              )
-            #
-            # except httpx.HTTPStatusError as e:
-            #     # 捕获 httpx 的状态代码错误 (captures specific status code errors from httpx)
-            #     if response.status_code == 401:
-            #         raise APIUnauthorizedError("参数验证失败，请更新 Douyin_TikTok_Download_API 配置文件中的 {0}，以匹配 {1} 新规则"
-            #                                    .format("msToken", "tiktok")
-            #                                    )
-            #
-            #     elif response.status_code == 404:
-            #         raise APINotFoundError("{0} 无法找到API端点".format("msToken"))
-            #     else:
-            #         raise APIResponseError("链接：{0}，状态码 {1}：{2} ".format(
-            #             e.response.url, e.response.status_code, e.response.text
-            #         )
-            #         )
-
-            except Exception as e:
-                # 返回虚假的msToken (Return a fake msToken)
-                logger.error("生成TikTok msToken API错误：{0}".format(e))
-                logger.info("当前网络无法正常访问TikTok服务器，已经使用虚假msToken以继续运行。")
-                logger.info("并且TikTok相关API大概率无法正常使用，请在(/tiktok/web/config.yaml)中更新代理。")
-                logger.info("如果你不需要使用TikTok相关API，请忽略此消息。")
-                return cls.gen_false_msToken()
+        # 直接使用本地生成的虚假msToken，避免尝试网络请求失败降级导致启动卡顿
+        return cls.gen_false_msToken()
 
     @classmethod
     def gen_false_msToken(cls) -> str:
