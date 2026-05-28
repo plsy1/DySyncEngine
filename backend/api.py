@@ -274,7 +274,8 @@ def repair_corrupted_files(session: Session, task_id: str = None) -> tuple[int, 
         path = aweme.local_path
         
         if not path or not os.path.exists(path):
-            is_corrupt = True
+            # 如果本地文件已被手动删除，不视为损坏，不重新下载
+            is_corrupt = False
         else:
             if aweme.aweme_type == 68: # 图文
                 if os.path.isfile(path):
