@@ -51,7 +51,7 @@
 
 本项目中的 **抖音和 TikTok 内容抓取** 功能基于开源项目 [Douyin_TikTok_Download_API](https://github.com/Evil0ctal/Douyin_TikTok_Download_API) 实现。
 - 关于抓取引擎的具体配置、Cookie 维护及底层原理，请参考 [Douyin_TikTok_Download_API 项目说明](https://github.com/Evil0ctal/Douyin_TikTok_Download_API/blob/main/README.md)。
-- **配置与挂载**：若需修改抓取引擎的底层设置（如 `config.yaml`），可通过 `docker-compose.yaml` 中的 `volumes` 节点将本地配置文件挂载至容器内的相应位置（例如：`./config/douyin_web/config.yaml:/app/3rd/douyin_api/crawlers/douyin/web/config.yaml`）。
+- **Cookie 配置**：容器首次启动会自动初始化 `./config` 下的抓取配置文件。登录 WebUI 后进入「全局配置」页面，直接粘贴并保存抖音/TikTok Cookie 即可，无需手动编辑或挂载 `config.yaml`。抖音 Cookie 可使用 [chrome-cookie-sniffer](https://github.com/Evil0ctal/Douyin_TikTok_Download_API/tree/main/chrome-cookie-sniffer) 获取。
 
 ---
 
@@ -69,6 +69,8 @@ docker compose up -d
 # 默认映射到宿主机的 80 端口 (可在 docker-compose.yaml 修改)
 http://localhost
 ```
+
+首次登录后请进入「全局配置」页面设置 Cookie。Cookie 会持久化到本地 `./config` 目录，并立即同步给抓取引擎使用。
 
 ### 🐍 本地开发环境
 
