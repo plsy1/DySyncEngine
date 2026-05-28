@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Settings as SettingsIcon, Save, Lock, ArrowLeft, Loader2, AlertCircle, Cookie, CheckCircle2, XCircle, RefreshCw } from 'lucide-react';
 import * as api from '../api';
-import type { GlobalSettings } from '../types';
+import type { FolderMigrationPreview, GlobalSettings, Task } from '../types';
 import axios from 'axios';
 
 interface SettingsProps {
@@ -55,6 +55,10 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
     const [savingDouyinCookie, setSavingDouyinCookie] = useState(false);
     const [savingTiktokCookie, setSavingTiktokCookie] = useState(false);
     const [checkingCookies, setCheckingCookies] = useState(false);
+    const [migrationPreview, setMigrationPreview] = useState<FolderMigrationPreview | null>(null);
+    const [previewingMigration, setPreviewingMigration] = useState(false);
+    const [startingMigration, setStartingMigration] = useState(false);
+    const [migrationTask, setMigrationTask] = useState<Task | null>(null);
 
     useEffect(() => {
         if (settings.emby_server_url && settings.emby_api_key) {
@@ -88,6 +92,27 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
         fetchSettings();
         fetchCookiesStatus();
     }, []);
+
+    useEffect(() => {
+        if (!migrationTask) return;
+
+        const timer = window.setInterval(async () => {
+            try {
+                const tasks = await api.getActiveTasks();
+                const activeMigration = tasks.find(task => task.id === migrationTask.id || task.target_id === 'folder_migration');
+                if (activeMigration) {
+                    setMigrationTask(activeMigration);
+                } else {
+                    setMigrationTask(null);
+                    fetchMigrationPreview();
+                }
+            } catch (err) {
+                console.error('Failed to poll folder migration task', err);
+            }
+        }, 2000);
+
+        return () => window.clearInterval(timer);
+    }, [migrationTask]);
 
     const fetchSettings = async () => {
         try {
@@ -126,6 +151,60 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
             onNotify('更新配置失败', 'error');
         } finally {
             setSaving(false);
+        }
+    };
+
+    const fetchMigrationPreview = async () => {
+        setPreviewingMigration(true);
+        try {
+            const data = await api.previewFolderMigration(settings.folder_name_pattern || '{nickname}_{uid}');
+            setMigrationPreview(data);
+            if (data.total === 0) {
+                onNotify('没有需要迁移的目录', 'success');
+            }
+        } catch (err) {
+            onNotify('生成迁移预览失败', 'error');
+        } finally {
+            setPreviewingMigration(false);
+        }
+    };
+
+    const handleRunFolderMigration = async () => {
+        if (!migrationPreview) {
+            onNotify('请先生成迁移预览', 'error');
+            return;
+        }
+
+        if (migrationPreview.total === 0) {
+            onNotify('没有需要迁移的目录', 'success');
+            return;
+        }
+
+        if (migrationPreview.conflicts > 0) {
+            onNotify('存在目标目录冲突，请先处理后再迁移', 'error');
+            return;
+        }
+
+        const confirmed = window.confirm(`即将重命名 ${migrationPreview.total} 个作者目录并更新数据库路径。此操作会移动 videos 目录下的文件夹，是否继续？`);
+        if (!confirmed) return;
+
+        setStartingMigration(true);
+        try {
+            await api.updateSettings(settings);
+            const result = await api.runFolderMigration();
+            setMigrationTask({
+                id: result.task_id,
+                target_id: 'folder_migration',
+                status: 'running',
+                progress: 0,
+                message: '目录迁移已启动',
+                updated_at: Math.floor(Date.now() / 1000),
+            });
+            onNotify('目录迁移已启动', 'success');
+        } catch (err: any) {
+            onNotify(err.response?.data?.detail || '启动目录迁移失败', 'error');
+        } finally {
+            setStartingMigration(false);
         }
     };
 
@@ -428,6 +507,69 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                                 <code className="text-primary/70">{`{platform}`}</code>（所属平台）。<br />
                                 默认示例：<code className="text-white/50">{`{nickname}_{uid}`}</code>
                             </p>
+                        </div>
+
+                        <div className="space-y-3 rounded-2xl border border-white/5 bg-black/20 p-4">
+                            <div className="flex items-start justify-between gap-3">
+                                <div>
+                                    <p className="text-white font-bold text-sm">已有目录迁移</p>
+                                    <p className="text-white/35 text-xs mt-1 leading-normal">先预览，再按当前命名规则重命名已有作者目录并更新数据库路径。</p>
+                                </div>
+                                {migrationTask && (
+                                    <span className="shrink-0 text-[10px] font-black text-primary bg-primary/10 border border-primary/20 rounded-full px-2 py-1">
+                                        {migrationTask.progress}%
+                                    </span>
+                                )}
+                            </div>
+
+                            {migrationTask && (
+                                <div className="space-y-2">
+                                    <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                                        <div className="h-full bg-primary transition-all" style={{ width: `${migrationTask.progress}%` }} />
+                                    </div>
+                                    <p className="text-[10px] text-white/40 truncate">{migrationTask.message || '正在迁移目录...'}</p>
+                                </div>
+                            )}
+
+                            {migrationPreview && (
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-2 text-xs">
+                                        <span className="text-white/50">待迁移 {migrationPreview.total} 个</span>
+                                        {migrationPreview.conflicts > 0 && <span className="text-red-400">冲突 {migrationPreview.conflicts} 个</span>}
+                                    </div>
+                                    {migrationPreview.items.slice(0, 4).map(item => (
+                                        <div key={item.uid} className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="text-xs font-bold text-white/70 truncate">{item.nickname}</span>
+                                                {item.conflict && <span className="text-[10px] font-bold text-red-400 shrink-0">冲突</span>}
+                                            </div>
+                                            <p className="text-[10px] text-white/30 font-mono truncate mt-1">{item.from_folder} {'->'} {item.to_folder}</p>
+                                        </div>
+                                    ))}
+                                    {migrationPreview.items.length > 4 && (
+                                        <p className="text-[10px] text-white/30">还有 {migrationPreview.items.length - 4} 个目录未显示</p>
+                                    )}
+                                </div>
+                            )}
+
+                            <div className="grid grid-cols-2 gap-2">
+                                <button
+                                    onClick={fetchMigrationPreview}
+                                    disabled={previewingMigration || !!migrationTask}
+                                    className="flex items-center justify-center gap-2 py-2.5 bg-white/5 hover:bg-white/10 text-white/60 disabled:opacity-40 transition-all rounded-xl font-black text-xs border border-white/10"
+                                >
+                                    {previewingMigration ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                                    预览
+                                </button>
+                                <button
+                                    onClick={handleRunFolderMigration}
+                                    disabled={startingMigration || !!migrationTask || !migrationPreview || migrationPreview.total === 0 || migrationPreview.conflicts > 0}
+                                    className="flex items-center justify-center gap-2 py-2.5 bg-primary/10 hover:bg-primary/20 text-primary disabled:opacity-40 transition-all rounded-xl font-black text-xs border border-primary/20"
+                                >
+                                    {startingMigration ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                                    执行迁移
+                                </button>
+                            </div>
                         </div>
                     </div>
 

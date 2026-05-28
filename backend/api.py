@@ -582,6 +582,24 @@ class GlobalSettings(BaseModel):
     emby_default_library: str | None = None
     folder_name_pattern: str | None = None
 
+class FolderMigrationItem(BaseModel):
+    uid: str
+    nickname: str
+    platform: str
+    from_folder: str
+    to_folder: str
+    from_path: str
+    to_path: str
+    aweme_count: int
+    conflict: bool
+    reason: str | None = None
+
+class FolderMigrationPreview(BaseModel):
+    save_dir: str
+    total: int
+    conflicts: int
+    items: list[FolderMigrationItem]
+
 class VideoLookupRequest(BaseModel):
     paths: list[str]
 
@@ -638,6 +656,27 @@ def update_settings_api(req: GlobalSettings, session: Session = Depends(get_sess
     if req.folder_name_pattern is not None:
         set_config(session, "folder_name_pattern", req.folder_name_pattern.strip())
     return {"success": True}
+
+@router.get("/settings/folder-migration/preview", response_model=FolderMigrationPreview)
+def preview_folder_migration(pattern: str | None = Query(None), session: Session = Depends(get_session), _ = Depends(get_current_user)):
+    from utils import build_folder_migration_plan
+    return build_folder_migration_plan(session, pattern=pattern.strip() if pattern else None)
+
+def folder_migration_task(task_id: str):
+    try:
+        with next(get_session()) as session:
+            from utils import run_folder_migration
+            run_folder_migration(session, task_id=task_id)
+    except Exception as e:
+        with next(get_session()) as session:
+            update_task_progress(session, task_id, 100, status="failed", message=f"目录迁移失败: {e}")
+
+@router.post("/settings/folder-migration/run")
+def start_folder_migration(background_tasks: BackgroundTasks, session: Session = Depends(get_session), _ = Depends(get_current_user)):
+    task_id = str(uuid.uuid4())
+    create_task(session, task_id, "folder_migration")
+    background_tasks.add_task(folder_migration_task, task_id)
+    return {"started": True, "task_id": task_id}
 
 @router.post("/change_password")
 def change_password_api(req: PasswordChangeRequest, session: Session = Depends(get_session), current_user: Any = Depends(get_current_user)):

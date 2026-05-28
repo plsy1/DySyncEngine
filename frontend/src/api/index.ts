@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { User, ApiResponse, ShareDownloadResult, Task, GlobalSettings, AuthResponse, VideoParseInfo, SchedulerStatus } from '../types';
+import type { User, ApiResponse, ShareDownloadResult, Task, GlobalSettings, AuthResponse, VideoParseInfo, SchedulerStatus, FolderMigrationPreview } from '../types';
 
 const api = axios.create({
   baseURL: '/api/', // Standard API prefix with trailing slash
@@ -47,6 +47,18 @@ export const getSettings = async (): Promise<GlobalSettings> => {
 
 export const updateSettings = async (settings: GlobalSettings) => {
   const { data } = await api.post('settings', settings);
+  return data;
+};
+
+export const previewFolderMigration = async (pattern?: string): Promise<FolderMigrationPreview> => {
+  const { data } = await api.get<FolderMigrationPreview>('settings/folder-migration/preview', {
+    params: pattern ? { pattern } : undefined,
+  });
+  return data;
+};
+
+export const runFolderMigration = async (): Promise<{ started: boolean; task_id: string }> => {
+  const { data } = await api.post<{ started: boolean; task_id: string }>('settings/folder-migration/run');
   return data;
 };
 

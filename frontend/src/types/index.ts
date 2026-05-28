@@ -27,6 +27,26 @@ export interface GlobalSettings {
   folder_name_pattern?: string;
 }
 
+export interface FolderMigrationItem {
+  uid: string;
+  nickname: string;
+  platform: string;
+  from_folder: string;
+  to_folder: string;
+  from_path: string;
+  to_path: string;
+  aweme_count: number;
+  conflict: boolean;
+  reason: string | null;
+}
+
+export interface FolderMigrationPreview {
+  save_dir: string;
+  total: number;
+  conflicts: number;
+  items: FolderMigrationItem[];
+}
+
 export interface AuthResponse {
   access_token: string;
   token_type: string;

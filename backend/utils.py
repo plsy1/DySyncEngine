@@ -3,6 +3,8 @@ import httpx
 from loguru import logger
 from config import config
 import asyncio
+import os
+from collections import Counter
 
 _main_loop = None
 
@@ -241,3 +243,186 @@ def handle_nickname_change(session, uid: str, old_nickname: str, new_nickname: s
     except Exception as e:
         logger.error(f"更新数据库作品 local_path 失败: {e}")
 
+
+def _extract_author_folder_from_path(local_path: str, save_dir: str) -> str | None:
+    if not local_path:
+        return None
+
+    normalized_path = os.path.normpath(local_path)
+    normalized_save_dir = os.path.normpath(save_dir)
+
+    try:
+        absolute_path = os.path.abspath(normalized_path)
+        absolute_save_dir = os.path.abspath(normalized_save_dir)
+        if os.path.commonpath([absolute_path, absolute_save_dir]) == absolute_save_dir:
+            relative_path = os.path.relpath(absolute_path, absolute_save_dir)
+        elif normalized_path.startswith(normalized_save_dir + os.sep):
+            relative_path = normalized_path[len(normalized_save_dir + os.sep):]
+        else:
+            return None
+    except ValueError:
+        return None
+
+    first_segment = relative_path.split(os.sep, 1)[0]
+    return first_segment or None
+
+
+def _find_author_folder(session, user, save_dir: str) -> str | None:
+    from db import Aweme
+
+    folders = Counter()
+    awemes = session.query(Aweme).filter_by(uid=user.uid).all()
+    for aweme in awemes:
+        folder = _extract_author_folder_from_path(aweme.local_path, save_dir)
+        if folder and os.path.isdir(os.path.join(save_dir, folder)):
+            folders[folder] += 1
+
+    if folders:
+        return folders.most_common(1)[0][0]
+
+    possible_suffixes = [f"_{user.uid}", f"-{user.uid}"]
+    possible_prefixes = [f"{user.uid}_", f"{user.uid}-"]
+
+    try:
+        for entry in os.scandir(save_dir):
+            if not entry.is_dir():
+                continue
+            if entry.name == user.uid:
+                return entry.name
+            if any(entry.name.endswith(suffix) for suffix in possible_suffixes):
+                return entry.name
+            if any(entry.name.startswith(prefix) for prefix in possible_prefixes):
+                return entry.name
+    except FileNotFoundError:
+        return None
+    except Exception as e:
+        logger.error(f"扫描目录 {save_dir} 寻找作者目录失败: {e}")
+
+    return None
+
+
+def build_folder_migration_plan(session, pattern: str | None = None) -> dict:
+    """
+    根据当前文件夹命名规则预览已有作者目录迁移计划。
+    """
+    from db import User, Aweme
+
+    save_dir = config.SAVE_DIR or "videos"
+    users = session.query(User).all()
+    items = []
+
+    for user in users:
+        if not user.uid or not user.nickname:
+            continue
+
+        current_folder = _find_author_folder(session, user, save_dir)
+        if pattern:
+            sanitized_nickname = sanitize_filename(user.nickname)
+            target_folder = pattern.replace("{nickname}", sanitized_nickname)\
+                                   .replace("{uid}", user.uid)\
+                                   .replace("{platform}", user.platform or "douyin")
+            target_folder = sanitize_filename(target_folder)
+        else:
+            target_folder = get_author_folder_name(user.nickname, user.uid, user.platform or "douyin", session)
+
+        if not current_folder or current_folder == target_folder:
+            continue
+
+        current_path = os.path.join(save_dir, current_folder)
+        target_path = os.path.join(save_dir, target_folder)
+        aweme_count = session.query(Aweme).filter_by(uid=user.uid).count()
+        conflict = os.path.exists(target_path)
+
+        items.append({
+            "uid": user.uid,
+            "nickname": user.nickname,
+            "platform": user.platform or "douyin",
+            "from_folder": current_folder,
+            "to_folder": target_folder,
+            "from_path": current_path,
+            "to_path": target_path,
+            "aweme_count": aweme_count,
+            "conflict": conflict,
+            "reason": "目标目录已存在" if conflict else None,
+        })
+
+    return {
+        "save_dir": save_dir,
+        "total": len(items),
+        "conflicts": sum(1 for item in items if item["conflict"]),
+        "items": items,
+    }
+
+
+def run_folder_migration(session, task_id: str | None = None) -> dict:
+    """
+    执行已有作者目录迁移，并同步更新数据库 local_path。
+    冲突项会被跳过，避免覆盖已有目录。
+    """
+    from db import Aweme, update_task_progress
+
+    plan = build_folder_migration_plan(session)
+    items = plan["items"]
+    total = len(items)
+    migrated = 0
+    skipped = 0
+    failed = 0
+
+    if task_id:
+        update_task_progress(session, task_id, 5, message=f"发现 {total} 个待迁移目录")
+
+    if total == 0:
+        if task_id:
+            update_task_progress(session, task_id, 100, status="completed", message="没有需要迁移的目录")
+        return {"migrated": 0, "skipped": 0, "failed": 0}
+
+    for index, item in enumerate(items):
+        progress = 5 + int((index / total) * 90)
+        if task_id:
+            update_task_progress(
+                session,
+                task_id,
+                progress,
+                message=f"正在迁移 {index + 1}/{total}: {item['from_folder']} -> {item['to_folder']}",
+            )
+
+        if item["conflict"]:
+            logger.warning(f"跳过目录迁移，目标已存在: {item['to_path']}")
+            skipped += 1
+            continue
+
+        try:
+            os.rename(item["from_path"], item["to_path"])
+            awemes = session.query(Aweme).filter_by(uid=item["uid"]).all()
+            old_prefix = os.path.normpath(item["from_path"])
+            new_prefix = os.path.normpath(item["to_path"])
+            updated_count = 0
+
+            for aweme in awemes:
+                if not aweme.local_path:
+                    continue
+                normalized_local_path = os.path.normpath(aweme.local_path)
+                if normalized_local_path == old_prefix or normalized_local_path.startswith(old_prefix + os.sep):
+                    suffix = normalized_local_path[len(old_prefix):].lstrip(os.sep)
+                    aweme.local_path = os.path.join(new_prefix, suffix) if suffix else new_prefix
+                    updated_count += 1
+
+            session.commit()
+            migrated += 1
+            logger.info(f"目录迁移完成: {item['from_path']} -> {item['to_path']}，更新 {updated_count} 条路径")
+        except Exception as e:
+            session.rollback()
+            failed += 1
+            logger.error(f"目录迁移失败: {item['from_path']} -> {item['to_path']} | {e}")
+
+    message = f"迁移完成: 成功 {migrated}，跳过 {skipped}，失败 {failed}"
+    if task_id:
+        update_task_progress(
+            session,
+            task_id,
+            100,
+            status="completed" if failed == 0 else "failed",
+            message=message,
+        )
+
+    return {"migrated": migrated, "skipped": skipped, "failed": failed}
