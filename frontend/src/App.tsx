@@ -43,6 +43,33 @@ const compareVersions = (current: string, latest: string) => {
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const currentTheme = (localStorage.getItem('theme') as 'light' | 'dark' | 'system') || 'system';
+    
+    const applyTheme = (t: 'light' | 'dark' | 'system') => {
+      let actualTheme = t;
+      if (t === 'system') {
+        const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        actualTheme = isDark ? 'dark' : 'light';
+      }
+      document.documentElement.setAttribute('data-theme', actualTheme);
+    };
+    
+    applyTheme(currentTheme);
+    
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleSystemThemeChange = () => {
+      const activeSetting = (localStorage.getItem('theme') as 'light' | 'dark' | 'system') || 'system';
+      if (activeSetting === 'system') {
+        applyTheme('system');
+      }
+    };
+    
+    mediaQuery.addEventListener('change', handleSystemThemeChange);
+    return () => mediaQuery.removeEventListener('change', handleSystemThemeChange);
+  }, []);
+
   const [view, setView] = useState<'dashboard' | 'settings' | 'tasks' | 'logs' | 'player'>('dashboard');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [users, setUsers] = useState<User[]>([]);

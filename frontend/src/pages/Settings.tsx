@@ -35,6 +35,21 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
     const [saving, setSaving] = useState(false);
     const [activeTab, setActiveTab] = useState<'cookie' | 'download' | 'emby' | 'telegram' | 'security'>('cookie');
 
+    const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(() => {
+        return (localStorage.getItem('theme') as 'light' | 'dark' | 'system') || 'system';
+    });
+
+    const handleThemeChange = (newTheme: 'light' | 'dark' | 'system') => {
+        setTheme(newTheme);
+        localStorage.setItem('theme', newTheme);
+        let actualTheme = newTheme;
+        if (newTheme === 'system') {
+            const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            actualTheme = isDark ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', actualTheme);
+    };
+
     // Password change state
     const [oldPassword, setOldPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
@@ -483,7 +498,7 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                                 <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
                                     <Save size={20} />
                                 </div>
-                                <h3 className="font-bold text-lg text-white">默认下载</h3>
+                                <h3 className="font-bold text-lg text-white">通用与下载</h3>
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 flex-1 pt-2">
@@ -535,6 +550,24 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                                             onChange={(e) => setSettings(s => ({ ...s, max_initial_fetch: parseInt(e.target.value) || 0 }))}
                                             className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 transition-all font-bold text-base text-white"
                                         />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">界面主题</label>
+                                        <div className="relative">
+                                            <select
+                                                value={theme}
+                                                onChange={(e) => handleThemeChange(e.target.value as 'light' | 'dark' | 'system')}
+                                                className="w-full appearance-none bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 transition-all text-sm cursor-pointer text-white font-bold"
+                                            >
+                                                <option value="dark" className="bg-[#1a1a1a] text-white">深色模式 (默认)</option>
+                                                <option value="light" className="bg-[#1a1a1a] text-white">浅色模式</option>
+                                                <option value="system" className="bg-[#1a1a1a] text-white">跟随系统</option>
+                                            </select>
+                                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-white/40">
+                                                <ArrowLeft size={16} className="-rotate-90" />
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
 
