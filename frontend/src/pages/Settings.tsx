@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Settings as SettingsIcon, Save, Lock, ArrowLeft, Loader2, AlertCircle, Cookie, CheckCircle2, XCircle, RefreshCw, Send, X } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Lock, ArrowLeft, Loader2, AlertCircle, Cookie, CheckCircle2, XCircle, RefreshCw, Send, X, Sliders } from 'lucide-react';
 import * as api from '../api';
 import type { FolderMigrationPreview, GlobalSettings, Task } from '../types';
 import axios from 'axios';
@@ -33,7 +33,7 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
     });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [activeTab, setActiveTab] = useState<'cookie' | 'download' | 'emby' | 'telegram' | 'security'>('cookie');
+    const [activeTab, setActiveTab] = useState<'cookie' | 'download' | 'emby' | 'telegram' | 'security' | 'advanced'>('cookie');
 
     const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(() => {
         return (localStorage.getItem('theme') as 'light' | 'dark' | 'system') || 'system';
@@ -321,7 +321,8 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                     { id: 'download', label: '下载与目录', icon: <Save size={16} /> },
                     { id: 'emby', label: 'Emby 集成', icon: <SettingsIcon size={16} /> },
                     { id: 'telegram', label: 'Telegram 同步', icon: <Send size={16} /> },
-                    { id: 'security', label: '管理员安全', icon: <Lock size={16} /> }
+                    { id: 'security', label: '管理员安全', icon: <Lock size={16} /> },
+                    { id: 'advanced', label: '高级设置', icon: <Sliders size={16} /> }
                 ].map(tab => (
                     <button
                         key={tab.id}
@@ -498,7 +499,7 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                                 <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
                                     <Save size={20} />
                                 </div>
-                                <h3 className="font-bold text-lg text-white">通用与下载</h3>
+                                <h3 className="font-bold text-lg text-white">默认下载</h3>
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 flex-1 pt-2">
@@ -550,24 +551,6 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                                             onChange={(e) => setSettings(s => ({ ...s, max_initial_fetch: parseInt(e.target.value) || 0 }))}
                                             className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 transition-all font-bold text-base text-white"
                                         />
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">界面主题</label>
-                                        <div className="relative">
-                                            <select
-                                                value={theme}
-                                                onChange={(e) => handleThemeChange(e.target.value as 'light' | 'dark' | 'system')}
-                                                className="w-full appearance-none bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 transition-all text-sm cursor-pointer text-white font-bold"
-                                            >
-                                                <option value="dark" className="bg-[#1a1a1a] text-white">深色模式 (默认)</option>
-                                                <option value="light" className="bg-[#1a1a1a] text-white">浅色模式</option>
-                                                <option value="system" className="bg-[#1a1a1a] text-white">跟随系统</option>
-                                            </select>
-                                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-white/40">
-                                                <ArrowLeft size={16} className="-rotate-90" />
-                                            </div>
-                                        </div>
                                     </div>
                                 </div>
 
@@ -739,6 +722,46 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
 
                 {activeTab === 'telegram' && (
                     <Telegram isTab={true} onNotify={onNotify} />
+                )}
+
+                {activeTab === 'advanced' && (
+                    <div className="max-w-3xl mx-auto w-full">
+                        <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="card p-6 border border-white/5 bg-white/2 backdrop-blur-sm rounded-3xl space-y-6 flex flex-col"
+                        >
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+                                    <Sliders size={20} />
+                                </div>
+                                <h3 className="font-bold text-lg text-white">高级设置</h3>
+                            </div>
+
+                            <div className="space-y-4 pt-2">
+                                <div className="space-y-2">
+                                    <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">界面主题</label>
+                                    <div className="relative">
+                                        <select
+                                            value={theme}
+                                            onChange={(e) => handleThemeChange(e.target.value as 'light' | 'dark' | 'system')}
+                                            className="w-full appearance-none bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 transition-all text-sm cursor-pointer text-white font-bold"
+                                        >
+                                            <option value="dark" className="bg-[#1a1a1a] text-white">深色模式 (默认)</option>
+                                            <option value="light" className="bg-[#1a1a1a] text-white">浅色模式</option>
+                                            <option value="system" className="bg-[#1a1a1a] text-white">跟随系统</option>
+                                        </select>
+                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-white/40">
+                                            <ArrowLeft size={16} className="-rotate-90" />
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-white/40 pl-1 mt-1 leading-normal">
+                                        选择界面的展示色彩方案，支持浅色主题、经典深色主题或自动跟随操作系统的外观偏好。
+                                    </p>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </div>
                 )}
 
                 {activeTab === 'security' && (
