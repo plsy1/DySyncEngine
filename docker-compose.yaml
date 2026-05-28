@@ -10,7 +10,7 @@ services:
       - ./data:/app/backend/data
       # Downloaded videos/assets
       - ./videos:/app/videos
-      # Config directory (auto-initialized on first start if empty)
+      # Platform config directory (auto-initialized on first start)
       # Cookie 和配置修改后重启容器生效，或在设置页面直接保存
       - ./config:/app/config
     environment:

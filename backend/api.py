@@ -798,11 +798,28 @@ def get_logs_api(lines: int = Query(1000, description="读取日志的行数")):
 # Cookie 管理 API
 # ----------------------------
 
-# config 文件路径（容器内的持久化目录）
-CONFIG_BASE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config")
+# config 文件路径
+PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
+CONFIG_BASE = os.getenv("CONFIG_BASE", os.path.join(PROJECT_ROOT, "config"))
 COOKIE_CONFIG_PATHS = {
-    "douyin": os.path.join(CONFIG_BASE, "douyin_web", "config.yaml"),
-    "tiktok":  os.path.join(CONFIG_BASE, "tiktok_web", "config.yaml"),
+    "douyin": os.getenv(
+        "DOUYIN_WEB_CONFIG_PATH",
+        os.path.join(CONFIG_BASE, "douyin_web", "config.yaml"),
+    ),
+    "tiktok": os.getenv(
+        "TIKTOK_WEB_CONFIG_PATH",
+        os.path.join(CONFIG_BASE, "tiktok_web", "config.yaml"),
+    ),
+}
+RUNTIME_COOKIE_CONFIG_PATHS = {
+    "douyin": os.getenv(
+        "DOUYIN_WEB_RUNTIME_CONFIG_PATH",
+        os.path.join(PROJECT_ROOT, "3rd", "douyin_api", "crawlers", "douyin", "web", "config.yaml"),
+    ),
+    "tiktok": os.getenv(
+        "TIKTOK_WEB_RUNTIME_CONFIG_PATH",
+        os.path.join(PROJECT_ROOT, "3rd", "douyin_api", "crawlers", "tiktok", "web", "config.yaml"),
+    ),
 }
 
 def _read_cookie_from_yaml(platform: str) -> str:
@@ -846,6 +863,10 @@ def _write_cookie_to_yaml(platform: str, cookie: str) -> bool:
             return False
         with open(path, "w", encoding="utf-8") as f:
             f.write(new_content)
+        runtime_path = RUNTIME_COOKIE_CONFIG_PATHS.get(platform)
+        if runtime_path and runtime_path != path:
+            with open(runtime_path, "w", encoding="utf-8") as f:
+                f.write(new_content)
         return True
     except Exception as e:
         logger.error(f"写入 {platform} Cookie 失败: {e}")

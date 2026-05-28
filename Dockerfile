@@ -23,7 +23,7 @@ COPY 3rd/douyin_api/ ./3rd/douyin_api/
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 # 备份镜像内的默认 config 文件（用于首次启动时自动初始化）
-# 原始文件会被 entrypoint.sh 的软链覆盖，.default 文件保持不变供拷贝使用
+# .default 文件保持不变，供 entrypoint.sh 初始化挂载的 config.yaml
 RUN cp /app/3rd/douyin_api/crawlers/douyin/web/config.yaml \
        /app/3rd/douyin_api/crawlers/douyin/web/config.yaml.default && \
     cp /app/3rd/douyin_api/crawlers/tiktok/web/config.yaml \
@@ -42,4 +42,3 @@ EXPOSE ${PORT}
 
 # Use entrypoint to auto-init configs before starting
 ENTRYPOINT ["/app/entrypoint.sh"]
-
