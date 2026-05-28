@@ -244,6 +244,155 @@ def check_undownloaded_api(background_tasks: BackgroundTasks):
     return {"started": True, "task_id": task_id}
 
 
+def repair_corrupted_files(session: Session, task_id: str = None) -> tuple[int, int, int]:
+    """
+    扫描并修复损坏的已下载内容 (大小小于1KB)
+    返回元组: (已扫描数, 损坏数, 成功修复数)
+    """
+    if task_id:
+        update_task_progress(session, task_id, 10, message="正在获取已下载作品列表...")
+    else:
+        logger.info("开始扫描损坏的已下载内容...")
+        
+    from db import Aweme
+    downloaded_awemes = session.query(Aweme).filter(Aweme.downloaded == True, Aweme.local_path != None).all()
+    total = len(downloaded_awemes)
+    
+    if total == 0:
+        if task_id:
+            update_task_progress(session, task_id, 100, status="completed", message="没有已下载的作品")
+        else:
+            logger.info("没有已下载的作品，无需扫描")
+        return 0, 0, 0
+
+    if task_id:
+        update_task_progress(session, task_id, 20, message=f"开始扫描本地文件 (共 {total} 个)...")
+    
+    corrupted_awemes = []
+    for i, aweme in enumerate(downloaded_awemes):
+        is_corrupt = False
+        path = aweme.local_path
+        
+        if not path or not os.path.exists(path):
+            is_corrupt = True
+        else:
+            if aweme.aweme_type == 68: # 图文
+                if os.path.isfile(path):
+                    is_corrupt = True
+                elif os.path.isdir(path):
+                    files = []
+                    for root, dirs, filenames in os.walk(path):
+                        for f in filenames:
+                            files.append(os.path.join(root, f))
+                    if not files:
+                        is_corrupt = True
+                    else:
+                        for f_path in files:
+                            try:
+                                if os.path.getsize(f_path) < 1024:
+                                    is_corrupt = True
+                                    break
+                            except Exception:
+                                is_corrupt = True
+                                break
+                else:
+                    is_corrupt = True
+            else: # 视频
+                if os.path.isdir(path):
+                    is_corrupt = True
+                elif os.path.isfile(path):
+                    try:
+                        if os.path.getsize(path) < 1024:
+                            is_corrupt = True
+                    except Exception:
+                        is_corrupt = True
+                else:
+                    is_corrupt = True
+        
+        if is_corrupt:
+            corrupted_awemes.append(aweme)
+        
+        if task_id and (i % 100 == 0 or i == total - 1):
+            progress = 20 + int((i / total) * 40)
+            update_task_progress(session, task_id, progress, message=f"正在扫描文件: {i+1}/{total}...")
+
+    corrupt_count = len(corrupted_awemes)
+    if corrupt_count == 0:
+        if task_id:
+            update_task_progress(session, task_id, 100, status="completed", message="扫描完成，未发现损坏文件")
+        else:
+            logger.info("扫描完成，未发现损坏文件")
+        return total, 0, 0
+
+    logger.info(f"文件扫描完成，发现 {corrupt_count} 个损坏或缺失的作品，准备重新下载")
+    
+    success_count = 0
+    for idx, aweme in enumerate(corrupted_awemes):
+        if task_id:
+            msg = f"正在重新下载 {idx+1}/{corrupt_count}: {aweme.desc[:20] if aweme.desc else aweme.aweme_id}"
+            progress = 60 + int((idx / corrupt_count) * 40)
+            update_task_progress(session, task_id, progress, message=msg)
+        else:
+            logger.info(f"正在重新下载损坏作品 ({idx+1}/{corrupt_count}): {aweme.aweme_id}")
+        
+        path = aweme.local_path
+        if path and os.path.exists(path):
+            try:
+                if os.path.isdir(path):
+                    import shutil
+                    shutil.rmtree(path)
+                else:
+                    os.remove(path)
+            except Exception as e:
+                logger.error(f"清理损坏文件/目录失败: {path} | {e}")
+        
+        aweme.downloaded = False
+        aweme.local_path = None
+        session.commit()
+        
+        if process_single_aweme_download(session, aweme):
+            success_count += 1
+            
+    if task_id:
+        update_task_progress(
+            session, 
+            task_id, 
+            100, 
+            status="completed", 
+            message=f"修复完成！共扫描 {total} 个，发现 {corrupt_count} 个损坏，成功修复 {success_count} 个。"
+        )
+    else:
+        logger.info(f"定时修复完成！共扫描 {total} 个，发现 {corrupt_count} 个损坏，成功修复 {success_count} 个。")
+        
+    return total, corrupt_count, success_count
+
+
+def repair_corrupted_task(task_id: str):
+    """
+    后台执行损坏文件修复任务
+    """
+    try:
+        with next(get_session()) as session:
+            repair_corrupted_files(session, task_id=task_id)
+    except Exception as e:
+        logger.error(f"修复任务失败: {e}")
+        with next(get_session()) as session:
+            update_task_progress(session, task_id, 100, status="failed", message=str(e))
+
+
+@router.post("/tasks/repair_corrupted")
+def repair_corrupted_api(background_tasks: BackgroundTasks):
+    """
+    触发后台任务：扫描已下载内容，发现小于1KB或损坏的内容并重新下载
+    """
+    task_id = str(uuid.uuid4())
+    with next(get_session()) as session:
+        create_task(session, task_id, target_id="global_repair")
+    
+    background_tasks.add_task(repair_corrupted_task, task_id)
+    return {"started": True, "task_id": task_id}
+
+
 @router.post("/download_user_videos")
 def download_user_videos_api(
     url: str = Query(..., description="抖音用户主页URL"),
@@ -974,15 +1123,19 @@ class UpdateCookieRequest(BaseModel):
 
 
 @router.get("/cookies/status", response_model=CookieStatusResponse)
-async def get_cookies_status(_ = Depends(get_current_user)):
+async def get_cookies_status(check: bool = Query(True, description="是否验证 Cookie 有效性"), _ = Depends(get_current_user)):
     """
     获取各平台 Cookie 的有效性状态
     """
     douyin_cookie = _read_cookie_from_yaml("douyin")
     tiktok_cookie = _read_cookie_from_yaml("tiktok")
     
-    douyin_status = await _check_cookie_validity("douyin")
-    tiktok_status = await _check_cookie_validity("tiktok")
+    if check:
+        douyin_status = await _check_cookie_validity("douyin")
+        tiktok_status = await _check_cookie_validity("tiktok")
+    else:
+        douyin_status = "empty" if not douyin_cookie else "unknown"
+        tiktok_status = "empty" if not tiktok_cookie else "unknown"
     
     return CookieStatusResponse(
         douyin_status=douyin_status,

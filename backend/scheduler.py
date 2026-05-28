@@ -96,6 +96,18 @@ class SchedulerManager:
                         logger.error(f"更新用户 {item['uid']} 失败: {e}")
             else:
                 logger.info("没有需要自动更新的用户")
+
+            # 定时自动修复损坏的已下载文件 (大小小于 1KB)
+            def repair_in_thread():
+                try:
+                    from api import repair_corrupted_files
+                    with next(get_session()) as session:
+                        repair_corrupted_files(session)
+                except Exception as repair_err:
+                    logger.error(f"定时损坏修复任务执行出错: {repair_err}")
+
+            await asyncio.to_thread(repair_in_thread)
+            
         except Exception as e:
             logger.error(f"执行更新逻辑时出错: {e}")
 

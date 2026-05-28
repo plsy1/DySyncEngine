@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Search, RefreshCw, LogOut, Settings as SettingsIcon, Loader2, Activity, Terminal, Play, Send, MoreHorizontal } from 'lucide-react';
+import { Plus, Search, RefreshCw, LogOut, Settings as SettingsIcon, Loader2, Activity, Terminal, Play, MoreHorizontal } from 'lucide-react';
 import type { User, ToastType, Task } from './types';
 import * as api from './api';
 import { UserCard } from './components/UserCard';
@@ -12,7 +12,6 @@ import { Settings } from './pages/Settings';
 import { Tasks } from './pages/Tasks';
 import { Logs } from './pages/Logs';
 import { EmbyPlayer } from './pages/EmbyPlayer';
-import { Telegram } from './pages/Telegram';
 import ReloadPrompt from './components/ReloadPrompt';
 
 const LATEST_VERSION_URL = 'https://raw.githubusercontent.com/plsy1/DySyncEngine/refs/heads/main/VERSION';
@@ -44,7 +43,7 @@ const compareVersions = (current: string, latest: string) => {
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
-  const [view, setView] = useState<'dashboard' | 'settings' | 'tasks' | 'logs' | 'player' | 'telegram'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'settings' | 'tasks' | 'logs' | 'player'>('dashboard');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [activeTasks, setActiveTasks] = useState<Task[]>([]);
@@ -292,7 +291,6 @@ function App() {
           <NavButton active={view === 'tasks'} onClick={() => setView('tasks')} icon={<Activity size={20} />} label="活跃任务" />
           <NavButton active={view === 'logs'} onClick={() => setView('logs')} icon={<Terminal size={20} />} label="审计日志" />
           <NavButton active={view === 'player'} onClick={() => setView('player')} icon={<Play size={20} />} label="Emby 播放" />
-          <NavButton active={view === 'telegram'} onClick={() => setView('telegram')} icon={<Send size={20} />} label="TG 集成" />
         </div>
 
         <div className="p-3 space-y-3 mb-6">
@@ -333,8 +331,6 @@ function App() {
                 <Tasks onNotify={showToast} activeTasks={activeTasks} />
               ) : view === 'logs' ? (
                 <Logs />
-              ) : view === 'telegram' ? (
-                <Telegram onBack={() => setView('dashboard')} onNotify={showToast} />
               ) : (
                 <div className="space-y-12">
                   <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
@@ -586,18 +582,6 @@ function App() {
                   </div>
                 </button>
 
-                <button
-                  onClick={() => { setView('telegram'); setShowMoreMenu(false); }}
-                  className="flex items-center gap-4 p-4 rounded-2xl hover:bg-white/5 transition-all text-left"
-                >
-                  <div className="p-3 rounded-xl bg-blue-500/10 text-blue-400">
-                    <Send size={20} />
-                  </div>
-                  <div>
-                    <div className="text-sm font-bold text-white">TG 集成</div>
-                    <div className="text-xs text-white/40">配置自动化推送服务</div>
-                  </div>
-                </button>
 
                 <button
                   onClick={() => { handleLogout(); setShowMoreMenu(false); }}

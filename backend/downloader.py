@@ -19,6 +19,7 @@ Path(SAVE_DIR).mkdir(parents=True, exist_ok=True)
 
 import zipfile
 import io
+import shutil
 
 def download_video(share_url: str, author_folder: str, filename: str, aweme_id: str) -> str | None:
     """
@@ -54,10 +55,42 @@ def download_video(share_url: str, author_folder: str, filename: str, aweme_id: 
                 
                 with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
                     z.extractall(zip_folder)
+                
+                # 验证解压出来的图片大小
+                corrupt = False
+                files = []
+                for root, dirs, filenames in os.walk(zip_folder):
+                    for f in filenames:
+                        files.append(os.path.join(root, f))
+                
+                if not files:
+                    corrupt = True
+                else:
+                    for f_path in files:
+                        try:
+                            if os.path.getsize(f_path) < 1024:
+                                corrupt = True
+                                break
+                        except Exception:
+                            corrupt = True
+                            break
+                
+                if corrupt:
+                    logger.warning(f"解压的文件中存在小于1KB的文件或目录为空，判定为损坏并删除: {zip_folder}")
+                    try:
+                        shutil.rmtree(zip_folder)
+                    except Exception as e:
+                        logger.error(f"删除损坏目录失败: {zip_folder} | {e}")
+                    return None
                     
                 logger.info(f"解压完成: {zip_folder}")
                 return zip_folder
             else:
+                # 验证响应内容大小 (在写入文件之前验证，更安全更高效)
+                if len(resp.content) < 1024:
+                    logger.warning(f"下载的视频文件内容小于1KB，判定为损坏，跳过保存: {aweme_id} (Size: {len(resp.content)} bytes)")
+                    return None
+
                 base_name = sanitize_filename(filename)
                 # 统一在文件名末尾包含 [aweme_id]，不再依赖冲突才加
                 file_path = os.path.join(parent_path, f"{base_name} [{aweme_id}].mp4")

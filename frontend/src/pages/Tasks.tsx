@@ -1,7 +1,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { RefreshCw, Play, Clock, Activity, CheckCircle, Loader2, Send } from 'lucide-react';
+import { RefreshCw, Play, Clock, Activity, CheckCircle, Loader2, Send, AlertTriangle } from 'lucide-react';
 import type { Task, SchedulerStatus, ToastType } from '../types';
 import * as api from '../api';
 
@@ -49,6 +49,15 @@ export function Tasks({ onNotify, activeTasks }: TasksProps) {
         }
     };
 
+    const handleRepairCorrupted = async () => {
+        try {
+            await api.repairCorrupted();
+            onNotify('损坏文件扫描与修复任务已启动');
+        } catch (err) {
+            onNotify('启动失败', 'error');
+        }
+    };
+
     const handleTgSyncAll = async () => {
         try {
             await api.tgSyncAll();
@@ -72,7 +81,7 @@ export function Tasks({ onNotify, activeTasks }: TasksProps) {
                 </div>
             </header>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {/* Scheduler Status Card */}
                 <div className="card p-6 border border-white/5 bg-white/2 backdrop-blur-sm rounded-3xl space-y-6 flex flex-col">
                     <div className="flex items-center justify-between">
@@ -137,6 +146,28 @@ export function Tasks({ onNotify, activeTasks }: TasksProps) {
                     </button>
                 </div>
 
+                {/* Corrupted File Repair Card */}
+                <div className="card p-6 border border-white/5 bg-white/2 backdrop-blur-sm rounded-3xl space-y-6 flex flex-col">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center text-red-400">
+                            <AlertTriangle size={20} />
+                        </div>
+                        <h3 className="font-semibold text-lg">损坏文件修复</h3>
+                    </div>
+
+                    <p className="text-sm text-white/60 leading-relaxed flex-1 pt-2">
+                        扫描已下载的资源。若视频大小小于 1KB 或图文中包含小于 1KB 的图片，则判定为损坏并自动重新下载。
+                    </p>
+
+                    <button
+                        onClick={handleRepairCorrupted}
+                        className="w-full flex items-center justify-center gap-2 py-3.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-all rounded-2xl font-bold text-sm border border-red-500/20"
+                    >
+                        <AlertTriangle size={18} />
+                        开始损坏修复
+                    </button>
+                </div>
+
                 {/* Telegram Audit Card */}
                 <div className="card p-6 border border-white/5 bg-white/2 backdrop-blur-sm rounded-3xl space-y-6 flex flex-col">
                     <div className="flex items-center gap-3">
@@ -192,6 +223,7 @@ export function Tasks({ onNotify, activeTasks }: TasksProps) {
                                             <span className="font-semibold">
                                                 {task.target_id === 'global_check' ? '本地补漏扫描' : 
                                                  task.target_id === 'tg_global_audit' ? 'TG 全量同步审计' : 
+                                                 task.target_id === 'global_repair' ? '损坏文件扫描修复' : 
                                                  `同步任务: ${task.target_id}`}
                                             </span>
                                             <span className="text-xs text-white/50 font-mono bg-white/10 px-2.5 py-1 rounded uppercase tracking-tighter">

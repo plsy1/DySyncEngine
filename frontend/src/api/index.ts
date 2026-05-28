@@ -117,6 +117,11 @@ export const checkUndownloaded = async (): Promise<ApiResponse> => {
   return data;
 };
 
+export const repairCorrupted = async (): Promise<ApiResponse> => {
+  const { data } = await api.post<ApiResponse>('tasks/repair_corrupted');
+  return data;
+};
+
 export const parseVideo = async (shareUrl: string): Promise<VideoParseInfo> => {
   const { data } = await api.post<VideoParseInfo>(`parse_video?share_url=${encodeURIComponent(shareUrl)}`);
   return data;
@@ -182,13 +187,13 @@ export const lookupVideos = async (paths: string[]): Promise<Record<string, any>
 };
 
 // Cookie management endpoints
-export const getCookiesStatus = async (): Promise<{
+export const getCookiesStatus = async (check: boolean = true): Promise<{
   douyin_status: string;
   tiktok_status: string;
   douyin_cookie_preview: string;
   tiktok_cookie_preview: string;
 }> => {
-  const { data } = await api.get('cookies/status');
+  const { data } = await api.get('cookies/status', { params: { check } });
   return data;
 };
 

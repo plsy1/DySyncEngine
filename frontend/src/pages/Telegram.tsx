@@ -4,11 +4,12 @@ import { AnimatePresence, motion } from 'framer-motion';
 import * as api from '../api';
 
 interface TelegramProps {
-    onBack: () => void;
+    onBack?: () => void;
     onNotify: (msg: string, type: 'success' | 'error') => void;
+    isTab?: boolean;
 }
 
-export const Telegram = ({ onBack, onNotify }: TelegramProps) => {
+export const Telegram = ({ onBack, onNotify, isTab = false }: TelegramProps) => {
     const [status, setStatus] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [chats, setChats] = useState<any[]>([]);
@@ -134,21 +135,23 @@ export const Telegram = ({ onBack, onNotify }: TelegramProps) => {
     }
 
     return (
-        <div className="space-y-10 pb-20">
-            <header className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                    <button
-                        onClick={onBack}
-                        className="p-3 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 transition-all text-white/60"
-                    >
-                        <ArrowLeft size={20} />
-                    </button>
-                    <div>
-                        <h2 className="text-3xl font-black tracking-tight text-white">Telegram 同步</h2>
-                        <p className="text-white/50 text-base mt-1">即时推送、自动化审计与云端投递</p>
+        <div className={isTab ? 'space-y-6' : 'space-y-10 pb-20'}>
+            {!isTab && (
+                <header className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <button
+                            onClick={onBack}
+                            className="p-3 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 transition-all text-white/60"
+                        >
+                            <ArrowLeft size={20} />
+                        </button>
+                        <div>
+                            <h2 className="text-3xl font-black tracking-tight text-white">Telegram 同步</h2>
+                            <p className="text-white/50 text-base mt-1">即时推送、自动化审计与云端投递</p>
+                        </div>
                     </div>
-                </div>
-            </header>
+                </header>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {/* Auth Panel */}
