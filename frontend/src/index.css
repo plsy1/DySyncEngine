@@ -285,4 +285,22 @@ html {
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background: rgba(0, 0, 0, 0.2) !important;
   }
+
+  /* Additional overrides for UserCard and light mode */
+  .text-white\/90 { color: rgba(15, 23, 42, 0.9) !important; }
+  .text-white\/2 { color: rgba(15, 23, 42, 0.02) !important; }
+  .text-white\/5 { color: rgba(15, 23, 42, 0.05) !important; }
+  
+  .bg-white\/2 { background-color: rgba(0, 0, 0, 0.02) !important; }
+  .bg-white\/5 { background-color: rgba(0, 0, 0, 0.05) !important; }
+  .bg-white\/10 { background-color: rgba(0, 0, 0, 0.1) !important; }
+  .bg-\[\#060608\]\/95 { background-color: rgba(255, 255, 255, 0.95) !important; }
+  
+  .border-white\/5 { border-color: rgba(0, 0, 0, 0.05) !important; }
+  .border-white\/10 { border-color: rgba(0, 0, 0, 0.1) !important; }
+  
+  .ring-white\/5 { --tw-ring-color: rgba(0, 0, 0, 0.05) !important; }
+  
+  /* Fix modal title and description */
+  .bg-\[\#1a1a1a\] { background-color: #ffffff !important; }
 }

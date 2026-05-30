@@ -39,6 +39,18 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     const [activeVideoIndex, setActiveVideoIndex] = useState(0);
     const [tab, setTab] = useState<'latest' | 'random'>('latest');
 
+    // Force dark mode for Emby Player
+    useEffect(() => {
+        const root = document.documentElement;
+        const originalTheme = root.getAttribute('data-theme');
+        root.setAttribute('data-theme', 'dark');
+        return () => {
+            if (originalTheme) {
+                root.setAttribute('data-theme', originalTheme);
+            }
+        };
+    }, []);
+
     // Sidebar & Folders State
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [folders, setFolders] = useState<EmbyItem[]>([]);
