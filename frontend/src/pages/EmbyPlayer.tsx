@@ -1335,7 +1335,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
                     {/* Center: Filter Tabs */}
                     <div className="flex-none pointer-events-auto">
-                        <div className="flex items-center bg-white/5 backdrop-blur-xl rounded-full px-1 py-1 border border-white/20 ring-1 ring-inset ring-white/10 shadow-xl">
+                        <div className="flex items-center bg-transparent rounded-full px-1 py-1 border border-white/[0.05]">
                             {[
                                 { id: 'video', label: '视频' },
                                 { id: 'mixed', label: '综合' },
@@ -1368,7 +1368,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                         setTab(newTab);
                                         onNotify(`排序切换至: ${newTab === 'latest' ? '最新发布' : '随机推荐'}`, 'success');
                                     }}
-                                    className="p-2.5 text-white/70 hover:text-white transition-all bg-white/5 hover:bg-white/10 rounded-full"
+                                    className="p-2.5 text-white/70 hover:text-white transition-all bg-transparent border border-white/[0.05] hover:bg-white/10 rounded-full"
                                     title={tab === 'latest' ? '切换至随机推荐' : '切换至最新发布'}
                                 >
                                     {tab === 'latest' ? <Clock size={20} /> : <Shuffle size={20} className="text-primary" />}
@@ -1379,7 +1379,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                         setPlaybackMode(newMode);
                                         onNotify(`播放模式: ${newMode === 'loop' ? '单片循环' : '自动连播'}`, 'success');
                                     }}
-                                    className="p-2.5 text-white/70 hover:text-white transition-all bg-white/5 hover:bg-white/10 rounded-full"
+                                    className="p-2.5 text-white/70 hover:text-white transition-all bg-transparent border border-white/[0.05] hover:bg-white/10 rounded-full"
                                     title="播放模式"
                                 >
                                     {playbackMode === 'loop' ? <Repeat size={20} /> : <ArrowRightCircle size={20} className="text-primary" />}
@@ -1391,14 +1391,14 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                         setDisplayMode(modes[nextIndex]);
                                         onNotify(`适配模式: ${modes[nextIndex]}`, 'success');
                                     }}
-                                    className="p-2.5 text-white/70 hover:text-white transition-all bg-white/5 hover:bg-white/10 rounded-full"
+                                    className="p-2.5 text-white/70 hover:text-white transition-all bg-transparent border border-white/[0.05] hover:bg-white/10 rounded-full"
                                     title="画面占比"
                                 >
                                     {displayMode === 'smart' ? <Monitor size={20} /> : <Maximize2 size={20} />}
                                 </button>
                                 <button
                                     onClick={toggleFullscreen}
-                                    className="p-2.5 text-white/70 hover:text-white transition-all bg-white/5 hover:bg-white/10 rounded-full"
+                                    className="p-2.5 text-white/70 hover:text-white transition-all bg-transparent border border-white/[0.05] hover:bg-white/10 rounded-full"
                                     title={isFullscreen ? "退出全屏" : "全屏模式"}
                                 >
                                     {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
@@ -1451,7 +1451,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                 setVolume(1.0);
                                             }
                                         }}
-                                        className={`p-2.5 transition-all rounded-full ${!isMuted ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-white/5 text-white/70 hover:bg-white/10'}`}
+                                        className={`p-2.5 transition-all rounded-full ${!isMuted ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-transparent border border-white/[0.05] text-white/70 hover:bg-white/10'}`}
                                         title="音量控制"
                                     >
                                         {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
@@ -1459,7 +1459,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                 </div>
                                 <button
                                     onClick={() => setIsSidebarOpen(true)}
-                                    className="p-2.5 text-white/70 hover:text-white transition-all bg-white/10 hover:bg-white/20 rounded-full ml-1 border border-white/10"
+                                    className="p-2.5 text-white/70 hover:text-white transition-all bg-transparent border border-white/[0.05] hover:bg-white/10 rounded-full ml-1"
                                     title="选择目录"
                                 >
                                     <Menu size={20} />
@@ -1752,7 +1752,6 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                         </svg>
                                                     )}
                                                 </button>
-                                                <span className="text-white text-[10px] font-black mt-1 drop-shadow-md opacity-80">分享</span>
                                             </div>
 
                                             {/* Delete Button */}
@@ -1775,7 +1774,6 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                         <path d="M16 10L19.289 4H28.7771L32 10H16Z" fill="none" stroke="white" strokeWidth="4" strokeLinejoin="round" />
                                                     </svg>
                                                 </button>
-                                                <span className="text-white text-[10px] font-black mt-1 drop-shadow-md opacity-80">删除</span>
                                             </div>
                                         </div>
                                     </div>
@@ -1936,7 +1934,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
             {isMobile && !isFullscreen && (
                 <div
                     style={{ marginBottom: 'max(var(--sab), 16px)' }}
-                    className="fixed bottom-0 left-6 right-6 h-16 bg-white/[0.02] backdrop-blur-md border border-white/[0.08] ring-1 ring-inset ring-white/[0.04] z-[60] flex items-center justify-around px-2 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.15)] pointer-events-auto"
+                    className="fixed bottom-0 left-6 right-6 h-16 bg-transparent border border-white/[0.05] z-[60] flex items-center justify-around px-2 rounded-full pointer-events-auto"
                 >
                     <button
                         onClick={() => {
