@@ -761,28 +761,9 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
             }
         }
 
-        // 2. Preload next video in its container
-        if (nextItem && nextItem.MediaType === 'Video') {
-            const nextContainer = videoContainerRefs.current[activeIndex + 1];
-            if (nextContainer) {
-                if (nextVideo.parentNode !== nextContainer) {
-                    nextVideo.style.opacity = '0'; // Keep it hidden
-                    nextContainer.appendChild(nextVideo);
-                }
-
-                // Associate the item ID with the video element
-                nextVideo.dataset.itemId = nextItem.Id;
-
-                const nextSrc = getVideoUrl(nextItem);
-                if (nextVideo.src !== nextSrc && nextSrc) {
-                    nextVideo.src = nextSrc;
-                }
-                nextVideo.className = `w-full h-full pointer-events-auto bg-transparent ${getObjectFitClass(nextItem)}`;
-                nextVideo.muted = true; // Preload must be muted
-                nextVideo.preload = 'auto';
-                nextVideo.load();
-            }
-        }
+        // 2. 不预加载下一个视频文件
+        // 只有当用户真正切换到该视频时，setupVideos 才会在 activeVideo 位置加载它
+        // （双缓冲机制依然保留，只是移除了提前 load()）
     }, [items, isMuted, volume, playbackMode, isIOS, getObjectFitClass]);
 
     // Create the shared video elements once on mount
@@ -1154,25 +1135,12 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                     }
 
                     // Preload posters and gallery images for upcoming items
-                    [index - 1, index + 1, index + 2, index + 3].forEach(adjIndex => {
-                        const adjItem = items[adjIndex];
-                        if (!adjItem) return;
-                        if (adjItem.MediaType === 'Video') {
-                            const url = getPosterUrl(adjItem);
-                            if (url) {
-                                const img = new Image();
-                                img.src = url;
-                            }
-                        } else if (adjItem.Type === 'Gallery' && adjItem.Children) {
-                            adjItem.Children.slice(0, 2).forEach(child => {
-                                const url = getPosterUrl(child, true);
-                                if (url) {
-                                    const img = new Image();
-                                    img.src = url;
-                                }
-                            });
-                        }
-                    });
+                    // 只预加载下一项的封面（大幅减少 canceled 请求）
+                    const nextItem = items[index + 1];
+                    if (nextItem?.MediaType === 'Video') {
+                        const url = getPosterUrl(nextItem);
+                        if (url) new Image().src = url;
+                    }
                 }
             });
         };
