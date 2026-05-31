@@ -81,6 +81,15 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     const [isFastForwarding, setIsFastForwarding] = useState(false);
     const longPressTimerRef = useRef<any>(null);
     const wheelTimerRef = useRef<number>(0);
+    const latestActiveIndexRef = useRef<number>(activeVideoIndex);
+    const sharedVideosRef = useRef<HTMLVideoElement[]>([]);
+    const getActiveVideo = () => {
+        const videos = sharedVideosRef.current;
+        if (videos.length === 0) return null;
+        return videos[activeVideoIndex % 2];
+    };
+    const videoContainerRefs = useRef<(HTMLDivElement | null)[]>([]);
+    const isSwitchingRef = useRef(false);
     const [hasStarted, setHasStarted] = useState<{ [key: string]: boolean }>({});
     const [hasManualSeek, setHasManualSeek] = useState<{ [key: string]: boolean }>({});
     const [displayMode, setDisplayMode] = useState<'smart' | 'cover' | 'contain'>('smart');
@@ -88,6 +97,14 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     const [sharingId, setSharingId] = useState<string | null>(null);
     const [deleteConfirmItem, setDeleteConfirmItem] = useState<EmbyItem | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [, setForceRender] = useState({});
+    const itemsRef = useRef(items);
+    const isDraggingRef = useRef(isDragging);
+    const playbackModeRef = useRef(playbackMode);
+
+    itemsRef.current = items;
+    isDraggingRef.current = isDragging;
+    playbackModeRef.current = playbackMode;
     const [isMobile, setIsMobile] = useState(
         typeof window !== 'undefined' ? window.innerWidth < 768 : false
     );
@@ -98,7 +115,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         if (typeof window === 'undefined') return false;
         return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     });
-    const [isAudioUnlocked, setIsAudioUnlocked] = useState(false);
+
     const [galleryIndexes, setGalleryIndexes] = useState<{ [key: string]: number }>({});
     const [isGalleryManual, setIsGalleryManual] = useState<{ [key: string]: boolean }>({});
     const galleryTimerRef = useRef<any>(null);
@@ -157,13 +174,14 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
     useEffect(() => {
         localStorage.setItem('emby_player_volume', volume.toString());
-        videoRefs.current.forEach(v => {
+        const videos = sharedVideosRef.current;
+        videos.forEach(v => {
             if (v) {
-                v.volume = volume;
+                if (!isIOS) v.volume = volume;
                 v.muted = isMuted;
             }
         });
-    }, [volume, isMuted]);
+    }, [volume, isMuted, isIOS]);
 
     const toggleFullscreen = useCallback(() => {
         if (!document.fullscreenElement) {
@@ -246,11 +264,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         return date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
     };
 
-    const handlePlaying = (itemId: string) => {
-        setHasStarted(prev => ({ ...prev, [itemId]: true }));
-    };
 
-    const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
     const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
 
     useEffect(() => {
@@ -685,56 +699,215 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         }
     };
 
-    const safePlay = async (index: number) => {
-        const video = videoRefs.current[index];
-        if (!video) return;
 
-        try {
-            // Set initial muted state based on global preference
-            video.muted = isMuted;
-            // On iOS, changing volume via JS has no effect, so we skip it to avoid any overhead
-            if (!isIOS) video.volume = volume;
-            await video.play();
-        } catch (err: any) {
-            console.warn(`Playback failed for video ${index}:`, err);
-            // If blocked by browser (NotAllowedError/iOS policy), fallback to muted auto-play
-            if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
-                video.muted = true;
-                video.play().catch(e => console.error("Muted fallback failed too:", e));
+    // Compute object-fit class for a given item
+    const getObjectFitClass = useCallback((item: EmbyItem) => {
+        if (displayMode === 'cover') return 'object-cover';
+        if (displayMode === 'contain') return 'object-contain';
+        if (isScreenLandscape || (item.Width || 0) > (item.Height || 0) || (item.PrimaryImageAspectRatio || 0) > 0.65 || (videoDimensions[item.Id]?.width / videoDimensions[item.Id]?.height) > 0.65) return 'object-contain';
+        return 'object-cover';
+    }, [displayMode, isScreenLandscape, videoDimensions]);
+
+    // Set up active and preloaded video elements
+    const setupVideos = useCallback((activeIndex: number) => {
+        const videos = sharedVideosRef.current;
+        if (videos.length === 0) return;
+
+        // Active video element: activeIndex % 2
+        const activeVideo = videos[activeIndex % 2];
+        const activeItem = items[activeIndex];
+        
+        // Next video element: (activeIndex + 1) % 2
+        const nextVideo = videos[(activeIndex + 1) % 2];
+        const nextItem = items[activeIndex + 1];
+
+        isSwitchingRef.current = true;
+
+        // 1. Setup active video
+        if (activeItem && activeItem.MediaType === 'Video') {
+            const container = videoContainerRefs.current[activeIndex];
+            if (container) {
+                // If it's not already in the container, move it
+                if (activeVideo.parentNode !== container) {
+                    // Hide immediately before moving/playing to prevent flash
+                    activeVideo.style.opacity = '0';
+                    activeVideo.style.transition = 'opacity 0.15s ease-in-out';
+                    container.appendChild(activeVideo);
+                }
+
+                // Associate the item ID with the video element
+                activeVideo.dataset.itemId = activeItem.Id;
+
+                const activeSrc = getVideoUrl(activeItem);
+                if (activeVideo.src !== activeSrc && activeSrc) {
+                    activeVideo.src = activeSrc;
+                }
+                activeVideo.className = `w-full h-full pointer-events-auto bg-transparent ${getObjectFitClass(activeItem)}`;
+                activeVideo.muted = isMuted;
+                activeVideo.loop = playbackMode === 'loop';
+                if (!isIOS) activeVideo.volume = volume;
+
+                activeVideo.play().then(() => {
+                    isSwitchingRef.current = false;
+                }).catch((err: any) => {
+                    isSwitchingRef.current = false;
+                    if (err.name === 'AbortError') return;
+                    if (err.name === 'NotAllowedError') {
+                        activeVideo.muted = true;
+                        setForceRender({});
+                        activeVideo.play().catch(() => {});
+                    }
+                });
             }
         }
-    };
 
-    // Helper to unlock all video elements on first interaction
-    const unlockAudio = useCallback(() => {
-        if (isAudioUnlocked) return;
-        videoRefs.current.forEach(v => {
-            if (v) {
-                // Prime the audio context by playing/pausing once in a user-gesture handler
-                v.muted = isMuted;
-                const p = v.play();
-                if (p !== undefined) {
-                    p.then(() => v.pause()).catch(() => { });
+        // 2. Preload next video in its container
+        if (nextItem && nextItem.MediaType === 'Video') {
+            const nextContainer = videoContainerRefs.current[activeIndex + 1];
+            if (nextContainer) {
+                if (nextVideo.parentNode !== nextContainer) {
+                    nextVideo.style.opacity = '0'; // Keep it hidden
+                    nextContainer.appendChild(nextVideo);
                 }
+
+                // Associate the item ID with the video element
+                nextVideo.dataset.itemId = nextItem.Id;
+
+                const nextSrc = getVideoUrl(nextItem);
+                if (nextVideo.src !== nextSrc && nextSrc) {
+                    nextVideo.src = nextSrc;
+                }
+                nextVideo.className = `w-full h-full pointer-events-auto bg-transparent ${getObjectFitClass(nextItem)}`;
+                nextVideo.muted = true; // Preload must be muted
+                nextVideo.preload = 'auto';
+                nextVideo.load();
             }
+        }
+    }, [items, isMuted, volume, playbackMode, isIOS, getObjectFitClass]);
+
+    // Create the shared video elements once on mount
+    useEffect(() => {
+        const v1 = document.createElement('video');
+        v1.playsInline = true;
+        v1.setAttribute('playsinline', '');
+        v1.setAttribute('webkit-playsinline', '');
+        v1.style.cssText = 'width:100%;height:100%;';
+        v1.className = 'w-full h-full pointer-events-auto bg-transparent object-cover';
+        v1.muted = true; // Start muted (iOS requires this for autoplay)
+
+        const v2 = document.createElement('video');
+        v2.playsInline = true;
+        v2.setAttribute('playsinline', '');
+        v2.setAttribute('webkit-playsinline', '');
+        v2.style.cssText = 'width:100%;height:100%;';
+        v2.className = 'w-full h-full pointer-events-auto bg-transparent object-cover';
+        v2.muted = true; // Start muted (iOS requires this for autoplay)
+
+        sharedVideosRef.current = [v1, v2];
+
+        // Attach event handlers that need access to latest state via refs
+        const cleanups = sharedVideosRef.current.map((video, vIdx) => {
+            const onTimeUpdate = () => {
+                if (isDraggingRef.current) return;
+                const itemId = video.dataset.itemId;
+                if (itemId) {
+                    setCurrentTime(prev => ({ ...prev, [itemId]: video.currentTime }));
+                }
+            };
+
+            const onLoadedMetadata = () => {
+                const itemId = video.dataset.itemId;
+                if (itemId) {
+                    setDuration(prev => ({ ...prev, [itemId]: video.duration }));
+                    setVideoDimensions(prev => ({ ...prev, [itemId]: { width: video.videoWidth, height: video.videoHeight } }));
+                }
+            };
+
+            const onPlaying = () => {
+                const itemId = video.dataset.itemId;
+                if (itemId) {
+                    // Set opacity to 1 immediately so the playing video is ready to be seen
+                    video.style.opacity = '1';
+                    // Delay setting hasStarted to true slightly to let the first frame paint before poster is removed
+                    setTimeout(() => {
+                        if (video.dataset.itemId === itemId) {
+                            setHasStarted(prev => ({ ...prev, [itemId]: true }));
+                        }
+                    }, 150);
+                }
+            };
+
+            const onEnded = () => {
+                if (vIdx !== latestActiveIndexRef.current % 2) return;
+                if (playbackModeRef.current === 'next' && latestActiveIndexRef.current < itemsRef.current.length - 1) {
+                    const nextIndex = latestActiveIndexRef.current + 1;
+                    itemRefs.current[nextIndex]?.scrollIntoView({ behavior: 'smooth' });
+                }
+            };
+
+            const onPlay = () => {
+                if (vIdx !== latestActiveIndexRef.current % 2) return;
+                if (isSwitchingRef.current) return;
+                setIsUserPaused(false);
+            };
+
+            const onPause = () => {
+                if (vIdx !== latestActiveIndexRef.current % 2) return;
+                if (isSwitchingRef.current) return;
+                setIsUserPaused(true);
+            };
+
+            video.addEventListener('timeupdate', onTimeUpdate);
+            video.addEventListener('loadedmetadata', onLoadedMetadata);
+            video.addEventListener('playing', onPlaying);
+            video.addEventListener('ended', onEnded);
+            video.addEventListener('play', onPlay);
+            video.addEventListener('pause', onPause);
+
+            return () => {
+                video.removeEventListener('timeupdate', onTimeUpdate);
+                video.removeEventListener('loadedmetadata', onLoadedMetadata);
+                video.removeEventListener('playing', onPlaying);
+                video.removeEventListener('ended', onEnded);
+                video.removeEventListener('play', onPlay);
+                video.removeEventListener('pause', onPause);
+            };
         });
-        setIsAudioUnlocked(true);
-    }, [isAudioUnlocked, isMuted]);
 
-    const handleTimeUpdate = (itemId: string, e: React.SyntheticEvent<HTMLVideoElement>) => {
-        if (isDragging) return;
-        const video = e.currentTarget;
-        setCurrentTime(prev => ({ ...prev, [itemId]: video.currentTime }));
-    };
+        return () => {
+            cleanups.forEach(fn => fn());
+            v1.pause();
+            v1.removeAttribute('src');
+            v1.load();
+            v1.remove();
 
-    const handleLoadedMetadata = (itemId: string, e: React.SyntheticEvent<HTMLVideoElement>) => {
-        const video = e.currentTarget;
-        setDuration(prev => ({ ...prev, [itemId]: video.duration }));
-        setVideoDimensions(prev => ({ ...prev, [itemId]: { width: video.videoWidth, height: video.videoHeight } }));
-    };
+            v2.pause();
+            v2.removeAttribute('src');
+            v2.load();
+            v2.remove();
 
-    const handleSeek = (itemId: string, index: number, e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
-        const video = videoRefs.current[index];
+            sharedVideosRef.current = [];
+        };
+    }, []); // Created once, never re-created
+
+    // Keep the shared video elements' classes in sync with display state
+    useEffect(() => {
+        const videos = sharedVideosRef.current;
+        if (videos.length === 0) return;
+
+        videos.forEach((video, vIdx) => {
+            const index = vIdx === activeVideoIndex % 2 ? activeVideoIndex : activeVideoIndex + 1;
+            const item = items[index];
+            if (!video || !item) return;
+
+            video.className = `w-full h-full pointer-events-auto bg-transparent ${getObjectFitClass(item)}`;
+        });
+    }, [activeVideoIndex, items, getObjectFitClass]);
+
+
+
+    const handleSeek = (itemId: string, _index: number, e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+        const video = getActiveVideo();
         if (!video) return;
 
         const rect = e.currentTarget.getBoundingClientRect();
@@ -818,14 +991,14 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         }
     };
 
-    const handleGlobalTouchStart = (index: number, e: React.TouchEvent) => {
+    const handleGlobalTouchStart = (_index: number, e: React.TouchEvent) => {
         setTouchStartX(e.touches[0].clientX);
         setTouchStartY(e.touches[0].clientY);
 
         // Long press detection for 2x speed
         if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
         longPressTimerRef.current = setTimeout(() => {
-            const video = videoRefs.current[index];
+            const video = getActiveVideo();
             if (video && !video.paused) {
                 video.playbackRate = 2.0;
                 setIsFastForwarding(true);
@@ -834,7 +1007,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         }, 500);
     };
 
-    const handleGlobalTouchMove = (itemId: string, index: number, e: React.TouchEvent) => {
+    const handleGlobalTouchMove = (itemId: string, _index: number, e: React.TouchEvent) => {
         if (touchStartX === 0) return;
         const deltaX = e.touches[0].clientX - touchStartX;
         const deltaY = e.touches[0].clientY - touchStartY;
@@ -850,7 +1023,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         // Only trigger seek if horizontal movement is significant
         if (Math.abs(deltaX) > 10) {
             setIsDragging(true);
-            const video = videoRefs.current[index];
+            const video = getActiveVideo();
             if (!video) return;
 
             const totalDuration = duration[itemId] || 0;
@@ -877,7 +1050,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
         // If we were fast forwarding, just stop it and ignore the rest of the gesture
         if (isFastForwarding) {
-            const video = videoRefs.current[index];
+            const video = getActiveVideo();
             if (video) video.playbackRate = 1.0;
             setIsFastForwarding(false);
             setIsDragging(false);
@@ -891,12 +1064,12 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
             return;
         }
 
-        // If it's a tap (minimal movement) - increase threshold slightly for robustness
+        // If it's a tap (minimal movement) - toggle play/pause
         if (displacement < 25 && !isDragging) {
             // Prevent emulated click on mobile to avoid double-toggle
             if (e.cancelable) e.preventDefault();
 
-            const video = videoRefs.current[index];
+            const video = getActiveVideo();
             if (video) {
                 if (video.paused) {
                     video.play().catch(err => console.error("Play failed", err));
@@ -908,7 +1081,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
             }
         }
         else if (isDragging && seekPreviewTime !== null) {
-            const video = videoRefs.current[index];
+            const video = getActiveVideo();
             if (video) {
                 video.currentTime = seekPreviewTime;
                 setCurrentTime(prev => ({ ...prev, [itemId]: seekPreviewTime }));
@@ -921,27 +1094,16 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         setTouchStartY(0);
         setSeekPreviewTime(null);
 
-        // SYNC GESTURE BINDING: Unmute and prime adjacent videos immediately
-        // This links the "Unmute" action to the user's swipe gesture
-        if (!isMuted) {
-            [index, index + 1, index - 1].forEach(idx => {
-                const v = videoRefs.current[idx];
-                if (v) {
-                    v.muted = false;
-                    // Trigger a micro play-then-pause to 'unlock' audio context for this element
-                    if (idx !== activeVideoIndex) {
-                        const playPromise = v.play();
-                        if (playPromise !== undefined) {
-                            playPromise.then(() => v.pause()).catch(() => { });
-                        }
-                    }
-                }
-            });
-        }
+        // ★ CRITICAL: Switch to next/prev video in THIS user gesture context
+        // iOS Safari requires play() to be called directly from a user gesture handler
+        if (displacement >= 25 && Math.abs(deltaY) > Math.abs(deltaX)) {
+            const nextIndex = deltaY < 0
+                ? Math.min(index + 1, items.length - 1)  // swipe up = next
+                : Math.max(index - 1, 0);                 // swipe down = prev
 
-        // Call safePlay immediately without setTimeout
-        if (displacement >= 25 && videoRefs.current[activeVideoIndex]) {
-            safePlay(activeVideoIndex);
+            if (nextIndex !== index && items[nextIndex]?.MediaType === 'Video') {
+                setupVideos(nextIndex);
+            }
         }
     };
 
@@ -976,34 +1138,32 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         const observerOptions = {
             root: containerRef.current,
             rootMargin: '0px',
-            threshold: 0.5, // Trigger slightly earlier for responsiveness
+            threshold: 0.5,
         };
 
         const observerCallback: IntersectionObserverCallback = (entries) => {
             entries.forEach((entry) => {
                 const index = Number(entry.target.getAttribute('data-index'));
-                const videoEl = videoRefs.current[index];
 
                 if (entry.isIntersecting) {
                     setActiveVideoIndex(index);
 
-                    // Trigger load more when approaching the end (e.g., 10 items left)
+                    // Trigger load more when approaching the end
                     if (index >= items.length - 10 && !loadingMore) {
                         loadMoreVideos();
                     }
 
-                    // Advanced Preloading: 3 items ahead, 1 item behind
+                    // Preload posters and gallery images for upcoming items
                     [index - 1, index + 1, index + 2, index + 3].forEach(adjIndex => {
                         const adjItem = items[adjIndex];
                         if (!adjItem) return;
-
-                        if (adjItem.MediaType === 'Video' || adjItem.Type === 'Video') {
-                            const adjVideo = videoRefs.current[adjIndex];
-                            if (adjVideo && adjVideo.paused) {
-                                adjVideo.preload = 'auto';
+                        if (adjItem.MediaType === 'Video') {
+                            const url = getPosterUrl(adjItem);
+                            if (url) {
+                                const img = new Image();
+                                img.src = url;
                             }
                         } else if (adjItem.Type === 'Gallery' && adjItem.Children) {
-                            // Preload first 2 images of upcoming galleries
                             adjItem.Children.slice(0, 2).forEach(child => {
                                 const url = getPosterUrl(child, true);
                                 if (url) {
@@ -1013,19 +1173,12 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                             });
                         }
                     });
-                } else {
-                    // Just pause if it's definitely out of view
-                    if (videoEl && !videoEl.paused) {
-                        videoEl.pause();
-                        videoEl.preload = 'none';
-                    }
                 }
             });
         };
 
         const observer = new IntersectionObserver(observerCallback, observerOptions);
 
-        // Track items
         itemRefs.current.forEach((ref) => {
             if (ref) {
                 observer.observe(ref);
@@ -1035,14 +1188,29 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         return () => observer.disconnect();
     }, [items.length]);
 
-    // Handle active video playback
+    useEffect(() => {
+        latestActiveIndexRef.current = activeVideoIndex;
+    }, [activeVideoIndex]);
+
+    // Handle active video playback — setupVideos ensures the shared elements are in the right containers
     useEffect(() => {
         setIsUserPaused(false);
         setIsDragging(false);
         setSeekPreviewTime(null);
-        safePlay(activeVideoIndex);
 
-        // Reset hasStarted for other videos to ensure poster shows when they play again or remount
+        const item = items[activeVideoIndex];
+        if (item?.MediaType === 'Video') {
+            // setupVideos moves/preloads the elements and plays
+            setupVideos(activeVideoIndex);
+        } else {
+            // For galleries/photos, pause the active shared video
+            const video = getActiveVideo();
+            if (video && !video.paused) {
+                video.pause();
+            }
+        }
+
+        // Reset hasStarted for other videos
         setHasStarted(prev => {
             const next = { ...prev };
             items.forEach((item, idx) => {
@@ -1052,14 +1220,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
             });
             return next;
         });
-
-        // Pause others (safety check)
-        videoRefs.current.forEach((v, idx) => {
-            if (v && idx !== activeVideoIndex && !v.paused) {
-                v.pause();
-            }
-        });
-    }, [activeVideoIndex, items]);
+    }, [activeVideoIndex, items, setupVideos]);
 
     // Keyboard Shortcuts for PC
     useEffect(() => {
@@ -1080,7 +1241,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                 }
             } else if (e.key === ' ') {
                 e.preventDefault();
-                const video = videoRefs.current[activeVideoIndex];
+                const video = getActiveVideo();
                 if (video) {
                     if (video.paused) {
                         video.play().catch(() => { });
@@ -1332,7 +1493,6 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                         ref={containerRef}
                         className="h-full overflow-y-scroll snap-y snap-mandatory no-scrollbar scroll-smooth"
                         onWheel={handleWheel}
-                        onClick={unlockAudio}
                     >
                         <div className="min-h-full">
                             {items.map((item, index) => {
@@ -1351,22 +1511,32 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                     style={{ scrollSnapStop: 'always' }}
                                     data-index={index}
                                     onTouchStart={(e) => {
-                                        unlockAudio();
                                         handleGlobalTouchStart(index, e);
                                     }}
                                     onTouchMove={(e) => handleGlobalTouchMove(item.Id, index, e)}
-                                    onTouchEnd={(e) => handleGlobalTouchEnd(item.Id, index, e)}
+                                    onTouchEnd={(e) => {
+                                        handleGlobalTouchEnd(item.Id, index, e);
+                                    }}
                                     onClick={() => {
                                         if (skipClickRef.current) return;
                                         // For desktop mouse clicks
-                                        const video = videoRefs.current[index];
-                                        if (video) {
+                                        const video = getActiveVideo();
+                                        if (video && item.MediaType === 'Video') {
                                             if (video.paused) {
                                                 video.play().catch(() => { });
                                                 setIsUserPaused(false);
                                             } else {
                                                 video.pause();
                                                 setIsUserPaused(true);
+                                            }
+
+                                            // Unlock the other video in the pool
+                                            const videos = sharedVideosRef.current;
+                                            const otherVideo = videos[(activeVideoIndex + 1) % 2];
+                                            if (otherVideo && otherVideo.paused) {
+                                                otherVideo.play().then(() => {
+                                                    otherVideo.pause();
+                                                }).catch(() => {});
                                             }
                                         } else if (item.Type === 'Gallery') {
                                             // Cycle through photos on click for desktop
@@ -1392,44 +1562,23 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                             )}
 
                                             {item.MediaType === 'Video' ? (
-                                                <div className="relative z-10 w-full h-full flex items-center justify-center">
-                                                    <video
-                                                        ref={(el) => {
-                                                            videoRefs.current[index] = el;
-                                                            if (el && activeVideoIndex === index && el.paused && !isUserPaused) {
-                                                                safePlay(index);
-                                                            }
-                                                        }}
-                                                        src={getVideoUrl(item)}
-                                                        className={`w-full h-full pointer-events-auto bg-transparent ${displayMode === 'cover' ? 'object-cover' :
-                                                            displayMode === 'contain' ? 'object-contain' :
-                                                                (isScreenLandscape || (item.Width || 0) > (item.Height || 0) || (item.PrimaryImageAspectRatio || 0) > 0.65 || (videoDimensions[item.Id]?.width / videoDimensions[item.Id]?.height) > 0.65) ? 'object-contain' : 'object-cover'
-                                                            }`}
-                                                        autoPlay={activeVideoIndex === index}
-                                                        loop={playbackMode === 'loop'}
-                                                        muted={isMuted}
-                                                        playsInline
-                                                        onPlaying={() => handlePlaying(item.Id)}
-                                                        onEnded={() => {
-                                                            if (playbackMode === 'next' && activeVideoIndex < items.length - 1) {
-                                                                const nextIndex = activeVideoIndex + 1;
-                                                                itemRefs.current[nextIndex]?.scrollIntoView({ behavior: 'smooth' });
-                                                                safePlay(nextIndex);
-                                                            }
-                                                        }}
-                                                        onTimeUpdate={(e) => handleTimeUpdate(item.Id, e)}
-                                                        onLoadedMetadata={(e) => handleLoadedMetadata(item.Id, e)}
-                                                    />
-                                                    {getPosterUrl(item) && !hasStarted[item.Id] && (
-                                                        <img
-                                                            src={getPosterUrl(item)}
-                                                            className={`absolute inset-0 w-full h-full z-20 pointer-events-none ${displayMode === 'cover' ? 'object-cover' :
-                                                                displayMode === 'contain' ? 'object-contain' :
-                                                                    (isScreenLandscape || (item.Width || 0) > (item.Height || 0) || (item.PrimaryImageAspectRatio || 0) > 0.65 || (videoDimensions[item.Id]?.width / videoDimensions[item.Id]?.height) > 0.65) ? 'object-contain' : 'object-cover'
-                                                                }`}
-                                                            alt=""
-                                                        />
-                                                    )}
+                                                <div
+                                                    ref={el => { videoContainerRefs.current[index] = el; }}
+                                                    className="relative z-10 w-full h-full flex items-center justify-center"
+                                                >
+                                                    <AnimatePresence>
+                                                        {getPosterUrl(item) && !hasStarted[item.Id] && (
+                                                            <motion.img
+                                                                key="poster"
+                                                                initial={{ opacity: 1 }}
+                                                                exit={{ opacity: 0 }}
+                                                                transition={{ duration: 0.15 }}
+                                                                src={getPosterUrl(item)}
+                                                                className={`absolute inset-0 w-full h-full z-20 pointer-events-none ${getObjectFitClass(item)}`}
+                                                                alt=""
+                                                            />
+                                                        )}
+                                                    </AnimatePresence>
                                                 </div>
                                             ) : item.Type === 'Gallery' ? (
                                                 <div className="relative z-10 w-full h-full flex items-center justify-center">
@@ -1525,18 +1674,25 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                         )}
 
                                         {/* iOS Autoplay / Muted hint */}
-                                        {(activeVideoIndex === index && !isUserPaused && !isMuted && videoRefs.current[index]?.muted) && (
+                                        {(activeVideoIndex === index && !isUserPaused && !isMuted && getActiveVideo()?.muted) && (
                                             <motion.button
                                                 initial={{ y: 20, opacity: 0 }}
                                                 animate={{ y: 0, opacity: 1 }}
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     setIsMuted(false);
-                                                    if (videoRefs.current[index]) {
-                                                        const v = videoRefs.current[index]!;
+                                                    setForceRender({});
+                                                    const videos = sharedVideosRef.current;
+                                                    videos.forEach((v, vIdx) => {
                                                         v.muted = false;
-                                                        v.play().catch(() => { });
-                                                    }
+                                                        if (vIdx === activeVideoIndex % 2) {
+                                                            v.play().catch(() => { });
+                                                        } else {
+                                                            v.play().then(() => {
+                                                                v.pause();
+                                                            }).catch(() => { });
+                                                        }
+                                                    });
                                                 }}
                                                 onTouchStart={(e) => e.stopPropagation()}
                                                 onTouchEnd={(e) => e.stopPropagation()}
