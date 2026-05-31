@@ -1936,7 +1936,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
             {isMobile && !isFullscreen && (
                 <div
                     style={{ marginBottom: 'max(var(--sab), 16px)' }}
-                    className="fixed bottom-0 left-6 right-6 h-16 bg-white/5 backdrop-blur-xl border border-white/20 ring-1 ring-inset ring-white/10 z-[60] flex items-center justify-around px-2 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.2)] pointer-events-auto"
+                    className="fixed bottom-0 left-6 right-6 h-16 bg-white/[0.02] backdrop-blur-md border border-white/[0.08] ring-1 ring-inset ring-white/[0.04] z-[60] flex items-center justify-around px-2 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.15)] pointer-events-auto"
                 >
                     <button
                         onClick={() => {
