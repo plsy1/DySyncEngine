@@ -1299,12 +1299,12 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     const getVideoUrl = (item: EmbyItem) => {
         if (!settings) return '';
         // Emby stream endpoint
-        return `/api/emby/videos/${item.Id}/stream.mp4?api_key=${settings.emby_api_key}&Static=true`;
+        return `${window.location.origin}/api/emby/videos/${item.Id}/stream.mp4?api_key=${settings.emby_api_key}&Static=true`;
     };
 
     const getPosterUrl = (item: EmbyItem, highRes: boolean = false) => {
         if (!settings || !item.ImageTags?.Primary) return undefined;
-        let url = `/api/emby/Items/${item.Id}/Images/Primary?api_key=${settings.emby_api_key}&tag=${item.ImageTags.Primary}&quality=90`;
+        let url = `${window.location.origin}/api/emby/Items/${item.Id}/Images/Primary?api_key=${settings.emby_api_key}&tag=${item.ImageTags.Primary}&quality=90`;
         if (highRes) url += '&maxWidth=1920';
         return url;
     };
