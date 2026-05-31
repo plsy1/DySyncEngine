@@ -840,8 +840,9 @@ async def emby_proxy(
     # Read body
     body = await request.body()
     
-    # We will use httpx to stream the response
-    client = httpx.AsyncClient(timeout=None)
+    # We set a 5-second connect timeout, but keep read/write/pool timeouts unlimited for media streaming
+    timeout = httpx.Timeout(timeout=None, connect=5.0)
+    client = httpx.AsyncClient(timeout=timeout)
     try:
         req = client.build_request(
             method=request.method,
@@ -860,6 +861,16 @@ async def emby_proxy(
     for key, val in r.headers.items():
         if key.lower() not in ("connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade"):
             response_headers[key] = val
+            
+    # If the response was compressed (e.g. gzip), httpx automatically decompressed it.
+    # We must remove Content-Length and Content-Encoding because the response body is now uncompressed,
+    # and the original Content-Length would be smaller than the uncompressed body, causing h11 errors.
+    has_content_encoding = any(k.lower() == "content-encoding" for k in response_headers)
+    if has_content_encoding:
+        response_headers = {
+            k: v for k, v in response_headers.items()
+            if k.lower() not in ("content-length", "content-encoding")
+        }
             
     async def stream_generator():
         try:
