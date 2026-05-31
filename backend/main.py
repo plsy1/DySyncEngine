@@ -63,6 +63,27 @@ for _log in ["uvicorn", "uvicorn.error", "uvicorn.access", "fastapi"]:
 from scheduler import scheduler_manager
 
 
+def clean_old_cache_files():
+    import time
+    from api import IMAGE_CACHE_DIR
+    if not os.path.exists(IMAGE_CACHE_DIR):
+        return
+    try:
+        now = time.time()
+        limit = now - (30 * 24 * 3600)
+        count = 0
+        for filename in os.listdir(IMAGE_CACHE_DIR):
+            file_path = os.path.join(IMAGE_CACHE_DIR, filename)
+            if os.path.isfile(file_path):
+                if os.path.getmtime(file_path) < limit:
+                    os.remove(file_path)
+                    count += 1
+        if count > 0:
+            logger.info(f"成功清理 {count} 个超过 30 天未更新的 Emby 图片缓存文件")
+    except Exception as e:
+        logger.error(f"清理旧图片缓存失败: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     loop = asyncio.get_running_loop()
@@ -74,6 +95,7 @@ async def lifespan(app: FastAPI):
         mark_interrupted_tasks_as_failed(session)
         
     asyncio.create_task(scheduler_manager.run())
+    asyncio.create_task(asyncio.to_thread(clean_old_cache_files))
     yield
 
 
