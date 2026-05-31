@@ -1754,7 +1754,14 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
 
                                     {/* Video Info Overlay */}
-                                    <div className="absolute bottom-0 left-0 right-0 p-6 pb-[100px] md:pb-6 pointer-events-none flex flex-col justify-end z-30">
+                                    <div 
+                                        className="absolute bottom-0 left-0 right-0 p-6 md:pb-6 pointer-events-none flex flex-col justify-end z-30"
+                                        style={{
+                                            paddingBottom: isMobile && !isFullscreen
+                                                ? 'calc(max(var(--sab), 16px) + 108px)'
+                                                : undefined
+                                        }}
+                                    >
                                         <div className="flex items-center gap-2 mb-2 drop-shadow-md overflow-x-auto no-scrollbar w-full scroll-smooth pointer-events-auto">
                                             <button
                                                 onClick={(e) => {
