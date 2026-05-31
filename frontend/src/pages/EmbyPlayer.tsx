@@ -288,7 +288,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
             }
 
             const embyApi = axios.create({
-                baseURL: data.emby_server_url,
+                baseURL: '/api/emby',
                 timeout: 15000, // Increased timeout for larger libraries
             });
 
@@ -318,7 +318,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                     StartIndex: 0
                 };
                 if (fid) params.ParentId = fid;
-                return embyApi.get('/emby/Items', { params });
+                return embyApi.get('Items', { params });
             });
 
             const responses = await Promise.all(fetchPromises);
@@ -428,7 +428,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         setLoadingMore(true);
         try {
             const embyApi = axios.create({
-                baseURL: settings.emby_server_url,
+                baseURL: '/api/emby',
                 timeout: 15000,
             });
 
@@ -458,7 +458,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
                 // If multi-select, we track per-folder counts.
                 if (fid) params.ParentId = fid;
-                return embyApi.get('/emby/Items', { params });
+                return embyApi.get('Items', { params });
             });
 
             const responses = await Promise.all(fetchPromises);
@@ -625,7 +625,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         setFoldersLoading(true);
         try {
             const embyApi = axios.create({
-                baseURL: settings.emby_server_url,
+                baseURL: '/api/emby',
                 timeout: 5000,
             });
 
@@ -634,7 +634,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                 ? settings.emby_default_library
                 : parentId;
 
-            const response = await embyApi.get('/emby/Items', {
+            const response = await embyApi.get('Items', {
                 params: {
                     api_key: settings.emby_api_key,
                     ParentId: effectiveParentId,
@@ -966,10 +966,10 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         setIsDeleting(true);
         try {
             const embyApi = axios.create({
-                baseURL: settings.emby_server_url,
+                baseURL: '/api/emby',
                 timeout: 10000,
             });
-            await embyApi.delete(`/emby/Items/${item.Id}`, {
+            await embyApi.delete(`Items/${item.Id}`, {
                 params: { api_key: settings.emby_api_key }
             });
             // Remove deleted item from list
@@ -1299,12 +1299,12 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     const getVideoUrl = (item: EmbyItem) => {
         if (!settings) return '';
         // Emby stream endpoint
-        return `${settings.emby_server_url}/emby/videos/${item.Id}/stream.mp4?api_key=${settings.emby_api_key}&Static=true`;
+        return `/api/emby/videos/${item.Id}/stream.mp4?api_key=${settings.emby_api_key}&Static=true`;
     };
 
     const getPosterUrl = (item: EmbyItem, highRes: boolean = false) => {
         if (!settings || !item.ImageTags?.Primary) return undefined;
-        let url = `${settings.emby_server_url}/emby/Items/${item.Id}/Images/Primary?api_key=${settings.emby_api_key}&tag=${item.ImageTags.Primary}&quality=90`;
+        let url = `/api/emby/Items/${item.Id}/Images/Primary?api_key=${settings.emby_api_key}&tag=${item.ImageTags.Primary}&quality=90`;
         if (highRes) url += '&maxWidth=1920';
         return url;
     };

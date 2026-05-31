@@ -88,12 +88,15 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
         if (!settings.emby_server_url || !settings.emby_api_key) return;
         setFetchingLibraries(true);
         try {
-            const resp = await axios.get(`${settings.emby_server_url}/emby/Items`, {
+            const resp = await axios.get(`/api/emby/Items`, {
                 params: {
                     api_key: settings.emby_api_key,
                     Recursive: false,
                     IsFolder: true,
                     SortBy: 'SortName'
+                },
+                headers: {
+                    'x-emby-server-url': settings.emby_server_url
                 }
             });
             if (resp.data?.Items) {

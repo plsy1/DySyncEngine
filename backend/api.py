@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, BackgroundTasks, Depends, HTTPException, status, Form
+from fastapi import APIRouter, Query, BackgroundTasks, Depends, HTTPException, status, Form, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -807,6 +807,73 @@ def update_settings_api(req: GlobalSettings, session: Session = Depends(get_sess
     if req.folder_name_pattern is not None:
         set_config(session, "folder_name_pattern", req.folder_name_pattern.strip())
     return {"success": True}
+
+@public_router.api_route("/emby/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"])
+async def emby_proxy(
+    path: str,
+    request: Request,
+    session: Session = Depends(get_session)
+):
+    # Try to read x-emby-server-url header first (for unsaved settings validation)
+    emby_server_url = request.headers.get("x-emby-server-url")
+    if not emby_server_url:
+        emby_server_url = get_config(session, "emby_server_url", "")
+        
+    if not emby_server_url:
+        raise HTTPException(status_code=400, detail="Emby server URL is not configured")
+        
+    # Build target URL
+    target_url = f"{emby_server_url.rstrip('/')}/emby/{path}"
+    
+    # Forward query parameters
+    query_params = request.url.query
+    if query_params:
+        target_url = f"{target_url}?{query_params}"
+        
+    # Prepare request headers to pass to Emby
+    # Filter out headers that could cause issues (like host, connection, content-length which is handled by client.send body)
+    headers = {}
+    for k, v in request.headers.items():
+        if k.lower() not in ("host", "connection", "content-length", "x-emby-server-url"):
+            headers[k] = v
+            
+    # Read body
+    body = await request.body()
+    
+    # We will use httpx to stream the response
+    client = httpx.AsyncClient(timeout=None)
+    try:
+        req = client.build_request(
+            method=request.method,
+            url=target_url,
+            headers=headers,
+            content=body
+        )
+        r = await client.send(req, stream=True)
+    except Exception as e:
+        await client.aclose()
+        logger.error(f"Error proxying request to Emby: {e}")
+        raise HTTPException(status_code=502, detail=f"Failed to connect to Emby server: {str(e)}")
+        
+    # Forward response headers (excluding hop-by-hop headers)
+    response_headers = {}
+    for key, val in r.headers.items():
+        if key.lower() not in ("connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade"):
+            response_headers[key] = val
+            
+    async def stream_generator():
+        try:
+            async for chunk in r.aiter_bytes(chunk_size=65536):
+                yield chunk
+        finally:
+            await r.aclose()
+            await client.aclose()
+            
+    return StreamingResponse(
+        stream_generator(),
+        status_code=r.status_code,
+        headers=response_headers
+    )
 
 @router.get("/settings/folder-migration/preview", response_model=FolderMigrationPreview)
 def preview_folder_migration(pattern: str | None = Query(None), session: Session = Depends(get_session), _ = Depends(get_current_user)):
