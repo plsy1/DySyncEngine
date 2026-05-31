@@ -1849,7 +1849,12 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                         <>
                                             <div
                                                 className="absolute left-0 right-0 cursor-pointer pointer-events-auto z-[50] flex items-center group/progress"
-                                                style={{ bottom: isMobile ? '8px' : '0px', height: '40px' }}
+                                                style={{ 
+                                                    bottom: isMobile && !isFullscreen 
+                                                        ? 'calc(max(var(--sab), 16px) + 56px)' 
+                                                        : '0px', 
+                                                    height: '40px' 
+                                                }}
                                                 onMouseDown={() => setIsDragging(true)}
                                                 onMouseUp={() => setIsDragging(false)}
                                                 onClick={(e) => handleSeek(item.Id, index, e)}
