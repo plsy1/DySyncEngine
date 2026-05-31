@@ -1848,8 +1848,8 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                     {activeVideoIndex === index && item.MediaType === 'Video' && (
                                         <>
                                             <div
-                                                className="absolute left-0 right-0 cursor-pointer pointer-events-auto z-[50] flex items-end group/progress"
-                                                style={{ bottom: '0px', height: '40px' }}
+                                                className="absolute left-0 right-0 cursor-pointer pointer-events-auto z-[50] flex items-center group/progress"
+                                                style={{ bottom: isMobile ? '8px' : '0px', height: '40px' }}
                                                 onMouseDown={() => setIsDragging(true)}
                                                 onMouseUp={() => setIsDragging(false)}
                                                 onClick={(e) => handleSeek(item.Id, index, e)}
@@ -1862,8 +1862,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                     initial={{ height: 2, opacity: 0 }}
                                                     animate={{
                                                         height: isDragging ? 6 : 2,
-                                                        opacity: (isDragging || hasManualSeek[item.Id]) ? 0.8 : 0.4,
-                                                        translateY: (isDragging || hasManualSeek[item.Id]) ? 0 : 2
+                                                        opacity: (isDragging || hasManualSeek[item.Id]) ? 0.8 : 0.4
                                                     }}
                                                     transition={{ duration: 0.2 }}
                                                 >
@@ -1879,8 +1878,8 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                         className="absolute w-4 h-4 bg-white rounded-full shadow-lg pointer-events-none"
                                                         style={{
                                                             left: `${(((isDragging && seekPreviewTime !== null ? seekPreviewTime : currentTime[item.Id]) || 0) / (duration[item.Id] || 1)) * 100}%`,
-                                                            bottom: '2px',
-                                                            transform: 'translateX(-50%)'
+                                                            top: '50%',
+                                                            transform: 'translate(-50%, -50%)'
                                                         }}
                                                     />
                                                 )}
