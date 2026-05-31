@@ -59,6 +59,15 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         const saved = localStorage.getItem('emby_player_folder_ids');
         return saved ? saved.split(',') : [];
     });
+    const [tempSelectedFolderIds, setTempSelectedFolderIds] = useState<string[]>([]);
+    const emptyFetchCountRef = useRef(0);
+
+    // Sync tempSelectedFolderIds when multi-select mode changes or global changes
+    useEffect(() => {
+        if (isMultiSelectMode) {
+            setTempSelectedFolderIds(selectedFolderIds);
+        }
+    }, [isMultiSelectMode, selectedFolderIds]);
     const [sidebarPath, setSidebarPath] = useState<{ id: string, name: string }[]>([]);
     const [foldersLoading, setFoldersLoading] = useState(false);
     const [isMuted, setIsMuted] = useState(true);
@@ -607,10 +616,19 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                     }).catch(e => console.error("Metadata lookup (load more) failed", e));
                 }
 
+                if (brandNewItems.length > 0) {
+                    emptyFetchCountRef.current = 0;
+                }
+
                 // If we fetched items but none were "brand new" vertical slots (all merged), 
-                // try fetching one more time automatically to prevent the user from hitting a dead end.
+                // try fetching one more time automatically to prevent the user from hitting a dead end (max 3 retries).
                 if (brandNewItems.length === 0 && newItems.length > 0) {
-                    setTimeout(() => loadMoreVideos(), 100);
+                    if (emptyFetchCountRef.current < 3) {
+                        emptyFetchCountRef.current += 1;
+                        setTimeout(() => loadMoreVideos(), 100);
+                    } else {
+                        emptyFetchCountRef.current = 0;
+                    }
                 }
             }
         } catch (err) {
@@ -673,12 +691,13 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     const handleSelectFolder = (folderId: string | null) => {
         if (folderId === null) {
             setSelectedFolderIds([]);
+            setTempSelectedFolderIds([]);
             setIsSidebarOpen(false);
             return;
         }
 
         if (isMultiSelectMode) {
-            setSelectedFolderIds(prev =>
+            setTempSelectedFolderIds(prev =>
                 prev.includes(folderId)
                     ? prev.filter(id => id !== folderId)
                     : [...prev, folderId]
@@ -690,6 +709,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     };
 
     const handleOpenSidebar = () => {
+        setTempSelectedFolderIds(selectedFolderIds);
         setIsSidebarOpen(true);
         // Only fetch if empty or we are at root
         if (sidebarPath.length === 0) {
@@ -717,9 +737,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         const activeVideo = videos[activeIndex % 2];
         const activeItem = items[activeIndex];
         
-        // Next video element: (activeIndex + 1) % 2
-        const nextVideo = videos[(activeIndex + 1) % 2];
-        const nextItem = items[activeIndex + 1];
+
 
         isSwitchingRef.current = true;
 
@@ -761,9 +779,25 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
             }
         }
 
-        // 2. 不预加载下一个视频文件
-        // 只有当用户真正切换到该视频时，setupVideos 才会在 activeVideo 位置加载它
-        // （双缓冲机制依然保留，只是移除了提前 load()）
+        // 2. 预加载下一个视频文件 (双缓冲预载机制)
+        const nextItem = items[activeIndex + 1];
+        const nextVideo = videos[(activeIndex + 1) % 2];
+        const nextContainer = videoContainerRefs.current[activeIndex + 1];
+        if (nextItem && nextItem.MediaType === 'Video' && nextVideo && nextContainer) {
+            // 先将闲置的视频元素挂载到下一个容器中，防止后续滑动时 DOM 发生转移导致视频被浏览器重置
+            if (nextVideo.parentNode !== nextContainer) {
+                nextVideo.style.opacity = '0';
+                nextContainer.appendChild(nextVideo);
+            }
+            const nextSrc = getVideoUrl(nextItem);
+            if (nextVideo.src !== nextSrc && nextSrc) {
+                nextVideo.dataset.itemId = nextItem.Id;
+                nextVideo.src = nextSrc;
+                nextVideo.muted = isMuted;
+                if (!isIOS) nextVideo.volume = volume;
+                nextVideo.load(); // 仅加载流，不调用 play()
+            }
+        }
     }, [items, isMuted, volume, playbackMode, isIOS, getObjectFitClass]);
 
     // Create the shared video elements once on mount
@@ -1641,35 +1675,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                             </motion.div>
                                         )}
 
-                                        {/* iOS Autoplay / Muted hint */}
-                                        {(activeVideoIndex === index && !isUserPaused && !isMuted && getActiveVideo()?.muted) && (
-                                            <motion.button
-                                                initial={{ y: 20, opacity: 0 }}
-                                                animate={{ y: 0, opacity: 1 }}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setIsMuted(false);
-                                                    setForceRender({});
-                                                    const videos = sharedVideosRef.current;
-                                                    videos.forEach((v, vIdx) => {
-                                                        v.muted = false;
-                                                        if (vIdx === activeVideoIndex % 2) {
-                                                            v.play().catch(() => { });
-                                                        } else {
-                                                            v.play().then(() => {
-                                                                v.pause();
-                                                            }).catch(() => { });
-                                                        }
-                                                    });
-                                                }}
-                                                onTouchStart={(e) => e.stopPropagation()}
-                                                onTouchEnd={(e) => e.stopPropagation()}
-                                                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 pointer-events-auto bg-primary text-white px-6 py-3 rounded-full font-bold flex items-center gap-2 shadow-2xl active:scale-95 transition-transform"
-                                            >
-                                                <Volume2 size={24} />
-                                                点击开启声音
-                                            </motion.button>
-                                        )}
+
 
                                         {/* Right Action Buttons */}
                                         <div className="absolute right-3 md:right-4 bottom-[180px] md:bottom-12 flex flex-col gap-6 items-center pointer-events-auto z-40">
@@ -2209,7 +2215,9 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                 )}
 
                                                 {folders.map((folder: EmbyItem) => {
-                                                    const isSelected = selectedFolderIds.includes(folder.Id);
+                                                    const isSelected = isMultiSelectMode
+                                                        ? tempSelectedFolderIds.includes(folder.Id)
+                                                        : selectedFolderIds.includes(folder.Id);
                                                     return (
                                                         <div
                                                             key={folder.Id}
@@ -2256,19 +2264,31 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                     </div>
                                 </div>
 
-                                {selectedFolderIds.length > 0 && (
+                                {((isMultiSelectMode ? tempSelectedFolderIds.length : selectedFolderIds.length) > 0) && (
                                     <div className="p-4 border-t border-white/10 bg-black/40 backdrop-blur-md">
                                         <div className="flex items-center justify-between mb-4 px-2">
-                                            <span className="text-white/60 text-xs">已选择 {selectedFolderIds.length} 个目录</span>
+                                            <span className="text-white/60 text-xs">已选择 {isMultiSelectMode ? tempSelectedFolderIds.length : selectedFolderIds.length} 个目录</span>
                                             <button
-                                                onClick={() => setSelectedFolderIds([])}
+                                                onClick={() => {
+                                                    if (isMultiSelectMode) {
+                                                        setTempSelectedFolderIds([]);
+                                                    } else {
+                                                        setSelectedFolderIds([]);
+                                                        setIsSidebarOpen(false);
+                                                    }
+                                                }}
                                                 className="text-primary text-xs font-bold hover:underline"
                                             >
                                                 清除全部
                                             </button>
                                         </div>
                                         <button
-                                            onClick={() => setIsSidebarOpen(false)}
+                                            onClick={() => {
+                                                if (isMultiSelectMode) {
+                                                    setSelectedFolderIds(tempSelectedFolderIds);
+                                                }
+                                                setIsSidebarOpen(false);
+                                            }}
                                             className="w-full py-4 bg-primary text-white font-bold rounded-2xl flex items-center justify-center gap-2 hover:bg-primary/90 active:scale-95 transition-all shadow-xl shadow-primary/20"
                                         >
                                             <Play size={20} fill="white" />

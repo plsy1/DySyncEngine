@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Query, BackgroundTasks, Depends, HTTPException, status, Form, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Query, BackgroundTasks, Depends, HTTPException, status, Form, Request, Response
+from fastapi.responses import StreamingResponse, FileResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime, timedelta
@@ -808,6 +808,26 @@ def update_settings_api(req: GlobalSettings, session: Session = Depends(get_sess
         set_config(session, "folder_name_pattern", req.folder_name_pattern.strip())
     return {"success": True}
 
+import hashlib
+import json
+
+_emby_client: Optional[httpx.AsyncClient] = None
+IMAGE_CACHE_DIR = os.path.join(os.path.dirname(__file__), "data", "cache", "images")
+
+def get_emby_client() -> httpx.AsyncClient:
+    global _emby_client
+    if _emby_client is None or _emby_client.is_closed:
+        timeout = httpx.Timeout(timeout=None, connect=5.0)
+        limits = httpx.Limits(max_keepalive_connections=20, max_connections=50)
+        _emby_client = httpx.AsyncClient(timeout=timeout, limits=limits)
+    return _emby_client
+
+@public_router.on_event("shutdown")
+async def close_emby_client():
+    global _emby_client
+    if _emby_client is not None and not _emby_client.is_closed:
+        await _emby_client.aclose()
+
 @public_router.api_route("/emby/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"])
 async def emby_proxy(
     path: str,
@@ -839,10 +859,73 @@ async def emby_proxy(
             
     # Read body
     body = await request.body()
-    
-    # We set a 5-second connect timeout, but keep read/write/pool timeouts unlimited for media streaming
-    timeout = httpx.Timeout(timeout=None, connect=5.0)
-    client = httpx.AsyncClient(timeout=timeout)
+
+    # Image cache logic
+    is_image_request = request.method == "GET" and "/Images/" in path and "tag=" in query_params
+    if is_image_request:
+        cache_key = hashlib.md5(f"{path}?{query_params}".encode("utf-8")).hexdigest()
+        cache_path = os.path.join(IMAGE_CACHE_DIR, f"{cache_key}.bin")
+        meta_path = cache_path + ".meta"
+        
+        # Cache hit
+        if os.path.exists(cache_path) and os.path.exists(meta_path):
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+                content_type = meta.get("content-type", "image/jpeg")
+                return FileResponse(cache_path, media_type=content_type)
+            except Exception as e:
+                logger.error(f"Error reading Emby image cache: {e}")
+
+        # Cache miss: fetch fully, cache, and return
+        client = get_emby_client()
+        try:
+            r = await client.request(
+                method=request.method,
+                url=target_url,
+                headers=headers,
+                timeout=15.0
+            )
+            if r.status_code == 200:
+                try:
+                    os.makedirs(IMAGE_CACHE_DIR, exist_ok=True)
+                    with open(cache_path, "wb") as f:
+                        f.write(r.content)
+                    content_type = r.headers.get("content-type", "image/jpeg")
+                    with open(meta_path, "w", encoding="utf-8") as f:
+                        json.dump({"content-type": content_type}, f)
+                except Exception as cache_err:
+                    logger.error(f"Error writing Emby image cache: {cache_err}")
+                
+                # Forward headers (excluding connection/transfer-encoding)
+                response_headers = {}
+                for key, val in r.headers.items():
+                    if key.lower() not in ("connection", "keep-alive", "transfer-encoding"):
+                        response_headers[key] = val
+                
+                return Response(
+                    content=r.content,
+                    status_code=r.status_code,
+                    media_type=content_type,
+                    headers=response_headers
+                )
+            else:
+                response_headers = {}
+                for key, val in r.headers.items():
+                    if key.lower() not in ("connection", "keep-alive", "transfer-encoding"):
+                        response_headers[key] = val
+                return Response(
+                    content=r.content,
+                    status_code=r.status_code,
+                    media_type=r.headers.get("content-type", "image/jpeg"),
+                    headers=response_headers
+                )
+        except Exception as e:
+            logger.error(f"Error proxying/caching image from Emby: {e}")
+            # Fallback to standard streaming proxy if caching logic fails
+
+    # For other requests, use streaming proxy with reused client
+    client = get_emby_client()
     try:
         req = client.build_request(
             method=request.method,
@@ -852,7 +935,6 @@ async def emby_proxy(
         )
         r = await client.send(req, stream=True)
     except Exception as e:
-        await client.aclose()
         logger.error(f"Error proxying request to Emby: {e}")
         raise HTTPException(status_code=502, detail=f"Failed to connect to Emby server: {str(e)}")
         
@@ -878,7 +960,6 @@ async def emby_proxy(
                 yield chunk
         finally:
             await r.aclose()
-            await client.aclose()
             
     return StreamingResponse(
         stream_generator(),
