@@ -148,12 +148,14 @@ def get_author_folder_name(nickname: str, uid: str, platform: str, session=None)
 
     # 3. 替换支持的标签
     sanitized_nickname = sanitize_filename(nickname)
+    clean_uid = uid[len(platform) + 1:] if uid.startswith(f"{platform}_") else uid
     folder_name = pattern.replace("{nickname}", sanitized_nickname)\
-                         .replace("{uid}", uid)\
+                         .replace("{uid}", clean_uid)\
                          .replace("{platform}", platform)
                          
-    # 限制文件夹名称的合法性
-    return sanitize_filename(folder_name)
+    # 允许使用斜杠创建子目录，对每一级子目录单独进行合法性限制
+    parts = [sanitize_filename(part) for part in folder_name.replace("\\", "/").split("/") if part]
+    return os.path.join(*parts) if parts else "unknown"
 
 def handle_nickname_change(session, uid: str, old_nickname: str, new_nickname: str, platform: str = "douyin"):
     """
@@ -226,6 +228,7 @@ def handle_nickname_change(session, uid: str, old_nickname: str, new_nickname: s
 
     try:
         logger.info(f"检测到本地存在旧作者目录，正在迁移: {found_old_folder} -> {new_folder_name} ...")
+        os.makedirs(os.path.dirname(new_folder_path), exist_ok=True)
         os.rename(old_folder_path, new_folder_path)
         logger.info(f"本地文件夹迁移重命名成功!")
     except Exception as e:
@@ -323,10 +326,13 @@ def build_folder_migration_plan(session, pattern: str | None = None) -> dict:
         current_folder = _find_author_folder(session, user, save_dir)
         if pattern:
             sanitized_nickname = sanitize_filename(user.nickname)
+            user_platform = user.platform or "douyin"
+            clean_uid = user.uid[len(user_platform) + 1:] if user.uid.startswith(f"{user_platform}_") else user.uid
             target_folder = pattern.replace("{nickname}", sanitized_nickname)\
-                                   .replace("{uid}", user.uid)\
-                                   .replace("{platform}", user.platform or "douyin")
-            target_folder = sanitize_filename(target_folder)
+                                   .replace("{uid}", clean_uid)\
+                                   .replace("{platform}", user_platform)
+            parts = [sanitize_filename(part) for part in target_folder.replace("\\", "/").split("/") if part]
+            target_folder = os.path.join(*parts) if parts else "unknown"
         else:
             target_folder = get_author_folder_name(user.nickname, user.uid, user.platform or "douyin", session)
 
@@ -397,6 +403,7 @@ def run_folder_migration(session, task_id: str | None = None) -> dict:
             continue
 
         try:
+            os.makedirs(os.path.dirname(item["to_path"]), exist_ok=True)
             os.rename(item["from_path"], item["to_path"])
             awemes = session.query(Aweme).filter_by(uid=item["uid"]).all()
             old_prefix = os.path.normpath(item["from_path"])

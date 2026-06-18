@@ -966,11 +966,11 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono">
                                                 <div className="bg-black/30 p-2.5 rounded-xl border border-white/5">
                                                     <p className="text-white/30 text-[9px] uppercase tracking-wider mb-1">当前目录</p>
-                                                    <p className="text-white/60 truncate" title={item.from_folder}>{item.from_folder}</p>
+                                                    <p className="text-white/60 break-all" title={item.from_folder}>{item.from_folder}</p>
                                                 </div>
                                                 <div className={`p-2.5 rounded-xl border ${item.conflict ? 'bg-red-500/5 border-red-500/10' : 'bg-primary/5 border-primary/10'}`}>
                                                     <p className={`text-[9px] uppercase tracking-wider mb-1 ${item.conflict ? 'text-red-400/40' : 'text-primary/40'}`}>目标目录</p>
-                                                    <p className={`truncate font-bold ${item.conflict ? 'text-red-300' : 'text-primary'}`} title={item.to_folder}>{item.to_folder}</p>
+                                                    <p className={`break-all font-bold ${item.conflict ? 'text-red-300' : 'text-primary'}`} title={item.to_folder}>{item.to_folder}</p>
                                                 </div>
                                             </div>
                                         </div>
