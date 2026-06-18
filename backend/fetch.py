@@ -3,6 +3,8 @@ import time
 from loguru import logger
 
 from config import config
+from utils import get_url_platform
+from kuaishou import fetch_kuaishou_video_profile
 
 API_URL = config.FETCH_USER_POST_API
 PROFILE_API = config.USER_PROFILE_API
@@ -13,6 +15,9 @@ def fetch_user_profile(sec_user_id: str, platform: str = "douyin") -> dict:
     获取用户信息，支持 Douyin 和 TikTok
     """
     headers = {"accept": "application/json"}
+
+    if platform == "kuaishou":
+        raise NotImplementedError("快手用户资料抓取暂未接入")
     
     if platform == "tiktok":
         # 对于 TikTok，如果没有专门的 profile 接口，可以从 fetch_user_post 中获取第一个作品的作者信息
@@ -59,6 +64,9 @@ def fetch_all_awemes(sec_user_id: str, platform: str = "douyin", latest_create_t
     """
     抓取用户作品，支持 Douyin 和 TikTok
     """
+    if platform == "kuaishou":
+        raise NotImplementedError("快手作者作品列表抓取暂未接入")
+
     if platform == "tiktok":
         return fetch_tiktok_all_awemes(sec_user_id, latest_create_time, count, max_fetch)
     
@@ -195,6 +203,9 @@ def fetch_video_profile(share_url: str, minimal: bool = True) -> dict:
     :param minimal: 是否只返回 minimal 数据
     :return: dict，视频 profile 数据
     """
+    if get_url_platform(share_url) == "kuaishou":
+        return fetch_kuaishou_video_profile(share_url)
+
     params = {
         "url": share_url,
         "minimal": "true" if minimal else "false"

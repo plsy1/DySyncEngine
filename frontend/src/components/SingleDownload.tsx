@@ -8,6 +8,10 @@ interface SingleDownloadProps {
     onNotify: (msg: string, type: 'success' | 'error') => void;
 }
 
+const getErrorDetail = (err: unknown) => {
+    return (err as { response?: { data?: { detail?: string } } }).response?.data?.detail;
+};
+
 export const SingleDownload = ({ onNotify }: SingleDownloadProps) => {
     const [url, setUrl] = useState('');
     const [loading, setLoading] = useState(false);
@@ -29,7 +33,7 @@ export const SingleDownload = ({ onNotify }: SingleDownloadProps) => {
             const data = await api.parseVideo(url);
             setVideoData(data);
         } catch (err) {
-            onNotify('解析视频失败，请检查链接是否正确', 'error');
+            onNotify(getErrorDetail(err) || '解析视频失败，请检查链接是否正确', 'error');
         } finally {
             setLoading(false);
         }
@@ -42,7 +46,7 @@ export const SingleDownload = ({ onNotify }: SingleDownloadProps) => {
             await api.downloadShareUrl(url);
             onNotify('视频已成功保存到服务器', 'success');
         } catch (err) {
-            onNotify('保存失败', 'error');
+            onNotify(getErrorDetail(err) || '保存失败', 'error');
         } finally {
             setSaving(false);
         }
@@ -57,7 +61,7 @@ export const SingleDownload = ({ onNotify }: SingleDownloadProps) => {
     };
 
     return (
-        <div className="glass-card mb-12">
+        <div className="glass-card h-full">
             <div className="flex items-center gap-3 mb-6">
                 <Sparkles className="text-primary" size={20} />
                 <h2 className="text-xl font-bold">单视频下载 / 解析</h2>
@@ -70,7 +74,7 @@ export const SingleDownload = ({ onNotify }: SingleDownloadProps) => {
                         type="text"
                         value={url}
                         onChange={(e) => setUrl(e.target.value)}
-                        placeholder="粘贴抖音视频分享链接..."
+                        placeholder="粘贴抖音/TikTok/快手 视频分享链接..."
                         className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-11 pr-4 outline-none focus:border-primary/50 transition-all text-sm"
                     />
                 </div>
@@ -108,8 +112,8 @@ export const SingleDownload = ({ onNotify }: SingleDownloadProps) => {
                                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${videoData.aweme_type === 68 ? 'bg-amber-500/20 text-amber-500' : 'bg-blue-500/20 text-blue-500'}`}>
                                             {videoData.aweme_type === 68 ? '图文 / Note' : '视频 / Video'}
                                         </span>
-                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${videoData.platform === 'tiktok' ? 'bg-black text-white border border-white/20' : 'bg-red-500/20 text-red-500'}`}>
-                                            {videoData.platform === 'tiktok' ? 'TikTok' : 'Douyin'}
+                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${videoData.platform === 'tiktok' ? 'bg-black text-white border border-white/20' : videoData.platform === 'kuaishou' ? 'bg-orange-500/20 text-orange-400' : 'bg-red-500/20 text-red-500'}`}>
+                                            {videoData.platform === 'tiktok' ? 'TikTok' : videoData.platform === 'kuaishou' ? '快手' : 'Douyin'}
                                         </span>
                                     </div>
                                     <h3 className="text-lg font-bold mb-2 line-clamp-3">{videoData.desc || '（暂无描述）'}</h3>

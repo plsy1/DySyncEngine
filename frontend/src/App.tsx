@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Search, RefreshCw, LogOut, Settings as SettingsIcon, Loader2, Activity, Terminal, Play, MoreHorizontal } from 'lucide-react';
+import { Plus, Search, RefreshCw, LogOut, Settings as SettingsIcon, Loader2, Activity, Terminal, Play, MoreHorizontal, GripVertical, Users, Link as LinkIcon } from 'lucide-react';
 import type { User, ToastType, Task } from './types';
 import * as api from './api';
 import { UserCard } from './components/UserCard';
@@ -23,7 +23,21 @@ type VersionState = {
   error: boolean;
 };
 
+type PlatformTab = 'all' | 'douyin' | 'tiktok' | 'kuaishou';
+
 const normalizeVersion = (version: string) => version.trim().replace(/^v/i, '');
+
+const getUserPlatform = (user: User): Exclude<PlatformTab, 'all'> => {
+  if (user.platform === 'tiktok') return 'tiktok';
+  if (user.platform === 'kuaishou') return 'kuaishou';
+  return 'douyin';
+};
+
+const getPlatformLabel = (platform: string) => {
+  if (platform === 'tiktok') return 'TikTok';
+  if (platform === 'kuaishou') return '快手';
+  return '抖音';
+};
 
 const compareVersions = (current: string, latest: string) => {
   const currentParts = normalizeVersion(current).split(/[.-]/).map(part => Number.parseInt(part, 10) || 0);
@@ -70,7 +84,7 @@ function App() {
     return () => mediaQuery.removeEventListener('change', handleSystemThemeChange);
   }, []);
 
-  const [view, setView] = useState<'dashboard' | 'settings' | 'tasks' | 'logs' | 'player'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'subscriptions' | 'settings' | 'tasks' | 'logs' | 'player'>('dashboard');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [activeTasks, setActiveTasks] = useState<Task[]>([]);
@@ -78,7 +92,15 @@ function App() {
   const [newUserUrl, setNewUserUrl] = useState('');
   const [maxFetch, setMaxFetch] = useState<number>(0);
   const [search, setSearch] = useState('');
+  const [platformTab, setPlatformTab] = useState<PlatformTab>(() => {
+    const savedTab = localStorage.getItem('dashboard_platform_tab');
+    return savedTab === 'douyin' || savedTab === 'tiktok' || savedTab === 'kuaishou' ? savedTab : 'all';
+  });
   const [currentPage, setCurrentPage] = useState(1);
+  const [isSortingUsers, setIsSortingUsers] = useState(false);
+  const [sortDraftUsers, setSortDraftUsers] = useState<User[]>([]);
+  const [draggingUserUid, setDraggingUserUid] = useState<string | null>(null);
+  const [savingUserOrder, setSavingUserOrder] = useState(false);
   const [versionState, setVersionState] = useState<VersionState>({
     latest: null,
     hasUpdate: false,
@@ -88,7 +110,11 @@ function App() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search]);
+  }, [search, platformTab]);
+
+  useEffect(() => {
+    localStorage.setItem('dashboard_platform_tab', platformTab);
+  }, [platformTab]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -212,7 +238,8 @@ function App() {
       // 立即拉取一次列表，以便看到新创建的“占位”卡片
       loadUsers();
     } catch (err) {
-      showToast('任务开启失败', 'error');
+      const detail = (err as { response?: { data?: { detail?: string } } }).response?.data?.detail;
+      showToast(detail || '任务开启失败', 'error');
     }
   };
 
@@ -258,6 +285,7 @@ function App() {
     try {
       await api.deleteUser(modal.user.uid);
       setUsers(prev => prev.filter(u => u.uid !== modal.user?.uid));
+      setSortDraftUsers(prev => prev.filter(u => u.uid !== modal.user?.uid));
       showToast('账号及其数据已彻底删除');
       setModal({ isOpen: false, user: null });
     } catch (err) {
@@ -265,10 +293,91 @@ function App() {
     }
   };
 
-  const filteredUsers = users.filter(u =>
-    u.nickname?.toLowerCase().includes(search.toLowerCase()) ||
-    u.uid.includes(search)
+  const platformCounts = users.reduce<Record<PlatformTab, number>>((counts, user) => {
+    counts.all += 1;
+    counts[getUserPlatform(user)] += 1;
+    return counts;
+  }, { all: 0, douyin: 0, tiktok: 0, kuaishou: 0 });
+
+  const platformTabs: Array<{ id: PlatformTab; label: string; count: number }> = [
+    { id: 'all', label: '全部', count: platformCounts.all },
+    { id: 'douyin', label: '抖音', count: platformCounts.douyin },
+    { id: 'tiktok', label: 'TikTok', count: platformCounts.tiktok },
+    { id: 'kuaishou', label: '快手', count: platformCounts.kuaishou },
+  ];
+
+  const platformUsers = platformTab === 'all'
+    ? users
+    : users.filter(user => getUserPlatform(user) === platformTab);
+
+  const normalizedSearch = search.trim().toLowerCase();
+  const filteredUsers = platformUsers.filter(u =>
+    !normalizedSearch ||
+    u.nickname?.toLowerCase().includes(normalizedSearch) ||
+    u.uid.toLowerCase().includes(normalizedSearch)
   );
+
+  const startUserSorting = () => {
+    setSortDraftUsers(filteredUsers);
+    setIsSortingUsers(true);
+  };
+
+  const cancelUserSorting = () => {
+    setSortDraftUsers([]);
+    setDraggingUserUid(null);
+    setIsSortingUsers(false);
+  };
+
+  const moveSortDraftUser = (dragUid: string, targetUid: string) => {
+    if (dragUid === targetUid) return;
+    setSortDraftUsers(prev => {
+      const dragIndex = prev.findIndex(user => user.uid === dragUid);
+      const targetIndex = prev.findIndex(user => user.uid === targetUid);
+      if (dragIndex < 0 || targetIndex < 0) return prev;
+
+      const next = [...prev];
+      const [dragged] = next.splice(dragIndex, 1);
+      next.splice(targetIndex, 0, dragged);
+      return next;
+    });
+  };
+
+  const saveUserSorting = async () => {
+    const filteredUidSet = new Set(sortDraftUsers.map(user => user.uid));
+    const sortedQueue = [...sortDraftUsers];
+    const orderedUsers = users.map(user => (
+      filteredUidSet.has(user.uid) ? sortedQueue.shift() ?? user : user
+    ));
+
+    setSavingUserOrder(true);
+    try {
+      await api.reorderUsers(orderedUsers.map(user => user.uid));
+      setUsers(orderedUsers);
+      setCurrentPage(1);
+      setIsSortingUsers(false);
+      setDraggingUserUid(null);
+      setSortDraftUsers([]);
+      showToast('作者排序已保存');
+    } catch (err) {
+      showToast('保存排序失败', 'error');
+    } finally {
+      setSavingUserOrder(false);
+    }
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearch(value);
+    if (isSortingUsers) {
+      cancelUserSorting();
+    }
+  };
+
+  const handlePlatformTabChange = (tab: PlatformTab) => {
+    setPlatformTab(tab);
+    if (isSortingUsers) {
+      cancelUserSorting();
+    }
+  };
 
   const handleLogout = async () => {
     try {
@@ -315,6 +424,7 @@ function App() {
 
         <div className="flex-1 px-3 space-y-2">
           <NavButton active={view === 'dashboard'} onClick={() => setView('dashboard')} icon={<Search size={20} />} label="发现 & 下载" />
+          <NavButton active={view === 'subscriptions'} onClick={() => setView('subscriptions')} icon={<Users size={20} />} label="订阅中" />
           <NavButton active={view === 'tasks'} onClick={() => setView('tasks')} icon={<Activity size={20} />} label="活跃任务" />
           <NavButton active={view === 'logs'} onClick={() => setView('logs')} icon={<Terminal size={20} />} label="审计日志" />
           <NavButton active={view === 'player'} onClick={() => setView('player')} icon={<Play size={20} />} label="Emby 播放" />
@@ -358,60 +468,62 @@ function App() {
                 <Tasks onNotify={showToast} activeTasks={activeTasks} />
               ) : view === 'logs' ? (
                 <Logs />
-              ) : (
+              ) : view === 'subscriptions' ? (
                 <div className="space-y-12">
                   <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                     <div>
-                      <h2 className="text-4xl font-black tracking-tight text-white mb-2">主控制台</h2>
-                      <p className="text-white/30 text-sm font-medium">当前监控 {users.length} 个账号，共有 {activeTasks.length} 个活跃任务</p>
+                      <h2 className="text-4xl font-black tracking-tight text-white mb-2">订阅中</h2>
+                      <p className="text-white/30 text-sm font-medium">
+                        当前显示 {platformUsers.length} / {users.length} 个账号，共有 {activeTasks.length} 个活跃任务
+                      </p>
                     </div>
-                    <div className="flex gap-4">
+                    <div className="flex flex-col sm:flex-row gap-3">
                         <div className="relative w-full lg:w-80">
                           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" size={18} />
                           <input
                             type="text"
                             value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                            placeholder="搜索..."
+                            onChange={(e) => handleSearchChange(e.target.value)}
+                            placeholder="搜索当前平台..."
                             className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 pl-12 pr-4 outline-none focus:border-primary/50 transition-all font-medium text-sm"
                           />
                         </div>
+                        <button
+                          onClick={isSortingUsers ? cancelUserSorting : startUserSorting}
+                          disabled={filteredUsers.length <= 1 || savingUserOrder}
+                          className={`px-5 py-3 rounded-2xl border transition-all text-xs font-black whitespace-nowrap ${
+                            isSortingUsers
+                              ? 'bg-white/10 border-white/15 text-white'
+                              : 'bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/10'
+                          } disabled:opacity-30 disabled:cursor-not-allowed`}
+                        >
+                          {isSortingUsers ? '取消排序' : '排序作者'}
+                      </button>
                     </div>
                   </header>
 
-                  <SingleDownload onNotify={showToast} />
-
-                  {/* Quick Add Form Section */}
-                  <form onSubmit={handleAddUser} className="relative group p-1 rounded-3xl bg-gradient-to-r from-primary/20 to-transparent">
-                    <div className="bg-[#0b0b0b] rounded-[22px] p-6 flex flex-col md:flex-row gap-4 items-center">
-                      <div className="flex-1 w-full relative">
-                        <Plus className="absolute left-4 top-1/2 -translate-y-1/2 text-primary" size={20} />
-                        <input
-                          type="text"
-                          value={newUserUrl}
-                          onChange={(e) => setNewUserUrl(e.target.value)}
-                          placeholder="粘贴抖音主页链接以开始自动同步..."
-                          className="w-full bg-transparent py-2 pl-12 pr-4 outline-none text-white font-medium placeholder:text-white/20"
-                        />
-                      </div>
-                      <div className="w-full md:w-40 relative md:border-l border-white/10 md:pl-4">
-                        <div className="flex items-center gap-2">
-                          <span className="text-white/30 text-xs font-bold uppercase lg:hidden">数量:</span>
-                          <input
-                            type="number"
-                            value={maxFetch || ''}
-                            onChange={(e) => setMaxFetch(parseInt(e.target.value) || 0)}
-                            placeholder="数量 (0=全量)"
-                            className="w-full bg-transparent py-2 outline-none text-white font-medium placeholder:text-white/20"
-                            title="最大抓取作品数量，0 表示抓取全部"
-                          />
-                        </div>
-                      </div>
-                      <button type="submit" className="w-full md:w-auto px-8 py-3 bg-primary text-black font-black rounded-xl hover:scale-105 active:scale-95 transition-all shadow-xl shadow-primary/20">
-                        添加作者
+                  <div className="flex flex-wrap items-center gap-2">
+                    {platformTabs.map(tab => (
+                      <button
+                        key={tab.id}
+                        onClick={() => handlePlatformTabChange(tab.id)}
+                        className={`h-10 px-4 rounded-xl border text-xs font-black transition-all flex items-center gap-2 ${
+                          platformTab === tab.id
+                            ? 'bg-primary text-black border-primary shadow-lg shadow-primary/15'
+                            : 'bg-white/5 text-white/50 border-white/10 hover:text-white hover:bg-white/10'
+                        }`}
+                      >
+                        <span>{tab.label}</span>
+                        <span className={`min-w-6 px-1.5 py-0.5 rounded-full text-[10px] ${
+                          platformTab === tab.id
+                            ? 'bg-black/15 text-black'
+                            : 'bg-white/10 text-white/40'
+                        }`}>
+                          {tab.count}
+                        </span>
                       </button>
-                    </div>
-                  </form>
+                    ))}
+                  </div>
 
                   {/* User Grid - RECLAIMING THE SIDES */}
                   <section>
@@ -429,43 +541,86 @@ function App() {
 
                           return (
                             <>
-                              <motion.div
-                                layout
-                                className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 3xl:grid-cols-5 4xl:grid-cols-6 gap-6"
-                              >
-                                <AnimatePresence mode="popLayout">
-                                  {paginatedUsers.map(user => (
-                                    <UserCard
+                              {isSortingUsers && (
+                                <div className="mb-5 flex flex-col lg:flex-row lg:items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-5 py-4">
+                                  <div>
+                                    <p className="text-sm font-black text-white">排序模式</p>
+                                    <p className="text-xs text-white/40 mt-1">当前显示本平台全部匹配作者，拖动卡片调整顺序，保存后分页按新顺序展示。</p>
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={cancelUserSorting}
+                                      disabled={savingUserOrder}
+                                      className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white/60 hover:text-white transition-all text-xs font-black disabled:opacity-40"
+                                    >
+                                      取消
+                                    </button>
+                                    <button
+                                      onClick={saveUserSorting}
+                                      disabled={savingUserOrder}
+                                      className="px-5 py-2.5 rounded-xl bg-primary text-black transition-all text-xs font-black disabled:opacity-40"
+                                    >
+                                      {savingUserOrder ? '保存中...' : '保存排序'}
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+
+                              {isSortingUsers ? (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+                                  {sortDraftUsers.map(user => (
+                                    <SortUserRow
                                       key={user.uid}
                                       user={user}
-                                      task={activeTasks.find(t => t.target_id === user.uid || t.target_id === user.sec_user_id)}
-                                      onRefresh={handleRefresh}
-                                      onToggleAutoUpdate={handleToggleAuto}
-                                      onPreferenceChange={async (uid, v, n, tgS, tgC) => {
-                                        try {
-                                          await api.updateUserPreference(uid, v, n, tgS, tgC);
-                                          setUsers(prev => prev.map(u => u.uid === uid ? { 
-                                            ...u, 
-                                            download_video_override: v, 
-                                            download_note_override: n,
-                                            tg_sync_enabled: tgS,
-                                            tg_target_chat: tgC
-                                          } : u));
-                                          showToast('个人偏好设置已更新');
-                                        } catch (err) {
-                                          showToast('更新失败', 'error');
-                                        }
+                                      index={sortDraftUsers.findIndex(item => item.uid === user.uid)}
+                                      isDragging={draggingUserUid === user.uid}
+                                      onDragStart={() => setDraggingUserUid(user.uid)}
+                                      onDragEnd={() => setDraggingUserUid(null)}
+                                      onDragOver={() => {
+                                        if (draggingUserUid) moveSortDraftUser(draggingUserUid, user.uid);
                                       }}
-                                      onDelete={(u) => setModal({ isOpen: true, user: u })}
-                                      onTgSync={handleTgSync}
-                                      onMarkTgExported={handleMarkTgExported}
                                     />
                                   ))}
-                                </AnimatePresence>
-                              </motion.div>
+                                </div>
+                              ) : (
+                                <motion.div
+                                  layout
+                                  className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 3xl:grid-cols-5 4xl:grid-cols-6 gap-4"
+                                >
+                                  <AnimatePresence mode="popLayout">
+                                    {paginatedUsers.map(user => (
+                                      <UserCard
+                                        key={user.uid}
+                                        user={user}
+                                        task={activeTasks.find(t => t.target_id === user.uid || t.target_id === user.sec_user_id)}
+                                        onRefresh={handleRefresh}
+                                        onToggleAutoUpdate={handleToggleAuto}
+                                        onPreferenceChange={async (uid, v, n, tgS, tgC) => {
+                                          try {
+                                            await api.updateUserPreference(uid, v, n, tgS, tgC);
+                                            setUsers(prev => prev.map(u => u.uid === uid ? {
+                                              ...u,
+                                              download_video_override: v,
+                                              download_note_override: n,
+                                              tg_sync_enabled: tgS,
+                                              tg_target_chat: tgC
+                                            } : u));
+                                            showToast('个人偏好设置已更新');
+                                          } catch (err) {
+                                            showToast('更新失败', 'error');
+                                          }
+                                        }}
+                                        onDelete={(u) => setModal({ isOpen: true, user: u })}
+                                        onTgSync={handleTgSync}
+                                        onMarkTgExported={handleMarkTgExported}
+                                      />
+                                    ))}
+                                  </AnimatePresence>
+                                </motion.div>
+                              )}
 
                               {/* Modern Pagination Controls */}
-                              {totalPages > 1 && (
+                              {totalPages > 1 && !isSortingUsers && (
                                 <div className="flex items-center justify-center gap-2 mt-10 pb-24 md:pb-0">
                                   <button
                                     onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
@@ -524,12 +679,117 @@ function App() {
                     ) : (
                       <div className="text-center py-40 border-2 border-dashed border-white/5 rounded-[40px] bg-white/[0.01]">
                         <p className="text-white/20 font-bold text-xl mb-2">
-                          {search ? '空空如也' : '尚未开始同步'}
+                          {search || platformTab !== 'all' ? '空空如也' : '尚未开始同步'}
                         </p>
-                        <p className="text-white/10 text-sm">{search ? '尝试换个关键词搜索' : '请在上方粘贴作者主页链接'}</p>
+                        <p className="text-white/10 text-sm">
+                          {search || platformTab !== 'all' ? '尝试换个平台或关键词搜索' : '请到发现下载页添加作者'}
+                        </p>
                       </div>
                     )}
                   </section>
+                </div>
+              ) : (
+                <div className="space-y-8">
+                  <header>
+                    <h2 className="text-4xl font-black tracking-tight text-white mb-2">发现 & 下载</h2>
+                    <p className="text-white/30 text-sm font-medium">解析单条作品，或粘贴作者主页加入订阅同步。</p>
+                  </header>
+
+                  <form onSubmit={handleAddUser} className="glass-card">
+                    <div className="flex items-center gap-3 mb-5">
+                      <Plus className="text-primary" size={20} />
+                      <h3 className="text-xl font-bold">添加订阅作者</h3>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_180px_auto] gap-4 items-end">
+                      <div>
+                        <label className="block text-xs font-black text-white/35 uppercase tracking-wider mb-2">
+                          作者主页
+                        </label>
+                        <div className="relative">
+                          <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" size={18} />
+                          <input
+                            type="text"
+                            value={newUserUrl}
+                            onChange={(e) => setNewUserUrl(e.target.value)}
+                            placeholder="抖音/TikTok/快手 主页链接"
+                            className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-11 pr-4 outline-none focus:border-primary/50 transition-all text-sm font-medium placeholder:text-white/20"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-black text-white/35 uppercase tracking-wider mb-2">
+                          初次抓取数量
+                        </label>
+                        <input
+                          type="number"
+                          value={maxFetch || ''}
+                          onChange={(e) => setMaxFetch(parseInt(e.target.value) || 0)}
+                          placeholder="0 = 全量"
+                          className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 outline-none focus:border-primary/50 transition-all text-sm font-medium placeholder:text-white/20"
+                          title="最大抓取作品数量，0 表示抓取全部"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={!newUserUrl}
+                        className="w-full lg:w-auto px-8 py-3 bg-primary text-black font-black rounded-xl hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-primary/20 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
+                      >
+                        添加作者
+                      </button>
+                    </div>
+                  </form>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)] gap-6 items-start">
+                    <SingleDownload onNotify={showToast} />
+
+                    <aside className="space-y-6">
+                      <div className="glass-card">
+                        <div className="flex items-center gap-3 mb-5">
+                          <Activity className="text-primary" size={20} />
+                          <h3 className="text-xl font-bold">同步概览</h3>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <DashboardStat label="订阅作者" value={users.length} />
+                          <DashboardStat label="活跃任务" value={activeTasks.length} />
+                          <DashboardStat label="抖音" value={platformCounts.douyin} />
+                          <DashboardStat label="TikTok" value={platformCounts.tiktok} />
+                          <DashboardStat label="快手" value={platformCounts.kuaishou} />
+                        </div>
+                      </div>
+
+                      <div className="glass-card">
+                        <div className="flex items-center justify-between gap-3 mb-5">
+                          <h3 className="text-xl font-bold">进行中</h3>
+                          <span className="text-xs font-black text-white/25 tabular-nums">{activeTasks.length}</span>
+                        </div>
+                        {activeTasks.length > 0 ? (
+                          <div className="space-y-3">
+                            {activeTasks.slice(0, 4).map(task => (
+                              <div key={task.id} className="rounded-2xl border border-white/5 bg-white/[0.03] p-3">
+                                <div className="flex items-center justify-between gap-3 mb-2">
+                                  <span className="truncate text-sm font-bold text-white/80">{task.target_id}</span>
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-primary">{task.status}</span>
+                                </div>
+                                <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full bg-primary transition-all"
+                                    style={{ width: `${Math.max(0, Math.min(100, task.progress))}%` }}
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-4 py-8 text-center text-sm font-bold text-white/20">
+                            暂无活跃任务
+                          </div>
+                        )}
+                      </div>
+                    </aside>
+                  </div>
                 </div>
               )}
             </motion.div>
@@ -564,10 +824,10 @@ function App() {
         style={{ marginBottom: 'max(var(--sab), 16px)' }}
         className="md:hidden fixed bottom-0 left-6 right-6 h-16 bg-white/5 backdrop-blur-xl border border-white/20 ring-1 ring-inset ring-white/10 z-[60] flex items-center justify-around px-2 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.2)]"
       >
-        <MobileNavButton active={view === 'dashboard'} onClick={() => { setView('dashboard'); setShowMoreMenu(false); }} icon={<Search size={22} />} label="首页" />
+        <MobileNavButton active={view === 'dashboard'} onClick={() => { setView('dashboard'); setShowMoreMenu(false); }} icon={<Search size={22} />} label="发现" />
+        <MobileNavButton active={view === 'subscriptions'} onClick={() => { setView('subscriptions'); setShowMoreMenu(false); }} icon={<Users size={22} />} label="订阅" />
         <MobileNavButton active={view === 'tasks'} onClick={() => { setView('tasks'); setShowMoreMenu(false); }} icon={<Activity size={22} />} label="任务" />
         <MobileNavButton active={view === 'player'} onClick={() => { setView('player'); setShowMoreMenu(false); }} icon={<Play size={22} />} label="播放" />
-        <MobileNavButton active={view === 'settings'} onClick={() => { setView('settings'); setShowMoreMenu(false); }} icon={<SettingsIcon size={22} />} label="配置" />
         <MobileNavButton 
           active={showMoreMenu} 
           onClick={() => setShowMoreMenu(!showMoreMenu)} 
@@ -596,6 +856,19 @@ function App() {
             >
               <div className="w-12 h-1 bg-white/10 rounded-full mx-auto mb-8" />
               <div className="grid grid-cols-1 gap-2">
+                <button
+                  onClick={() => { setView('settings'); setShowMoreMenu(false); }}
+                  className="flex items-center gap-4 p-4 rounded-2xl hover:bg-white/5 transition-all text-left"
+                >
+                  <div className="p-3 rounded-xl bg-primary/10 text-primary">
+                    <SettingsIcon size={20} />
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold text-white">全局配置</div>
+                    <div className="text-xs text-white/40">调整下载、同步和媒体库设置</div>
+                  </div>
+                </button>
+
                 <button
                   onClick={() => { setView('logs'); setShowMoreMenu(false); }}
                   className="flex items-center gap-4 p-4 rounded-2xl hover:bg-white/5 transition-all text-left"
@@ -664,6 +937,71 @@ function VersionBadge({ versionState }: { versionState: VersionState }) {
         )}
       </span>
     </a>
+  );
+}
+
+function DashboardStat({ label, value }: { label: string, value: number }) {
+  return (
+    <div className="rounded-2xl border border-white/5 bg-white/[0.035] p-4">
+      <div className="text-2xl font-black tabular-nums text-white">{value}</div>
+      <div className="mt-1 text-[10px] font-black uppercase tracking-wider text-white/30">{label}</div>
+    </div>
+  );
+}
+
+function SortUserRow({
+  user,
+  index,
+  isDragging,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+}: {
+  user: User,
+  index: number,
+  isDragging: boolean,
+  onDragStart: () => void,
+  onDragEnd: () => void,
+  onDragOver: () => void,
+}) {
+  return (
+    <div
+      draggable
+      onDragStart={(event) => {
+        event.dataTransfer.effectAllowed = 'move';
+        onDragStart();
+      }}
+      onDragEnd={onDragEnd}
+      onDragOver={(event) => {
+        event.preventDefault();
+        onDragOver();
+      }}
+      className={`flex items-center gap-3 rounded-2xl border px-3 py-2.5 transition-all cursor-grab active:cursor-grabbing ${
+        isDragging
+          ? 'border-primary/40 bg-primary/10 opacity-60 scale-[0.98]'
+          : 'border-white/5 bg-white/[0.035] hover:bg-white/[0.06]'
+      }`}
+    >
+      <div className="w-8 text-center text-xs font-black text-white/25 tabular-nums shrink-0">
+        {index + 1}
+      </div>
+      <img
+        src={user.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${user.nickname}`}
+        alt={user.nickname || ''}
+        className="w-10 h-10 rounded-xl object-cover ring-1 ring-white/10 shrink-0"
+      />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-black text-white">{user.nickname || '未命名'}</p>
+        <div className="mt-1 flex items-center gap-2 text-[10px] font-mono uppercase tracking-wider text-white/30">
+          <span>{getPlatformLabel(getUserPlatform(user))}</span>
+          <span>•</span>
+          <span className="truncate">{user.uid}</span>
+        </div>
+      </div>
+      <div className="text-white/25 shrink-0">
+        <GripVertical size={18} />
+      </div>
+    </div>
   );
 }
 

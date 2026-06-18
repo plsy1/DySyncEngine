@@ -18,6 +18,12 @@ interface UserCardProps {
     onMarkTgExported?: (uid: string) => void;
 }
 
+const getPlatformLabel = (platform: string) => {
+    if (platform === 'tiktok') return 'TikTok';
+    if (platform === 'kuaishou') return '快手';
+    return '抖音';
+};
+
 export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, onPreferenceChange, onTgSync, onMarkTgExported }: UserCardProps) => {
     const [isPending, setIsPending] = useState(false);
     const [isMarking, setIsMarking] = useState(false);
@@ -31,7 +37,9 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
 
     const profileUrl = user.platform === 'tiktok'
         ? (user.uid ? `https://www.tiktok.com/@${user.uid}` : null)
-        : (user.sec_user_id ? `https://www.douyin.com/user/${user.sec_user_id}` : null);
+        : user.platform === 'kuaishou'
+            ? null
+            : (user.sec_user_id ? `https://www.douyin.com/user/${user.sec_user_id}` : null);
 
     const handleRefresh = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -56,7 +64,7 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
 
             {/* Header Section */}
-            <div className="p-5 flex items-start gap-4">
+            <div className="p-4 flex items-start gap-3">
                 <div className="relative shrink-0">
                     {profileUrl ? (
                         <a 
@@ -69,14 +77,14 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
                             <img
                                 src={user.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${user.nickname}`}
                                 alt={user.nickname || ''}
-                                className="w-14 h-14 rounded-2xl object-cover ring-2 ring-white/5 group-hover:ring-primary/40 transition-all duration-500 shadow-xl"
+                                className="w-12 h-12 rounded-xl object-cover ring-2 ring-white/5 group-hover:ring-primary/40 transition-all duration-500 shadow-xl"
                             />
                         </a>
                     ) : (
                         <img
                             src={user.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${user.nickname}`}
                             alt={user.nickname || ''}
-                            className="w-14 h-14 rounded-2xl object-cover ring-2 ring-white/5 group-hover:ring-primary/40 transition-all duration-500 shadow-xl"
+                            className="w-12 h-12 rounded-xl object-cover ring-2 ring-white/5 group-hover:ring-primary/40 transition-all duration-500 shadow-xl"
                         />
                     )}
                     
@@ -100,9 +108,9 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
                     )}
                 </div>
 
-                <div className="flex-1 min-w-0 pt-0.5">
+                <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-0.5">
-                        <h3 className="text-base font-bold text-white truncate group-hover:text-primary transition-colors">
+                        <h3 className="text-sm font-bold text-white truncate group-hover:text-primary transition-colors">
                             {profileUrl ? (
                                 <a href={profileUrl} target="_blank" rel="noopener noreferrer" className="hover:underline">
                                     {user.nickname || '未命名'}
@@ -132,7 +140,7 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
                         </div>
                     </div>
                     <div className="flex items-center gap-2 text-[10px] font-medium font-mono text-white/30 uppercase tracking-wider">
-                        <span>{user.platform}</span>
+                        <span>{getPlatformLabel(user.platform)}</span>
                         <span>•</span>
                         <span className="truncate">{user.uid}</span>
                     </div>
@@ -140,8 +148,8 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
             </div>
 
             {/* Content Body */}
-            <div className="px-5 pb-5 flex-1 flex flex-col gap-4">
-                <p className="text-xs text-white/50 leading-relaxed line-clamp-2 italic">
+            <div className="px-4 pb-4 flex-1 flex flex-col gap-3">
+                <p className="text-[11px] text-white/50 leading-relaxed line-clamp-2 italic">
                     {user.signature || '该作者很懒，什么都没写...'}
                 </p>
 
@@ -157,7 +165,7 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
                         <div className="flex gap-2">
                             <button
                                 onClick={handleRefresh}
-                                className="flex-1 h-10 flex items-center justify-center gap-2 rounded-xl bg-white/5 border border-white/5 hover:bg-primary/20 hover:border-primary/30 text-white/90 text-xs font-bold transition-all active:scale-[0.97]"
+                                className="flex-1 h-9 flex items-center justify-center gap-2 rounded-xl bg-white/5 border border-white/5 hover:bg-primary/20 hover:border-primary/30 text-white/90 text-xs font-bold transition-all active:scale-[0.97]"
                             >
                                 <RefreshCw size={14} className={isPending ? "animate-spin" : ""} />
                                 同步内容
@@ -165,7 +173,7 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
                             <button
                                 onClick={handleTgSync}
                                 title="手动推送至 Telegram"
-                                className="w-10 h-10 flex items-center justify-center rounded-xl bg-blue-500/10 border border-blue-500/10 hover:bg-blue-500/20 hover:border-blue-500/30 text-blue-400 transition-all active:scale-[0.97]"
+                                className="w-9 h-9 flex items-center justify-center rounded-xl bg-blue-500/10 border border-blue-500/10 hover:bg-blue-500/20 hover:border-blue-500/30 text-blue-400 transition-all active:scale-[0.97]"
                             >
                                 <Send size={16} />
                             </button>
@@ -191,7 +199,7 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
             />
 
             {/* Footer Status */}
-            <div className="px-5 py-3 bg-white/2 border-t border-white/5 flex items-center justify-between text-[10px] font-medium text-white/20 tracking-tighter uppercase">
+            <div className="px-4 py-2.5 bg-white/2 border-t border-white/5 flex items-center justify-between text-[10px] font-medium text-white/20 tracking-tighter uppercase">
                 <span>Last Activity</span>
                 <span className="font-mono">{dayjs(user.updated_at * 1000).format('MM-DD HH:mm')}</span>
             </div>
@@ -226,7 +234,7 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
                                     </button>
                                 </div>
                                 <div className="flex items-center gap-2 text-[10px] font-medium font-mono text-white/30 uppercase tracking-wider mb-6">
-                                    <span>{user.platform}</span>
+                                    <span>{getPlatformLabel(user.platform)}</span>
                                     <span>•</span>
                                     <span className="truncate">{user.uid}</span>
                                 </div>

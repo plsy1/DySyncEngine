@@ -45,5 +45,10 @@ init_config \
     "/app/config/tiktok_web/config.yaml" \
     "/app/3rd/douyin_api/crawlers/tiktok/web/config.yaml"
 
+init_config \
+    "/app/defaults/kuaishou_web/config.yaml.default" \
+    "/app/config/kuaishou_web/config.yaml" \
+    "/app/config/kuaishou_web/config.yaml"
+
 echo "[entrypoint] 配置初始化完成，正在启动服务..."
 exec uvicorn backend.main:app --host 0.0.0.0 --port "${PORT:-80}"

@@ -16,9 +16,13 @@ type CookieStatus = 'valid' | 'invalid' | 'empty' | 'loading' | 'unknown';
 interface CookiesState {
     douyin_status: CookieStatus;
     tiktok_status: CookieStatus;
+    kuaishou_status: CookieStatus;
     douyin_cookie_preview: string;
     tiktok_cookie_preview: string;
+    kuaishou_cookie_preview: string;
 }
+
+type CookiePlatform = 'douyin' | 'tiktok' | 'kuaishou';
 
 export const Settings = ({ onBack, onNotify }: SettingsProps) => {
     const [settings, setSettings] = useState<GlobalSettings>({
@@ -64,13 +68,17 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
     const [cookiesState, setCookiesState] = useState<CookiesState>({
         douyin_status: 'loading',
         tiktok_status: 'loading',
+        kuaishou_status: 'loading',
         douyin_cookie_preview: '',
         tiktok_cookie_preview: '',
+        kuaishou_cookie_preview: '',
     });
     const [douyinCookie, setDouyinCookie] = useState('');
     const [tiktokCookie, setTiktokCookie] = useState('');
+    const [kuaishouCookie, setKuaishouCookie] = useState('');
     const [savingDouyinCookie, setSavingDouyinCookie] = useState(false);
     const [savingTiktokCookie, setSavingTiktokCookie] = useState(false);
+    const [savingKuaishouCookie, setSavingKuaishouCookie] = useState(false);
     const [checkingCookies, setCheckingCookies] = useState(false);
     const [migrationPreview, setMigrationPreview] = useState<FolderMigrationPreview | null>(null);
     const [previewingMigration, setPreviewingMigration] = useState(false);
@@ -153,11 +161,13 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
             setCookiesState({
                 douyin_status: data.douyin_status as CookieStatus,
                 tiktok_status: data.tiktok_status as CookieStatus,
+                kuaishou_status: data.kuaishou_status as CookieStatus,
                 douyin_cookie_preview: data.douyin_cookie_preview,
                 tiktok_cookie_preview: data.tiktok_cookie_preview,
+                kuaishou_cookie_preview: data.kuaishou_cookie_preview,
             });
         } catch (err) {
-            setCookiesState(s => ({ ...s, douyin_status: 'unknown', tiktok_status: 'unknown' }));
+            setCookiesState(s => ({ ...s, douyin_status: 'unknown', tiktok_status: 'unknown', kuaishou_status: 'unknown' }));
         } finally {
             setCheckingCookies(false);
         }
@@ -252,19 +262,21 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
         }
     };
 
-    const handleSaveCookie = async (platform: 'douyin' | 'tiktok') => {
-        const cookie = platform === 'douyin' ? douyinCookie : tiktokCookie;
+    const handleSaveCookie = async (platform: CookiePlatform) => {
+        const cookie = platform === 'douyin' ? douyinCookie : platform === 'tiktok' ? tiktokCookie : kuaishouCookie;
         if (!cookie.trim()) {
             onNotify('Cookie 不能为空', 'error');
             return;
         }
-        const setSaving = platform === 'douyin' ? setSavingDouyinCookie : setSavingTiktokCookie;
+        const setSaving = platform === 'douyin' ? setSavingDouyinCookie : platform === 'tiktok' ? setSavingTiktokCookie : setSavingKuaishouCookie;
         setSaving(true);
         try {
             await api.updateCookie(platform, cookie.trim());
-            onNotify(`${platform === 'douyin' ? '抖音' : 'TikTok'} Cookie 已保存，正在验证...`, 'success');
+            const platformName = platform === 'douyin' ? '抖音' : platform === 'tiktok' ? 'TikTok' : '快手';
+            onNotify(`${platformName} Cookie 已保存，正在验证...`, 'success');
             if (platform === 'douyin') setDouyinCookie('');
-            else setTiktokCookie('');
+            else if (platform === 'tiktok') setTiktokCookie('');
+            else setKuaishouCookie('');
             // 重新检测状态
             await fetchCookiesStatus(true);
         } catch (err: any) {
@@ -298,7 +310,7 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
         );
     }
 
-    const hasInvalidCookie = cookiesState.douyin_status === 'invalid' || cookiesState.tiktok_status === 'invalid';
+    const hasInvalidCookie = cookiesState.douyin_status === 'invalid' || cookiesState.tiktok_status === 'invalid' || cookiesState.kuaishou_status === 'invalid';
 
     return (
         <div className="space-y-10 pb-20">
@@ -378,7 +390,7 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                                     重新检测
                                 </button>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                                 {/* 抖音 Cookie */}
                                 <motion.div
                                     initial={{ opacity: 0, y: 10 }}
@@ -483,6 +495,60 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                                     >
                                         {savingTiktokCookie ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                                         保存 TikTok Cookie
+                                    </button>
+                                </motion.div>
+
+                                {/* 快手 Cookie */}
+                                <motion.div
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: 0.1 }}
+                                    className={`p-6 border rounded-3xl space-y-4 flex flex-col backdrop-blur-sm ${
+                                        cookiesState.kuaishou_status === 'invalid'
+                                            ? 'border-red-500/30 bg-red-500/5'
+                                            : cookiesState.kuaishou_status === 'valid'
+                                            ? 'border-emerald-500/20 bg-emerald-500/5'
+                                            : 'border-white/5 bg-white/2'
+                                    }`}
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                                                cookiesState.kuaishou_status === 'invalid' ? 'bg-red-500/15 text-red-400'
+                                                : cookiesState.kuaishou_status === 'valid' ? 'bg-emerald-500/15 text-emerald-400'
+                                                : 'bg-white/8 text-white/40'
+                                            }`}>
+                                                <Cookie size={18} />
+                                            </div>
+                                            <div>
+                                                <h4 className="font-bold text-white">快手 Cookie</h4>
+                                                {cookiesState.kuaishou_cookie_preview && (
+                                                    <p className="text-white/30 text-xs font-mono mt-0.5 truncate max-w-[140px]">{cookiesState.kuaishou_cookie_preview}</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <CookieStatusBadge status={cookiesState.kuaishou_status} />
+                                    </div>
+
+                                    <div className="space-y-2 flex-1">
+                                        <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">粘贴新 Cookie</label>
+                                        <textarea
+                                            value={kuaishouCookie}
+                                            onChange={(e) => setKuaishouCookie(e.target.value)}
+                                            rows={4}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 transition-all text-xs font-mono resize-none text-white"
+                                            placeholder={cookiesState.kuaishou_cookie_preview ? `当前已配置: ${cookiesState.kuaishou_cookie_preview}` : "从快手网页版复制完整的 Cookie 字符串粘贴到此处..."}
+                                        />
+                                        <p className="text-white/30 text-xs pl-1">在快手网页版登录后，F12 → Network → 任意请求 → Request Headers → Cookie</p>
+                                    </div>
+
+                                    <button
+                                        onClick={() => handleSaveCookie('kuaishou')}
+                                        disabled={savingKuaishouCookie || !kuaishouCookie.trim()}
+                                        className="w-full flex items-center justify-center gap-2 py-3 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 disabled:opacity-40 transition-all rounded-xl font-black text-xs border border-orange-500/20 cursor-pointer"
+                                    >
+                                        {savingKuaishouCookie ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                                        保存快手 Cookie
                                     </button>
                                 </motion.div>
                             </div>

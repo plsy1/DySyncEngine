@@ -27,7 +27,10 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 RUN cp /app/3rd/douyin_api/crawlers/douyin/web/config.yaml \
        /app/3rd/douyin_api/crawlers/douyin/web/config.yaml.default && \
     cp /app/3rd/douyin_api/crawlers/tiktok/web/config.yaml \
-       /app/3rd/douyin_api/crawlers/tiktok/web/config.yaml.default
+       /app/3rd/douyin_api/crawlers/tiktok/web/config.yaml.default && \
+    mkdir -p /app/defaults/kuaishou_web
+
+COPY defaults/kuaishou_web/config.yaml.default /app/defaults/kuaishou_web/config.yaml.default
 
 # Copy entrypoint script
 COPY entrypoint.sh /app/entrypoint.sh

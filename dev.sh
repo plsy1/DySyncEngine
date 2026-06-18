@@ -49,6 +49,14 @@ if [ -d "3rd/douyin_api/crawlers" ]; then
     fi
 fi
 
+if [ ! -s "config/kuaishou_web/config.yaml" ]; then
+    mkdir -p config/kuaishou_web
+    if [ -f "defaults/kuaishou_web/config.yaml.default" ]; then
+        cp defaults/kuaishou_web/config.yaml.default config/kuaishou_web/config.yaml
+        echo "✅ Initialized: Kuaishou Web Config"
+    fi
+fi
+
 echo "🚀 Starting DySyncEngine in Development Mode..."
 
 # Start Frontend (Vite) in background

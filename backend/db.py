@@ -74,6 +74,7 @@ class User(Base):
     tg_target_chat = Column(String, nullable=True)   # 如果设置了，则同步到此，否则遵循全局
     created_at = Column(Integer, default=lambda: int(time.time()))
     updated_at = Column(Integer, default=lambda: int(time.time()))
+    sort_order = Column(Integer, default=0)
     platform = Column(String, default="douyin")
 
 
@@ -123,6 +124,19 @@ with engine.connect() as conn:
         conn.commit()
     if "tg_target_chat" not in columns:
         conn.execute(text("ALTER TABLE users ADD COLUMN tg_target_chat TEXT"))
+        conn.commit()
+    if "sort_order" not in columns:
+        conn.execute(text("ALTER TABLE users ADD COLUMN sort_order INTEGER DEFAULT 0"))
+        conn.commit()
+    users_for_order = conn.execute(text(
+        "SELECT id, sort_order FROM users "
+        "ORDER BY CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END, sort_order ASC, created_at ASC, id ASC"
+    )).fetchall()
+    current_orders = [row[1] for row in users_for_order]
+    expected_orders = list(range(len(users_for_order)))
+    if current_orders != expected_orders:
+        for index, row in enumerate(users_for_order):
+            conn.execute(text("UPDATE users SET sort_order = :sort_order WHERE id = :id"), {"sort_order": index, "id": row[0]})
         conn.commit()
 
     # Aweme table migrations
@@ -182,6 +196,8 @@ def add_or_update_user(session: Session, user_data: dict):
     user = session.query(User).filter_by(uid=uid).first()
     if not user:
         user = User(uid=uid)
+        max_order = session.query(User.sort_order).order_by(User.sort_order.desc()).first()
+        user.sort_order = ((max_order[0] if max_order and max_order[0] is not None else -1) + 1)
         session.add(user)
 
     # 仅更新非空值
@@ -217,7 +233,26 @@ def get_all_users(session: Session):
     """
     获取所有作者信息
     """
-    return session.query(User).all()
+    return session.query(User).order_by(User.sort_order.asc(), User.created_at.asc(), User.id.asc()).all()
+
+
+def update_user_sort_order(session: Session, ordered_uids: list[str]):
+    """
+    按传入 uid 顺序持久化作者卡片排序。
+    """
+    if not ordered_uids:
+        return True
+
+    users = session.query(User).filter(User.uid.in_(ordered_uids)).all()
+    users_by_uid = {user.uid: user for user in users}
+
+    for index, uid in enumerate(ordered_uids):
+        user = users_by_uid.get(uid)
+        if user:
+            user.sort_order = index
+
+    session.commit()
+    return True
 
 
 def toggle_user_auto_update(session: Session, uid: str, enabled: bool):

@@ -13,6 +13,7 @@ export interface User {
   tg_target_chat: string | null;
   updated_at: number;
   created_at: number;
+  sort_order: number;
   platform: string;
 }
 

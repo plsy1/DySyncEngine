@@ -30,6 +30,8 @@ interface EmbyItem {
     Children?: EmbyItem[];
 }
 
+type LibraryScope = 'default' | 'custom';
+
 export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     const [settings, setSettings] = useState<GlobalSettings | null>(null);
     const [loading, setLoading] = useState(true);
@@ -58,6 +60,11 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>(() => {
         const saved = localStorage.getItem('emby_player_folder_ids');
         return saved ? saved.split(',') : [];
+    });
+    const [libraryScope, setLibraryScope] = useState<LibraryScope>(() => {
+        const saved = localStorage.getItem('emby_player_library_scope');
+        if (saved === 'default' || saved === 'custom') return saved;
+        return localStorage.getItem('emby_player_folder_ids') ? 'custom' : 'default';
     });
     const [tempSelectedFolderIds, setTempSelectedFolderIds] = useState<string[]>([]);
     const emptyFetchCountRef = useRef(0);
@@ -276,13 +283,20 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
     const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
 
+    const getEffectiveFolderIds = (currentSettings: GlobalSettings, scope: LibraryScope, selectedIds: string[]) => {
+        if (scope === 'custom' && selectedIds.length > 0) return selectedIds;
+        if (scope === 'default' && currentSettings.emby_default_library) return currentSettings.emby_default_library.split(',');
+        return [null];
+    };
+
     useEffect(() => {
         localStorage.setItem('emby_player_folder_ids', selectedFolderIds.join(','));
+        localStorage.setItem('emby_player_library_scope', libraryScope);
         localStorage.setItem('emby_player_filter_mode', filterMode);
-        loadSettingsAndVideos(tab, selectedFolderIds.length > 0 ? selectedFolderIds.join(',') : null);
-    }, [tab, selectedFolderIds, filterMode]);
+        loadSettingsAndVideos(tab, libraryScope, selectedFolderIds);
+    }, [tab, selectedFolderIds, libraryScope, filterMode]);
 
-    const loadSettingsAndVideos = async (currentTab: 'latest' | 'random', folderId: string | null) => {
+    const loadSettingsAndVideos = async (currentTab: 'latest' | 'random', scope: LibraryScope, selectedIds: string[]) => {
         setLoading(true);
         setError('');
         setItems([]);
@@ -301,14 +315,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                 timeout: 15000, // Increased timeout for larger libraries
             });
 
-            // IF a default library is set, and no specific folders are selected, 
-            // use the default library as the starting ParentId.
-            let effectiveFolderId = folderId;
-            if (!effectiveFolderId && data.emby_default_library) {
-                effectiveFolderId = data.emby_default_library;
-            }
-
-            const folderIds = effectiveFolderId ? effectiveFolderId.split(',') : [null];
+            const folderIds = getEffectiveFolderIds(data, scope, selectedIds);
 
             // Fetch from each folder in parallel
             const fetchPromises = folderIds.map(fid => {
@@ -441,11 +448,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                 timeout: 15000,
             });
 
-            let effectiveFolderId = selectedFolderIds.length > 0 ? selectedFolderIds.join(',') : null;
-            if (!effectiveFolderId && settings.emby_default_library) {
-                effectiveFolderId = settings.emby_default_library;
-            }
-            const folderIds = effectiveFolderId ? effectiveFolderId.split(',') : [null];
+            const folderIds = getEffectiveFolderIds(settings, libraryScope, selectedFolderIds);
 
             // For multi-folder, we fetch a small batch from each to merge
             // This is a simplified pagination strategy for merged results
@@ -647,15 +650,10 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                 timeout: 5000,
             });
 
-            // If we are at root AND a default library is configured, fetch from that library instead.
-            const effectiveParentId = (sidebarPath.length === 0 && settings.emby_default_library)
-                ? settings.emby_default_library
-                : parentId;
-
             const response = await embyApi.get('Items', {
                 params: {
                     api_key: settings.emby_api_key,
-                    ParentId: effectiveParentId,
+                    ParentId: parentId,
                     Recursive: 'false',
                     IsFolder: 'true',
                     SortBy: 'SortName',
@@ -688,14 +686,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         });
     };
 
-    const handleSelectFolder = (folderId: string | null) => {
-        if (folderId === null) {
-            setSelectedFolderIds([]);
-            setTempSelectedFolderIds([]);
-            setIsSidebarOpen(false);
-            return;
-        }
-
+    const handleSelectFolder = (folderId: string) => {
         if (isMultiSelectMode) {
             setTempSelectedFolderIds(prev =>
                 prev.includes(folderId)
@@ -703,9 +694,17 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                     : [...prev, folderId]
             );
         } else {
+            setLibraryScope('custom');
             setSelectedFolderIds([folderId]);
             setIsSidebarOpen(false);
         }
+    };
+
+    const handleSelectDefaultLibrary = () => {
+        setLibraryScope('default');
+        setSelectedFolderIds([]);
+        setTempSelectedFolderIds([]);
+        setIsSidebarOpen(false);
     };
 
     const handleOpenSidebar = () => {
@@ -1460,7 +1459,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                     </button>
                                 </div>
                                 <button
-                                    onClick={() => setIsSidebarOpen(true)}
+                                    onClick={handleOpenSidebar}
                                     className="p-2.5 text-white/70 hover:text-white transition-all bg-transparent border border-white/[0.05] hover:bg-white/10 rounded-full ml-1"
                                     title="选择目录"
                                 >
@@ -1948,7 +1947,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
                     <div className="flex-1 flex items-center justify-center -translate-y-1">
                         <button
-                            onClick={() => setIsSidebarOpen(true)}
+                            onClick={handleOpenSidebar}
                             className="w-12 h-10 bg-white rounded-2xl flex items-center justify-center transition-all active:scale-90 shadow-xl shadow-white/10"
                         >
                             <Plus size={26} className="text-black font-black" />
@@ -2190,22 +2189,27 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                             </div>
                                         ) : (
                                             <div className="space-y-1">
-                                                {/* All Videos Option (only at root) */}
+                                                {/* Library scope options (only at root) */}
                                                 {sidebarPath.length === 0 && (
-                                                    <button
-                                                        onClick={() => handleSelectFolder(null)}
-                                                        className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all ${selectedFolderIds.length === 0
-                                                            ? 'bg-white/10 ring-1 ring-white/20'
-                                                            : 'text-white/80 hover:bg-white/5 active:scale-95'
-                                                            }`}
-                                                    >
-                                                        <div className="p-2 bg-white/5 rounded-xl">
-                                                            <Monitor size={20} className="text-white/60" />
-                                                        </div>
-                                                        <span className="flex-1 text-left text-white/80">
-                                                            {settings?.emby_default_library ? '仅看指定媒体库' : '全部媒体库'}
-                                                        </span>
-                                                    </button>
+                                                    <div className="space-y-1 mb-2">
+                                                        {settings?.emby_default_library && (
+                                                            <button
+                                                                onClick={handleSelectDefaultLibrary}
+                                                                className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all ${libraryScope === 'default'
+                                                                    ? 'bg-white/10 ring-1 ring-white/20'
+                                                                    : 'text-white/80 hover:bg-white/5 active:scale-95'
+                                                                    }`}
+                                                            >
+                                                                <div className="p-2 bg-white/5 rounded-xl">
+                                                                    <Home size={20} className="text-white/60" />
+                                                                </div>
+                                                                <div className="flex-1 text-left">
+                                                                    <p className="text-white/80 text-sm font-bold">默认媒体库</p>
+                                                                    <p className="text-white/30 text-xs mt-0.5">使用设置页指定的媒体库</p>
+                                                                </div>
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 )}
 
                                                 {/* Back Button (if not at root) */}
@@ -2280,6 +2284,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                     if (isMultiSelectMode) {
                                                         setTempSelectedFolderIds([]);
                                                     } else {
+                                                        setLibraryScope('default');
                                                         setSelectedFolderIds([]);
                                                         setIsSidebarOpen(false);
                                                     }
@@ -2292,6 +2297,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                         <button
                                             onClick={() => {
                                                 if (isMultiSelectMode) {
+                                                    setLibraryScope('custom');
                                                     setSelectedFolderIds(tempSelectedFolderIds);
                                                 }
                                                 setIsSidebarOpen(false);

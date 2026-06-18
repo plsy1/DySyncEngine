@@ -87,6 +87,11 @@ export const getUsers = async (): Promise<User[]> => {
   return data;
 };
 
+export const reorderUsers = async (orderedUids: string[]): Promise<{ success: boolean }> => {
+  const { data } = await api.post<{ success: boolean }>('users/reorder', { ordered_uids: orderedUids });
+  return data;
+};
+
 export const downloadUserVideos = async (url: string, maxFetch: number = 0): Promise<ApiResponse> => {
   const { data } = await api.post<ApiResponse>(`download_user_videos?url=${encodeURIComponent(url)}&max_fetch=${maxFetch}`);
   return data;
@@ -205,14 +210,16 @@ export const lookupVideos = async (paths: string[]): Promise<Record<string, any>
 export const getCookiesStatus = async (check: boolean = true): Promise<{
   douyin_status: string;
   tiktok_status: string;
+  kuaishou_status: string;
   douyin_cookie_preview: string;
   tiktok_cookie_preview: string;
+  kuaishou_cookie_preview: string;
 }> => {
   const { data } = await api.get('cookies/status', { params: { check } });
   return data;
 };
 
-export const updateCookie = async (platform: 'douyin' | 'tiktok', cookie: string): Promise<{ success: boolean }> => {
+export const updateCookie = async (platform: 'douyin' | 'tiktok' | 'kuaishou', cookie: string): Promise<{ success: boolean }> => {
   const { data } = await api.post('cookies', { platform, cookie });
   return data;
 };

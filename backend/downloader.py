@@ -4,7 +4,8 @@ import re
 import time
 from pathlib import Path
 from loguru import logger
-from utils import sanitize_filename
+from utils import sanitize_filename, get_url_platform
+from kuaishou import download_kuaishou_video
 
 from config import config
 
@@ -38,6 +39,19 @@ def download_video(share_url: str, author_folder: str, filename: str, aweme_id: 
     }
 
     try:
+        if get_url_platform(share_url) == "kuaishou":
+            content, _ = download_kuaishou_video(share_url)
+            if len(content) < 1024:
+                logger.warning(f"下载的快手视频文件内容小于1KB，判定为损坏，跳过保存: {aweme_id}")
+                return None
+
+            base_name = sanitize_filename(filename)
+            file_path = os.path.join(parent_path, f"{base_name} [{aweme_id}].mp4")
+            with open(file_path, "wb") as f:
+                f.write(content)
+            logger.info(f"快手视频下载完成: {file_path}")
+            return file_path
+
         with httpx.Client(timeout=60) as client:
             logger.info(f"发起下载请求: {aweme_id} | URL: {DOWNLOAD_API}")
             resp = client.get(DOWNLOAD_API, params=params)

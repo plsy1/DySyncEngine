@@ -28,11 +28,10 @@ def run_coro_safe(coro):
 
 def extract_share_url(text: str) -> str:
     """
-    从一段文字中提取出抖音或 TikTok 的 URL
-    支持 douyin.com, tiktok.com 相关的域名
+    从一段文字中提取出支持平台的 URL
+    支持 douyin.com, tiktok.com, kuaishou.com, kuaishou.cn, kwai.com, gifshow.com, ksurl.cn 相关的域名
     """
-    # 匹配 douyin.com 或 tiktok.com 相关的域名及其路径
-    pattern = r'https?://(?:[a-zA-Z0-9-]+\.)?(?:douyin\.com|tiktok\.com)/[^\s#?]+'
+    pattern = r'https?://(?:[a-zA-Z0-9-]+\.)?(?:douyin\.com|tiktok\.com|kuaishou\.com|kuaishou\.cn|kwai\.com|gifshow\.com|ksurl\.cn)/[^\s#?]+'
     match = re.search(pattern, text)
     if match:
         return match.group(0)
@@ -42,8 +41,11 @@ def get_url_platform(url: str) -> str:
     """
     识别链接所属平台
     """
-    if "tiktok.com" in url:
+    normalized_url = url.lower()
+    if "tiktok.com" in normalized_url:
         return "tiktok"
+    if any(domain in normalized_url for domain in ("kuaishou.com", "kuaishou.cn", "kwai.com", "gifshow.com", "ksurl.cn")):
+        return "kuaishou"
     return "douyin"
 
 def resolve_redirect(url: str, max_redirects=5, timeout=10) -> str:
@@ -89,6 +91,9 @@ def extract_sec_user_id(url: str) -> str:
     """
     platform = get_url_platform(url)
     
+    if platform == "kuaishou":
+        raise NotImplementedError("快手作者订阅暂未接入：已能识别快手链接，但还缺少快手用户主页解析和作品列表抓取实现")
+
     if platform == "tiktok":
         # 对于 TikTok，调用专用 API 获取 sec_user_id
         try:

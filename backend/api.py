@@ -20,12 +20,14 @@ from db import (
     set_config,
     update_account_password,
     update_user_preference,
+    update_user_sort_order,
     delete_user_data,
     mark_all_tg_exported,
     User,
 )
 from fetch import fetch_all_awemes, fetch_user_profile, fetch_video_profile
 from downloader import download_video, DOWNLOAD_API
+from kuaishou import download_kuaishou_video
 from auth import create_access_token, verify_password, get_password_hash, get_current_user
 from utils import extract_share_url, get_url_platform, resolve_redirect, extract_sec_user_id, sanitize_filename, run_coro_safe
 from telegram_uploader import tg_uploader
@@ -41,6 +43,14 @@ from telethon.errors import SessionPasswordNeededError
 
 public_router = APIRouter()
 router = APIRouter(dependencies=[Depends(get_current_user)])
+
+
+def ensure_platform_supported(platform: str, feature: str) -> None:
+    if platform == "kuaishou":
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=f"快手{feature}暂未接入：当前仅完成链接识别和平台展示，缺少快手抓取器实现",
+        )
 
 
 class DownloadResult(BaseModel):
@@ -416,6 +426,7 @@ def download_user_videos_api(
         url = extract_share_url(url)
         final_url = resolve_redirect(url)
         platform = get_url_platform(final_url)
+        ensure_platform_supported(platform, "作者订阅")
         sec_user_id = extract_sec_user_id(final_url)
         
         # 尝试抓取基本资料
@@ -440,6 +451,11 @@ def download_user_videos_api(
         background_tasks.add_task(download_user_videos_task, sec_user_id, platform, task_id, max_fetch)
         return {"started": True, "task_id": task_id}
         
+    except HTTPException:
+        raise
+    except NotImplementedError as e:
+        logger.warning(f"平台能力未实现: {e}")
+        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(e))
     except Exception as e:
         logger.error(f"即时解析用户失败: {e}")
         # 如果解析失败，可能是网络问题，直接返回错误，不开启后台任务
@@ -534,8 +550,13 @@ class UserInfo(BaseModel):
     download_note_override: bool | None
     tg_sync_enabled: bool | None
     tg_target_chat: str | None
+    created_at: int
     updated_at: int
+    sort_order: int
     platform: str = "douyin"
+
+class UserReorderRequest(BaseModel):
+    ordered_uids: list[str]
 
 
 @router.get("/users", response_model=list[UserInfo])
@@ -545,6 +566,14 @@ def get_users_api():
     """
     with next(get_session()) as session:
         return get_all_users(session)
+
+@router.post("/users/reorder")
+def reorder_users_api(req: UserReorderRequest, session: Session = Depends(get_session), _ = Depends(get_current_user)):
+    existing_uids = {user.uid for user in get_all_users(session)}
+    ordered_uids = [uid for uid in req.ordered_uids if uid in existing_uids]
+    remaining_uids = [uid for uid in existing_uids if uid not in ordered_uids]
+    update_user_sort_order(session, ordered_uids + remaining_uids)
+    return {"success": True}
 
 
 
@@ -599,6 +628,16 @@ async def download_proxy_api(share_url: str = Query(..., description="抖音分�
     """
     share_url = extract_share_url(share_url)
     share_url = resolve_redirect(share_url)
+    if get_url_platform(share_url) == "kuaishou":
+        from urllib.parse import quote
+        content, content_type = download_kuaishou_video(share_url)
+        clean_filename = sanitize_filename(filename)
+        encoded_filename = quote(clean_filename)
+        return StreamingResponse(
+            io.BytesIO(content),
+            media_type=content_type,
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}.mp4"}
+        )
     
     params = {
         "url": share_url,
@@ -1159,6 +1198,10 @@ COOKIE_CONFIG_PATHS = {
         "TIKTOK_WEB_CONFIG_PATH",
         os.path.join(CONFIG_BASE, "tiktok_web", "config.yaml"),
     ),
+    "kuaishou": os.getenv(
+        "KUAISHOU_WEB_CONFIG_PATH",
+        os.path.join(CONFIG_BASE, "kuaishou_web", "config.yaml"),
+    ),
 }
 RUNTIME_COOKIE_CONFIG_PATHS = {
     "douyin": os.getenv(
@@ -1168,6 +1211,10 @@ RUNTIME_COOKIE_CONFIG_PATHS = {
     "tiktok": os.getenv(
         "TIKTOK_WEB_RUNTIME_CONFIG_PATH",
         os.path.join(PROJECT_ROOT, "3rd", "douyin_api", "crawlers", "tiktok", "web", "config.yaml"),
+    ),
+    "kuaishou": os.getenv(
+        "KUAISHOU_WEB_RUNTIME_CONFIG_PATH",
+        os.path.join(CONFIG_BASE, "kuaishou_web", "config.yaml"),
     ),
 }
 
@@ -1196,13 +1243,17 @@ def _write_cookie_to_yaml(platform: str, cookie: str) -> bool:
         # 如果文件不存在（新用户且 entrypoint 尚未运行），先确保目录存在
         os.makedirs(os.path.dirname(path), exist_ok=True)
         if not os.path.exists(path):
-            return False
+            if platform == "kuaishou":
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write("headers:\n  User-Agent: Mozilla/5.0\n  Cookie:\n")
+            else:
+                return False
         with open(path, "r", encoding="utf-8") as f:
             content = f.read()
         import re
         # 替换 Cookie 行，保留原有缩进格式
         new_content, n = re.subn(
-            r"^(\s+Cookie:\s*)(.+)$",
+            r"^(\s+Cookie:\s*)(.*)$",
             lambda m: m.group(1) + cookie,
             content,
             flags=re.MULTILINE
@@ -1253,7 +1304,7 @@ async def _check_cookie_validity(platform: str) -> str:
             # status_code 0 表示正常；2 表示 UserId 不合法（但能走到这一步说明 Cookie 本身是有效的，签名生成也成功了）
             if status_code not in (0, 2):
                 return "invalid"
-        else:
+        elif platform == "tiktok":
             from crawlers.tiktok.web.web_crawler import TikTokWebCrawler
             crawler = TikTokWebCrawler()
             data = await crawler.fetch_user_post(
@@ -1266,6 +1317,8 @@ async def _check_cookie_validity(platform: str) -> str:
             status_code = data.get("statusCode", data.get("status_code", 0))
             if status_code != 0:
                 return "invalid"
+        else:
+            return "unknown"
         return "valid"
     except Exception as e:
         logger.warning(f"检测 {platform} Cookie 有效性时出错: {e}")
@@ -1275,11 +1328,13 @@ async def _check_cookie_validity(platform: str) -> str:
 class CookieStatusResponse(BaseModel):
     douyin_status: str   # "valid" | "invalid" | "empty"
     tiktok_status: str
+    kuaishou_status: str
     douyin_cookie_preview: str  # 前20字符预览，确认是否已填写
     tiktok_cookie_preview: str
+    kuaishou_cookie_preview: str
 
 class UpdateCookieRequest(BaseModel):
-    platform: str  # "douyin" | "tiktok"
+    platform: str  # "douyin" | "tiktok" | "kuaishou"
     cookie: str
 
 
@@ -1290,19 +1345,24 @@ async def get_cookies_status(check: bool = Query(True, description="是否验证
     """
     douyin_cookie = _read_cookie_from_yaml("douyin")
     tiktok_cookie = _read_cookie_from_yaml("tiktok")
+    kuaishou_cookie = _read_cookie_from_yaml("kuaishou")
     
     if check:
         douyin_status = await _check_cookie_validity("douyin")
         tiktok_status = await _check_cookie_validity("tiktok")
+        kuaishou_status = await _check_cookie_validity("kuaishou")
     else:
         douyin_status = "empty" if not douyin_cookie else "unknown"
         tiktok_status = "empty" if not tiktok_cookie else "unknown"
+        kuaishou_status = "empty" if not kuaishou_cookie else "unknown"
     
     return CookieStatusResponse(
         douyin_status=douyin_status,
         tiktok_status=tiktok_status,
+        kuaishou_status=kuaishou_status,
         douyin_cookie_preview=douyin_cookie[:30] + "..." if len(douyin_cookie) > 30 else douyin_cookie,
         tiktok_cookie_preview=tiktok_cookie[:30] + "..." if len(tiktok_cookie) > 30 else tiktok_cookie,
+        kuaishou_cookie_preview=kuaishou_cookie[:30] + "..." if len(kuaishou_cookie) > 30 else kuaishou_cookie,
     )
 
 
@@ -1311,8 +1371,8 @@ def update_cookie(req: UpdateCookieRequest, _ = Depends(get_current_user)):
     """
     更新指定平台的 Cookie（写入对应 config.yaml）
     """
-    if req.platform not in ("douyin", "tiktok"):
-        raise HTTPException(status_code=400, detail="platform 必须为 douyin 或 tiktok")
+    if req.platform not in ("douyin", "tiktok", "kuaishou"):
+        raise HTTPException(status_code=400, detail="platform 必须为 douyin、tiktok 或 kuaishou")
     success = _write_cookie_to_yaml(req.platform, req.cookie.strip())
     if not success:
         raise HTTPException(status_code=500, detail=f"写入 {req.platform} config.yaml 失败，请检查文件是否存在")
