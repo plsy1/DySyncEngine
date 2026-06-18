@@ -181,12 +181,6 @@ export function Tasks({ onNotify, activeTasks }: TasksProps) {
                         <p className="text-sm text-white/60 leading-relaxed">
                             扫描所有已下载但在数据库中标记为“未导出”的作品，强制推送到指定的 Telegram 频道。
                         </p>
-                        <div className="flex justify-between items-center text-sm">
-                            <span className="text-white/60 text-sm font-semibold">同步周期</span>
-                            <span className="font-medium text-xs text-blue-400 bg-blue-400/10 px-2.5 py-1 rounded uppercase font-mono">
-                                Follows Scheduler
-                            </span>
-                        </div>
                     </div>
 
                     <button
@@ -221,10 +215,10 @@ export function Tasks({ onNotify, activeTasks }: TasksProps) {
                                     <div>
                                         <div className="flex items-center gap-2">
                                             <span className="font-semibold">
-                                                {task.target_id === 'global_check' ? '本地补漏扫描' : 
-                                                 task.target_id === 'tg_global_audit' ? 'TG 全量同步审计' : 
-                                                 task.target_id === 'global_repair' ? '损坏文件扫描修复' : 
-                                                 `同步任务: ${task.target_id}`}
+                                                {task.target_id === 'global_check' ? '本地补漏扫描' :
+                                                    task.target_id === 'tg_global_audit' ? 'TG 全量同步审计' :
+                                                        task.target_id === 'global_repair' ? '损坏文件扫描修复' :
+                                                            `同步任务: ${task.target_id}`}
                                             </span>
                                             <span className="text-xs text-white/50 font-mono bg-white/10 px-2.5 py-1 rounded uppercase tracking-tighter">
                                                 {task.id.split('-')[0]}

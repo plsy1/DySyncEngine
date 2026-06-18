@@ -567,6 +567,32 @@ def get_users_api():
     with next(get_session()) as session:
         return get_all_users(session)
 
+@router.get("/stats")
+def get_stats_api():
+    """
+    获取全局统计数据，包含已下载作品总数和最近同步列表
+    """
+    from db import Aweme
+    with next(get_session()) as session:
+        total_downloaded = session.query(Aweme).filter(Aweme.downloaded == True).count()
+        recent_items = session.query(Aweme).filter(Aweme.downloaded == True).order_by(Aweme.id.desc()).limit(5).all()
+        
+        recent_list = []
+        for item in recent_items:
+            recent_list.append({
+                "aweme_id": item.aweme_id,
+                "desc": item.desc,
+                "nickname": item.nickname,
+                "platform": item.platform,
+                "create_time": item.create_time,
+                "aweme_type": item.aweme_type
+            })
+            
+        return {
+            "total_downloaded": total_downloaded,
+            "recent": recent_list
+        }
+
 @router.post("/users/reorder")
 def reorder_users_api(req: UserReorderRequest, session: Session = Depends(get_session), _ = Depends(get_current_user)):
     existing_uids = {user.uid for user in get_all_users(session)}
@@ -708,15 +734,17 @@ def download_from_share_url(share_url: str = Query(..., description="抖音分�
     
     # 2. 同步到数据库
     with next(get_session()) as session:
-        # 存储/更新用户
-        add_or_update_user(session, {
-            "uid": uid,
-            "sec_user_id": sec_user_id,
-            "nickname": final_nickname,
-            "avatar_url": author_info.get("avatar_thumb", {}).get("url_list", [None])[0] if isinstance(author_info.get("avatar_thumb"), dict) else author_info.get("avatar_thumb"),
-            "signature": author_info.get("signature"),
-            "platform": platform
-        })
+        # 仅当该作者已在订阅列表中时，才更新其个人资料。避免单视频下载导致意外新增订阅作者。
+        from db import User as DBUser
+        if session.query(DBUser).filter(DBUser.uid == uid).first():
+            add_or_update_user(session, {
+                "uid": uid,
+                "sec_user_id": sec_user_id,
+                "nickname": final_nickname,
+                "avatar_url": author_info.get("avatar_thumb", {}).get("url_list", [None])[0] if isinstance(author_info.get("avatar_thumb"), dict) else author_info.get("avatar_thumb"),
+                "signature": author_info.get("signature"),
+                "platform": platform
+            })
         
         # 存储/更新 Aweme 记录
         add_aweme(session, {

@@ -1,7 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import type { User, Task } from '../types';
 import { RefreshCw, Trash2, Video, FileText, ChevronDown, Send, Settings2, ShieldCheck, X } from 'lucide-react';
-import dayjs from 'dayjs';
 import { ProgressBar } from './ProgressBar';
 import { useState, useEffect } from 'react';
 import { Modal } from './Modal';
@@ -149,20 +148,22 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
 
             {/* Content Body */}
             <div className="px-4 pb-4 flex-1 flex flex-col gap-3">
-                <p className="text-[11px] text-white/50 leading-relaxed line-clamp-2 italic">
+                <p className="text-[11px] text-white/50 leading-relaxed line-clamp-2 italic h-[34px] overflow-hidden">
                     {user.signature || '该作者很懒，什么都没写...'}
                 </p>
 
                 {/* Progress / Actions */}
-                <div className="mt-auto">
+                <div className="mt-auto h-9 flex items-end">
                     {isSyncing || isPending ? (
-                        <ProgressBar 
-                            progress={task?.progress || 0} 
-                            message={isPending ? "正在准备队列..." : task?.message || ""} 
-                            status={isPending ? "running" : task?.status || "running"} 
-                        />
+                        <div className="w-full">
+                            <ProgressBar 
+                                progress={task?.progress || 0} 
+                                message={isPending ? "正在准备队列..." : task?.message || ""} 
+                                status={isPending ? "running" : task?.status || "running"} 
+                            />
+                        </div>
                     ) : (
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 w-full">
                             <button
                                 onClick={handleRefresh}
                                 className="flex-1 h-9 flex items-center justify-center gap-2 rounded-xl bg-white/5 border border-white/5 hover:bg-primary/20 hover:border-primary/30 text-white/90 text-xs font-bold transition-all active:scale-[0.97]"
@@ -198,11 +199,7 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
                 }}
             />
 
-            {/* Footer Status */}
-            <div className="px-4 py-2.5 bg-white/2 border-t border-white/5 flex items-center justify-between text-[10px] font-medium text-white/20 tracking-tighter uppercase">
-                <span>Last Activity</span>
-                <span className="font-mono">{dayjs(user.updated_at * 1000).format('MM-DD HH:mm')}</span>
-            </div>
+
 
             {/* Settings Modal Dialog Overlay */}
             {createPortal(

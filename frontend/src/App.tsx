@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Search, RefreshCw, LogOut, Settings as SettingsIcon, Loader2, Activity, Terminal, Play, MoreHorizontal, GripVertical, Users, Link as LinkIcon } from 'lucide-react';
+import { Search, RefreshCw, LogOut, Settings as SettingsIcon, Loader2, Activity, Terminal, Play, MoreHorizontal, GripVertical, Users, Link as LinkIcon, Sparkles, Download, History, FileText } from 'lucide-react';
 import type { User, ToastType, Task } from './types';
 import * as api from './api';
 import { UserCard } from './components/UserCard';
@@ -101,6 +101,9 @@ function App() {
   const [sortDraftUsers, setSortDraftUsers] = useState<User[]>([]);
   const [draggingUserUid, setDraggingUserUid] = useState<string | null>(null);
   const [savingUserOrder, setSavingUserOrder] = useState(false);
+  const [activeActionTab, setActiveActionTab] = useState<'subscribe' | 'single'>('single');
+  const [totalDownloaded, setTotalDownloaded] = useState<number>(0);
+  const [recentDownloads, setRecentDownloads] = useState<any[]>([]);
   const [versionState, setVersionState] = useState<VersionState>({
     latest: null,
     hasUpdate: false,
@@ -179,8 +182,13 @@ function App() {
   const loadUsers = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await api.getUsers();
-      setUsers(data);
+      const [usersData, statsData] = await Promise.all([
+        api.getUsers(),
+        api.getStats().catch(() => ({ total_downloaded: 0, recent: [] }))
+      ]);
+      setUsers(usersData);
+      setTotalDownloaded(statsData.total_downloaded);
+      setRecentDownloads(statsData.recent || []);
     } catch (err) {
       showToast('加载用户列表失败', 'error');
     } finally {
@@ -446,7 +454,9 @@ function App() {
       {/* Main Content Area */}
       <main 
         style={{ paddingTop: 'var(--sat)' }}
-        className="flex-1 md:ml-20 lg:ml-64 min-h-screen overflow-y-auto custom-scrollbar flex flex-col"
+        className={`flex-1 md:ml-20 lg:ml-64 min-h-screen md:h-screen overflow-y-auto custom-scrollbar flex flex-col ${
+          view === 'dashboard' || view === 'subscriptions' ? 'md:overflow-hidden' : 'md:overflow-y-auto'
+        }`}
       >
         {/* Mobile Top Header */}
         <div className="md:hidden w-full px-6 py-4 flex items-center justify-between border-b border-black/5 dark:border-white/5 bg-card/45 backdrop-blur-xl sticky top-0 z-45">
@@ -468,8 +478,7 @@ function App() {
         </div>
 
         <div 
-            style={{ paddingBottom: 'calc(var(--sab) + 5.5rem)' }}
-            className="max-w-[1920px] w-full mx-auto p-4 md:p-6 lg:p-10 space-y-6 md:space-y-10 flex-1"
+            className="max-w-[1920px] w-full mx-auto p-4 md:p-6 lg:p-10 pb-[calc(var(--sab)+5.5rem)] md:pb-6 lg:pb-10 space-y-6 md:space-y-10 flex-1 flex flex-col min-h-0"
         >
           <AnimatePresence mode="wait">
             <motion.div
@@ -478,6 +487,7 @@ function App() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.3, ease: "easeOut" }}
+              className="flex-1 flex flex-col min-h-0 h-full"
             >
               {view === 'settings' ? (
                 <Settings onBack={() => setView('dashboard')} onNotify={showToast} />
@@ -488,7 +498,7 @@ function App() {
               ) : view === 'logs' ? (
                 <Logs />
               ) : view === 'subscriptions' ? (
-                <div className="space-y-12">
+                <div className="space-y-6 lg:space-y-8 flex-1 flex flex-col min-h-0">
                   <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                     <div>
                       <h2 className="text-4xl font-black tracking-tight text-white mb-2">订阅中</h2>
@@ -545,15 +555,15 @@ function App() {
                   </div>
 
                   {/* User Grid - RECLAIMING THE SIDES */}
-                  <section>
+                  <section className="flex-1 flex flex-col min-h-0">
                     {loading && users.length === 0 ? (
-                      <div className="flex items-center justify-center py-40">
+                      <div className="flex items-center justify-center py-40 shrink-0">
                         <RefreshCw size={40} className="animate-spin text-primary" />
                       </div>
                     ) : filteredUsers.length > 0 ? (
-                      <div>
+                      <div className="flex-1 flex flex-col min-h-0">
                         {(() => {
-                          const ITEMS_PER_PAGE = 12;
+                          const ITEMS_PER_PAGE = 12; // Back to standard 12 items for plenty of cards
                           const totalPages = Math.ceil(filteredUsers.length / ITEMS_PER_PAGE);
                           const activePage = currentPage > totalPages ? Math.max(1, totalPages) : currentPage;
                           const paginatedUsers = filteredUsers.slice((activePage - 1) * ITEMS_PER_PAGE, activePage * ITEMS_PER_PAGE);
@@ -561,7 +571,7 @@ function App() {
                           return (
                             <>
                               {isSortingUsers && (
-                                <div className="mb-5 flex flex-col lg:flex-row lg:items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-5 py-4">
+                                <div className="mb-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-5 py-4 shrink-0">
                                   <div>
                                     <p className="text-sm font-black text-white">排序模式</p>
                                     <p className="text-xs text-white/40 mt-1">当前显示本平台全部匹配作者，拖动卡片调整顺序，保存后分页按新顺序展示。</p>
@@ -585,62 +595,65 @@ function App() {
                                 </div>
                               )}
 
-                              {isSortingUsers ? (
-                                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
-                                  {sortDraftUsers.map(user => (
-                                    <SortUserRow
-                                      key={user.uid}
-                                      user={user}
-                                      index={sortDraftUsers.findIndex(item => item.uid === user.uid)}
-                                      isDragging={draggingUserUid === user.uid}
-                                      onDragStart={() => setDraggingUserUid(user.uid)}
-                                      onDragEnd={() => setDraggingUserUid(null)}
-                                      onDragOver={() => {
-                                        if (draggingUserUid) moveSortDraftUser(draggingUserUid, user.uid);
-                                      }}
-                                    />
-                                  ))}
-                                </div>
-                              ) : (
-                                <motion.div
-                                  layout
-                                  className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 3xl:grid-cols-5 4xl:grid-cols-6 gap-4"
-                                >
-                                  <AnimatePresence mode="popLayout">
-                                    {paginatedUsers.map(user => (
-                                      <UserCard
+                              {/* Grid container with internal scroll on desktop */}
+                              <div className="flex-1 md:overflow-y-auto min-h-0 custom-scrollbar md:pr-2 md:py-1 mb-4 no-scrollbar">
+                                {isSortingUsers ? (
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+                                    {sortDraftUsers.map(user => (
+                                      <SortUserRow
                                         key={user.uid}
                                         user={user}
-                                        task={activeTasks.find(t => t.target_id === user.uid || t.target_id === user.sec_user_id)}
-                                        onRefresh={handleRefresh}
-                                        onToggleAutoUpdate={handleToggleAuto}
-                                        onPreferenceChange={async (uid, v, n, tgS, tgC) => {
-                                          try {
-                                            await api.updateUserPreference(uid, v, n, tgS, tgC);
-                                            setUsers(prev => prev.map(u => u.uid === uid ? {
-                                              ...u,
-                                              download_video_override: v,
-                                              download_note_override: n,
-                                              tg_sync_enabled: tgS,
-                                              tg_target_chat: tgC
-                                            } : u));
-                                            showToast('个人偏好设置已更新');
-                                          } catch (err) {
-                                            showToast('更新失败', 'error');
-                                          }
+                                        index={sortDraftUsers.findIndex(item => item.uid === user.uid)}
+                                        isDragging={draggingUserUid === user.uid}
+                                        onDragStart={() => setDraggingUserUid(user.uid)}
+                                        onDragEnd={() => setDraggingUserUid(null)}
+                                        onDragOver={() => {
+                                          if (draggingUserUid) moveSortDraftUser(draggingUserUid, user.uid);
                                         }}
-                                        onDelete={(u) => setModal({ isOpen: true, user: u })}
-                                        onTgSync={handleTgSync}
-                                        onMarkTgExported={handleMarkTgExported}
                                       />
                                     ))}
-                                  </AnimatePresence>
-                                </motion.div>
-                              )}
+                                  </div>
+                                ) : (
+                                  <motion.div
+                                    layout
+                                    className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 3xl:grid-cols-5 4xl:grid-cols-6 gap-4"
+                                  >
+                                    <AnimatePresence mode="popLayout">
+                                      {paginatedUsers.map(user => (
+                                        <UserCard
+                                          key={user.uid}
+                                          user={user}
+                                          task={activeTasks.find(t => t.target_id === user.uid || t.target_id === user.sec_user_id)}
+                                          onRefresh={handleRefresh}
+                                          onToggleAutoUpdate={handleToggleAuto}
+                                          onPreferenceChange={async (uid, v, n, tgS, tgC) => {
+                                            try {
+                                              await api.updateUserPreference(uid, v, n, tgS, tgC);
+                                              setUsers(prev => prev.map(u => u.uid === uid ? {
+                                                ...u,
+                                                download_video_override: v,
+                                                download_note_override: n,
+                                                tg_sync_enabled: tgS,
+                                                tg_target_chat: tgC
+                                              } : u));
+                                              showToast('个人偏好设置已更新');
+                                            } catch (err) {
+                                              showToast('更新失败', 'error');
+                                            }
+                                          }}
+                                          onDelete={(u) => setModal({ isOpen: true, user: u })}
+                                          onTgSync={handleTgSync}
+                                          onMarkTgExported={handleMarkTgExported}
+                                        />
+                                      ))}
+                                    </AnimatePresence>
+                                  </motion.div>
+                                )}
+                              </div>
 
                               {/* Modern Pagination Controls */}
                               {totalPages > 1 && !isSortingUsers && (
-                                <div className="flex items-center justify-center gap-2 mt-10 pb-24 md:pb-0">
+                                <div className="flex items-center justify-center gap-2 mt-auto pb-24 md:pb-0 shrink-0">
                                   <button
                                     onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                                     disabled={activePage === 1}
@@ -708,106 +721,218 @@ function App() {
                   </section>
                 </div>
               ) : (
-                <div className="space-y-8">
-                  <header>
+                <div className="space-y-8 flex flex-col h-full">
+                  <header className="shrink-0">
                     <h2 className="text-4xl font-black tracking-tight text-white mb-2">发现 & 下载</h2>
                     <p className="text-white/30 text-sm font-medium">解析单条作品，或粘贴作者主页加入订阅同步。</p>
                   </header>
 
-                  <form onSubmit={handleAddUser} className="glass-card">
-                    <div className="flex items-center gap-3 mb-5">
-                      <Plus className="text-primary" size={20} />
-                      <h3 className="text-xl font-bold">添加订阅作者</h3>
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_180px_auto] gap-4 items-end">
-                      <div>
-                        <label className="block text-xs font-black text-white/35 uppercase tracking-wider mb-2">
-                          作者主页
-                        </label>
-                        <div className="relative">
-                          <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" size={18} />
-                          <input
-                            type="text"
-                            value={newUserUrl}
-                            onChange={(e) => setNewUserUrl(e.target.value)}
-                            placeholder="抖音/TikTok/快手 主页链接"
-                            className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-11 pr-4 outline-none focus:border-primary/50 transition-all text-sm font-medium placeholder:text-white/20"
-                          />
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 flex-1 min-h-0">
+                    {/* Left Column (2/3 width): Action Panel & Recent Sync History */}
+                    <div className="md:col-span-2 flex flex-col gap-6 md:h-full md:min-h-0">
+                      {/* Card 1: Consolidated Action Panel */}
+                      <div className="glass-card flex flex-col md:h-[380px] shrink-0">
+                        {/* Tabs Header */}
+                        <div className="flex border-b border-white/10 mb-6 gap-2 shrink-0">
+                          <button
+                            onClick={() => setActiveActionTab('single')}
+                            className={`flex items-center gap-2 pb-3 px-4 text-sm font-bold transition-all relative ${
+                              activeActionTab === 'single'
+                                ? 'text-primary'
+                                : 'text-white/40 hover:text-white/80'
+                            }`}
+                          >
+                            <Sparkles size={16} />
+                            单视频下载 / 解析
+                            {activeActionTab === 'single' && (
+                              <motion.div
+                                layoutId="activeActionTabUnderline"
+                                className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary"
+                              />
+                            )}
+                          </button>
+                          <button
+                            onClick={() => setActiveActionTab('subscribe')}
+                            className={`flex items-center gap-2 pb-3 px-4 text-sm font-bold transition-all relative ${
+                              activeActionTab === 'subscribe'
+                                ? 'text-primary'
+                                : 'text-white/40 hover:text-white/80'
+                            }`}
+                          >
+                            <Users size={16} />
+                            添加订阅作者
+                            {activeActionTab === 'subscribe' && (
+                              <motion.div
+                                layoutId="activeActionTabUnderline"
+                                className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary"
+                              />
+                            )}
+                          </button>
                         </div>
-                      </div>
 
-                      <div>
-                        <label className="block text-xs font-black text-white/35 uppercase tracking-wider mb-2">
-                          初次抓取数量
-                        </label>
-                        <input
-                          type="number"
-                          value={maxFetch || ''}
-                          onChange={(e) => setMaxFetch(parseInt(e.target.value) || 0)}
-                          placeholder="0 = 全量"
-                          className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 outline-none focus:border-primary/50 transition-all text-sm font-medium placeholder:text-white/20"
-                          title="最大抓取作品数量，0 表示抓取全部"
-                        />
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={!newUserUrl}
-                        className="w-full lg:w-auto px-8 py-3 bg-primary text-black font-black rounded-xl hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-primary/20 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
-                      >
-                        添加作者
-                      </button>
-                    </div>
-                  </form>
-
-                  <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)] gap-6 items-start">
-                    <SingleDownload onNotify={showToast} />
-
-                    <aside className="space-y-6">
-                      <div className="glass-card">
-                        <div className="flex items-center gap-3 mb-5">
-                          <Activity className="text-primary" size={20} />
-                          <h3 className="text-xl font-bold">同步概览</h3>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <DashboardStat label="订阅作者" value={users.length} />
-                          <DashboardStat label="活跃任务" value={activeTasks.length} />
-                          <DashboardStat label="抖音" value={platformCounts.douyin} />
-                          <DashboardStat label="TikTok" value={platformCounts.tiktok} />
-                          <DashboardStat label="快手" value={platformCounts.kuaishou} />
-                        </div>
-                      </div>
-
-                      <div className="glass-card">
-                        <div className="flex items-center justify-between gap-3 mb-5">
-                          <h3 className="text-xl font-bold">进行中</h3>
-                          <span className="text-xs font-black text-white/25 tabular-nums">{activeTasks.length}</span>
-                        </div>
-                        {activeTasks.length > 0 ? (
-                          <div className="space-y-3">
-                            {activeTasks.slice(0, 4).map(task => (
-                              <div key={task.id} className="rounded-2xl border border-white/5 bg-white/[0.03] p-3">
-                                <div className="flex items-center justify-between gap-3 mb-2">
-                                  <span className="truncate text-sm font-bold text-white/80">{task.target_id}</span>
-                                  <span className="text-[10px] font-black uppercase tracking-wider text-primary">{task.status}</span>
+                        {/* Tab Contents */}
+                        <div className="flex-1 flex flex-col justify-start">
+                          <div className={activeActionTab === 'single' ? '' : 'hidden'}>
+                            <SingleDownload onNotify={showToast} inline={true} />
+                          </div>
+                          <div className={activeActionTab === 'subscribe' ? '' : 'hidden'}>
+                            <form onSubmit={handleAddUser} className="space-y-6">
+                              <div className="text-xs text-white/30 font-medium">
+                                输入抖音、TikTok 或快手作者的主页链接，系统将自动监控并同步其最新发布的作品。
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_180px] gap-4 items-end">
+                                <div>
+                                  <label className="block text-xs font-black text-white/35 uppercase tracking-wider mb-2">
+                                    作者主页链接
+                                  </label>
+                                  <div className="relative">
+                                    <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" size={18} />
+                                    <input
+                                      type="text"
+                                      value={newUserUrl}
+                                      onChange={(e) => setNewUserUrl(e.target.value)}
+                                      placeholder="抖音/TikTok/快手 主页链接"
+                                      className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 pl-11 pr-24 outline-none focus:border-primary/50 transition-all text-sm font-medium placeholder:text-white/20"
+                                    />
+                                    {newUserUrl && (
+                                      <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1.5 select-none">
+                                        {newUserUrl.includes('tiktok.com') ? (
+                                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-white/10 text-white border border-white/20 uppercase tracking-wide">TikTok</span>
+                                        ) : newUserUrl.includes('kuaishou.com') || newUserUrl.includes('chenzhongtech.com') || newUserUrl.includes('kuaishouzt.com') || newUserUrl.includes('kwai.net') ? (
+                                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-orange-500/20 text-orange-400 border border-orange-500/10 uppercase tracking-wide">快手</span>
+                                        ) : (
+                                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/10 uppercase tracking-wide">抖音</span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
-                                <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
-                                  <div
-                                    className="h-full rounded-full bg-primary transition-all"
-                                    style={{ width: `${Math.max(0, Math.min(100, task.progress))}%` }}
+
+                                <div>
+                                  <label className="block text-xs font-black text-white/35 uppercase tracking-wider mb-2">
+                                    初次抓取数量
+                                  </label>
+                                  <input
+                                    type="number"
+                                    value={maxFetch || ''}
+                                    onChange={(e) => setMaxFetch(parseInt(e.target.value) || 0)}
+                                    placeholder="0 = 全量"
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 px-4 outline-none focus:border-primary/50 transition-all text-sm font-medium placeholder:text-white/20"
+                                    title="最大抓取作品数量，0 表示抓取全部"
                                   />
+                                </div>
+                              </div>
+
+                              <button
+                                type="submit"
+                                disabled={!newUserUrl}
+                                className="w-full py-3.5 bg-primary text-black font-black rounded-xl hover:scale-[1.01] active:scale-[0.99] transition-all shadow-xl shadow-primary/20 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100 animate-fade-in"
+                              >
+                                添加并启动订阅同步
+                              </button>
+                            </form>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Card 2: Recent Sync History */}
+                      <div className="glass-card md:flex-1 flex flex-col md:overflow-hidden md:min-h-0">
+                        <div className="flex items-center gap-3 mb-5 shrink-0">
+                          <History className="text-primary" size={20} />
+                          <h3 className="text-xl font-bold">最近同步</h3>
+                        </div>
+                        {recentDownloads.length > 0 ? (
+                          <div className="divide-y divide-white/5 space-y-4 flex-1 md:overflow-y-auto no-scrollbar">
+                            {recentDownloads.map((item, idx) => (
+                              <div key={`${item.aweme_id}-${idx}`} className="flex items-center gap-4 pt-4 first:pt-0">
+                                {/* Type icon wrapper */}
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                                  item.platform === 'tiktok' 
+                                    ? 'bg-white/10 text-white' 
+                                    : item.platform === 'kuaishou' 
+                                      ? 'bg-orange-500/10 text-orange-400' 
+                                      : 'bg-red-500/10 text-red-400'
+                                }`}>
+                                  {item.aweme_type === 68 ? <FileText size={18} /> : <Play size={18} />}
+                                </div>
+
+                                {/* Content info */}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-xs font-bold text-white/80 truncate max-w-[120px]">{item.nickname || '未知作者'}</span>
+                                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                                      item.platform === 'tiktok' 
+                                        ? 'bg-black text-white border border-white/20' 
+                                        : item.platform === 'kuaishou' 
+                                          ? 'bg-orange-500/20 text-orange-400 border border-orange-500/10' 
+                                          : 'bg-red-500/20 text-red-500 border border-red-500/10'
+                                    }`}>
+                                      {item.platform === 'tiktok' ? 'TikTok' : item.platform === 'kuaishou' ? '快手' : '抖音'}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-white/45 truncate" title={item.desc}>{item.desc || '（无描述文字）'}</p>
+                                </div>
+
+                                {/* Synced Date */}
+                                <div className="text-[10px] text-white/25 shrink-0">
+                                  {new Date(item.create_time * 1000).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}
                                 </div>
                               </div>
                             ))}
                           </div>
                         ) : (
-                          <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-4 py-8 text-center text-sm font-bold text-white/20">
-                            暂无活跃任务
+                          <div className="text-center py-8 text-sm font-bold text-white/20 select-none flex-1 flex items-center justify-center">
+                            暂无同步历史记录
                           </div>
                         )}
                       </div>
-                    </aside>
+                    </div>
+
+                    {/* Right Column (1/3 width): Resource & Stats & Platform Distribution */}
+                    <div className="md:col-span-1 flex flex-col gap-4 md:h-full w-full md:min-h-0">
+                      {/* Card 3: Resource & Stats */}
+                      <div className="glass-card flex-1 flex flex-col">
+                        <div className="flex items-center gap-3 mb-4 shrink-0">
+                          <Activity className="text-primary" size={20} />
+                          <h3 className="text-xl font-bold">资源与统计</h3>
+                        </div>
+                        <div className="flex-1 flex flex-col justify-center gap-3">
+                          {/* Large Featured Stat: Total Downloaded */}
+                          <div className="group rounded-2xl border border-white/5 bg-gradient-to-r from-emerald-500/[0.05] to-teal-500/[0.05] hover:from-emerald-500/[0.08] hover:to-teal-500/[0.08] py-3 px-4 flex items-center justify-between transition-all duration-300 hover:border-emerald-500/20 hover:shadow-[0_0_30px_rgba(16,185,129,0.12)]">
+                            <div>
+                              <div className="text-[10px] font-black uppercase tracking-wider text-white/30 group-hover:text-white/50 transition-colors duration-300">已同步作品总数</div>
+                              <div className="mt-1.5 text-3xl font-black tabular-nums text-emerald-400 group-hover:scale-[1.02] origin-left transition-all duration-300">
+                                {totalDownloaded.toLocaleString('zh-CN')} <span className="text-xs text-white/30 font-medium">个</span>
+                              </div>
+                            </div>
+                            <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:rotate-6 transition-all duration-300">
+                              <Download size={20} />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <DashboardStat label="活跃任务" value={activeTasks.length} type="tasks" />
+                            <DashboardStat label="自动更新" value={users.filter(u => u.auto_update).length} type="auto" />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Card 4: Platform Distribution */}
+                      <div className="glass-card flex-1 flex flex-col">
+                        <div className="flex items-center gap-3 mb-4 shrink-0">
+                          <Users className="text-primary" size={20} />
+                          <h3 className="text-xl font-bold">作者分布</h3>
+                        </div>
+                        <div className="flex-1 flex flex-col justify-center">
+                          <div className="grid grid-cols-2 gap-3">
+                            <DashboardStat label="总订阅数" value={users.length} type="all" />
+                            <DashboardStat label="抖音作者" value={platformCounts.douyin} type="douyin" />
+                            <DashboardStat label="TikTok作者" value={platformCounts.tiktok} type="tiktok" />
+                            <DashboardStat label="快手作者" value={platformCounts.kuaishou} type="kuaishou" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -959,11 +1084,50 @@ function VersionBadge({ versionState }: { versionState: VersionState }) {
   );
 }
 
-function DashboardStat({ label, value }: { label: string, value: number }) {
+function DashboardStat({ label, value, type }: { label: string, value: number, type: string }) {
+  const getHoverStyle = () => {
+    switch (type) {
+      case 'douyin':
+        return 'hover:border-cyan-500/30 hover:bg-cyan-500/[0.02] hover:shadow-[0_0_20px_rgba(6,182,212,0.12)]';
+      case 'tiktok':
+        return 'hover:border-white/20 hover:bg-white/[0.02] hover:shadow-[0_0_20px_rgba(255,255,255,0.06)]';
+      case 'kuaishou':
+        return 'hover:border-orange-500/30 hover:bg-orange-500/[0.02] hover:shadow-[0_0_20px_rgba(249,115,22,0.12)]';
+      case 'tasks':
+        return 'hover:border-primary/30 hover:bg-primary/[0.02] hover:shadow-[0_0_20px_rgba(254,44,85,0.12)]';
+      case 'auto':
+        return 'hover:border-emerald-500/30 hover:bg-emerald-500/[0.02] hover:shadow-[0_0_20px_rgba(16,185,129,0.12)]';
+      default:
+        return 'hover:border-indigo-500/30 hover:bg-indigo-500/[0.02] hover:shadow-[0_0_20px_rgba(99,102,241,0.12)]';
+    }
+  };
+
+  const getBadgeStyle = () => {
+    switch (type) {
+      case 'douyin':
+        return 'text-cyan-400 bg-cyan-500/10';
+      case 'tiktok':
+        return 'text-white bg-white/10';
+      case 'kuaishou':
+        return 'text-orange-400 bg-orange-500/10';
+      case 'tasks':
+        return 'text-primary bg-primary/10';
+      case 'auto':
+        return 'text-emerald-400 bg-emerald-500/10';
+      default:
+        return 'text-indigo-400 bg-indigo-500/10';
+    }
+  };
+
   return (
-    <div className="rounded-2xl border border-white/5 bg-white/[0.035] p-4">
-      <div className="text-2xl font-black tabular-nums text-white">{value}</div>
-      <div className="mt-1 text-[10px] font-black uppercase tracking-wider text-white/30">{label}</div>
+    <div className={`group rounded-2xl border border-white/5 bg-white/[0.035] py-3.5 px-4 transition-all duration-300 ${getHoverStyle()}`}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-2xl font-black tabular-nums text-white group-hover:scale-105 transition-transform duration-300">{value}</div>
+        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider ${getBadgeStyle()}`}>
+          {type === 'all' ? 'ALL' : type === 'auto' ? 'AUTO' : type === 'tasks' ? 'RUN' : type.slice(0, 2).toUpperCase()}
+        </span>
+      </div>
+      <div className="mt-1 text-[10px] font-black uppercase tracking-wider text-white/30 group-hover:text-white/50 transition-colors duration-300">{label}</div>
     </div>
   );
 }

@@ -223,3 +223,8 @@ export const updateCookie = async (platform: 'douyin' | 'tiktok' | 'kuaishou', c
   const { data } = await api.post('cookies', { platform, cookie });
   return data;
 };
+
+export const getStats = async (): Promise<{ total_downloaded: number; recent?: any[] }> => {
+  const { data } = await api.get<{ total_downloaded: number; recent?: any[] }>('stats');
+  return data;
+};

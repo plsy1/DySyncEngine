@@ -1,18 +1,19 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Download, Server, Link, Loader2, Sparkles, User, FileVideo, Clock } from 'lucide-react';
+import { Download, Server, Link, Loader2, Sparkles } from 'lucide-react';
 import type { VideoParseInfo } from '../types';
 import * as api from '../api';
 
 interface SingleDownloadProps {
     onNotify: (msg: string, type: 'success' | 'error') => void;
+    inline?: boolean;
 }
 
 const getErrorDetail = (err: unknown) => {
     return (err as { response?: { data?: { detail?: string } } }).response?.data?.detail;
 };
 
-export const SingleDownload = ({ onNotify }: SingleDownloadProps) => {
+export const SingleDownload = ({ onNotify, inline = false }: SingleDownloadProps) => {
     const [url, setUrl] = useState('');
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -60,12 +61,14 @@ export const SingleDownload = ({ onNotify }: SingleDownloadProps) => {
         onNotify('正在准备下载，请稍候...', 'success');
     };
 
-    return (
-        <div className="glass-card h-full">
-            <div className="flex items-center gap-3 mb-6">
-                <Sparkles className="text-primary" size={20} />
-                <h2 className="text-xl font-bold">单视频下载 / 解析</h2>
-            </div>
+    const renderContent = () => (
+        <>
+            {!inline && (
+                <div className="flex items-center gap-3 mb-6">
+                    <Sparkles className="text-primary" size={20} />
+                    <h2 className="text-xl font-bold">单视频下载 / 解析</h2>
+                </div>
+            )}
 
             <form onSubmit={handleParse} className="flex flex-col sm:flex-row gap-3">
                 <div className="relative flex-1">
@@ -93,71 +96,80 @@ export const SingleDownload = ({ onNotify }: SingleDownloadProps) => {
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: 'auto' }}
                         exit={{ opacity: 0, height: 0 }}
-                        className="mt-8 border-t border-white/5 pt-8 overflow-hidden"
+                        className="mt-6 border-t border-white/5 pt-6 overflow-hidden"
                     >
-                        <div className="flex flex-col md:flex-row gap-6">
-                            <div className="relative w-full max-w-[200px] mx-auto md:w-48 aspect-[9/16] rounded-xl overflow-hidden border border-white/10 shadow-2xl shrink-0">
+                        <div className="flex gap-4 items-start">
+                            {/* Compact Video Cover */}
+                            <div className="relative w-24 aspect-[9/16] rounded-xl overflow-hidden border border-white/10 shadow-xl shrink-0">
                                 <img src={videoData.cover_url || ''} className="w-full h-full object-cover" />
-                                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-4">
-                                    <div className="flex items-center gap-2 text-xs font-medium">
-                                        <User size={12} className="text-primary" />
-                                        <span className="truncate">{videoData.author_name}</span>
+                                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent p-2 text-center">
+                                    <div className="text-[10px] text-white/80 font-bold truncate">
+                                        {videoData.author_name}
                                     </div>
                                 </div>
                             </div>
 
-                            <div className="flex-1 space-y-6">
-                                <div>
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${videoData.aweme_type === 68 ? 'bg-amber-500/20 text-amber-500' : 'bg-blue-500/20 text-blue-500'}`}>
-                                            {videoData.aweme_type === 68 ? '图文 / Note' : '视频 / Video'}
+                            {/* Compact Details & Actions */}
+                            <div className="flex-1 min-w-0 flex flex-col justify-between h-[170px] py-1">
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${videoData.aweme_type === 68 ? 'bg-amber-500/20 text-amber-500 border border-amber-500/10' : 'bg-blue-500/20 text-blue-500 border border-blue-500/10'}`}>
+                                            {videoData.aweme_type === 68 ? '图文' : '视频'}
                                         </span>
-                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${videoData.platform === 'tiktok' ? 'bg-black text-white border border-white/20' : videoData.platform === 'kuaishou' ? 'bg-orange-500/20 text-orange-400' : 'bg-red-500/20 text-red-500'}`}>
+                                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${videoData.platform === 'tiktok' ? 'bg-black text-white border border-white/20' : videoData.platform === 'kuaishou' ? 'bg-orange-500/20 text-orange-400' : 'bg-red-500/20 text-red-500 border border-red-500/10'}`}>
                                             {videoData.platform === 'tiktok' ? 'TikTok' : videoData.platform === 'kuaishou' ? '快手' : 'Douyin'}
                                         </span>
-                                    </div>
-                                    <h3 className="text-lg font-bold mb-2 line-clamp-3">{videoData.desc || '（暂无描述）'}</h3>
-                                    <div className="flex items-center gap-2 text-white/40 text-sm">
-                                        <FileVideo size={14} />
-                                        <span>Aweme ID: {videoData.aweme_id}</span>
                                         {videoData.create_time > 0 && (
-                                            <>
-                                                <span className="text-white/20">|</span>
-                                                <div className="flex items-center gap-1">
-                                                    <Clock size={12} />
-                                                    <span>{formatDate(videoData.create_time)}</span>
-                                                </div>
-                                            </>
+                                            <span className="text-[10px] text-white/30 font-medium">
+                                                {formatDate(videoData.create_time)}
+                                            </span>
                                         )}
                                     </div>
+                                    <h3 className="text-sm font-bold text-white/95 line-clamp-2 leading-snug" title={videoData.desc || ''}>
+                                        {videoData.desc || '（暂无描述）'}
+                                    </h3>
+                                    <div className="text-[10px] text-white/40 truncate font-mono">
+                                        ID: {videoData.aweme_id}
+                                    </div>
                                 </div>
 
-                                <div className="flex flex-col sm:flex-row gap-3">
-                                    <button
-                                        onClick={handleSaveToServer}
-                                        disabled={saving}
-                                        className="flex-1 flex items-center justify-center gap-2 py-3 px-6 rounded-xl bg-primary text-white font-bold hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 w-full sm:w-auto"
-                                    >
-                                        {saving ? <Loader2 className="animate-spin" size={18} /> : <Server size={18} />}
-                                        保存到服务器
-                                    </button>
-                                    <button
-                                        onClick={handleLocalDownload}
-                                        className="flex-1 flex items-center justify-center gap-2 py-3 px-6 rounded-xl bg-white/5 border border-white/10 text-white font-bold hover:bg-white/10 active:scale-95 transition-all w-full sm:w-auto"
-                                    >
-                                        <Download size={18} />
-                                        下载到本地
-                                    </button>
+                                <div className="space-y-2 shrink-0">
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={handleSaveToServer}
+                                            disabled={saving}
+                                            className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-primary text-black font-black text-xs hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-50"
+                                        >
+                                            {saving ? <Loader2 className="animate-spin" size={14} /> : <Server size={14} />}
+                                            保存到服务器
+                                        </button>
+                                        <button
+                                            onClick={handleLocalDownload}
+                                            className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-white/5 border border-white/10 text-white font-bold text-xs hover:bg-white/10 active:scale-[0.99] transition-all"
+                                        >
+                                            <Download size={14} />
+                                            下载到本地
+                                        </button>
+                                    </div>
+                                    <p className="text-[9px] text-white/20 italic leading-none">
+                                        * 下载到本地将尝试直接打开无水印直链
+                                    </p>
                                 </div>
-
-                                <p className="text-xs text-white/30 italic">
-                                    * “下载到本地”将尝试直接打开无水印视频直链。
-                                </p>
                             </div>
                         </div>
                     </motion.div>
                 )}
             </AnimatePresence>
+        </>
+    );
+
+    if (inline) {
+        return <div className="h-full">{renderContent()}</div>;
+    }
+
+    return (
+        <div className="glass-card h-full">
+            {renderContent()}
         </div>
     );
 };
