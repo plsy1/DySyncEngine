@@ -31,6 +31,16 @@ interface EmbyItem {
 }
 
 type LibraryScope = 'default' | 'custom';
+type PlaybackMode = 'loop' | 'next';
+
+const getNextPlaybackMode = (mode: PlaybackMode): PlaybackMode => {
+    return mode === 'loop' ? 'next' : 'loop';
+};
+
+const getPlaybackModeLabel = (mode: PlaybackMode) => {
+    if (mode === 'loop') return '单片循环';
+    return '自动连播';
+};
 
 export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     const [settings, setSettings] = useState<GlobalSettings | null>(null);
@@ -79,7 +89,6 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     const [foldersLoading, setFoldersLoading] = useState(false);
     const [isMuted, setIsMuted] = useState(true);
     const [volume, setVolume] = useState(() => Number(localStorage.getItem('emby_player_volume') || '1'));
-    const [showVolumeSlider, setShowVolumeSlider] = useState(false);
     const [isPCVolumeVisible, setIsPCVolumeVisible] = useState(false);
     const volumeHideTimerRef = useRef<any>(null);
     const [videoMetadata, setVideoMetadata] = useState<Record<string, any>>({});
@@ -109,7 +118,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     const [hasStarted, setHasStarted] = useState<{ [key: string]: boolean }>({});
     const [hasManualSeek, setHasManualSeek] = useState<{ [key: string]: boolean }>({});
     const [displayMode, setDisplayMode] = useState<'smart' | 'cover' | 'contain'>('smart');
-    const [playbackMode, setPlaybackMode] = useState<'loop' | 'next'>('loop');
+    const [playbackMode, setPlaybackMode] = useState<PlaybackMode>('loop');
     const [sharingId, setSharingId] = useState<string | null>(null);
     const [deleteConfirmItem, setDeleteConfirmItem] = useState<EmbyItem | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
@@ -211,14 +220,20 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         }
     }, [onNotify]);
 
+    const jumpToIndex = useCallback((nextIndex: number, behavior: ScrollBehavior = 'smooth') => {
+        if (nextIndex < 0 || nextIndex >= itemsRef.current.length) return;
+        latestActiveIndexRef.current = nextIndex;
+        setActiveVideoIndex(nextIndex);
+        requestAnimationFrame(() => {
+            itemRefs.current[nextIndex]?.scrollIntoView({ behavior });
+        });
+    }, []);
+
     const goToNextContent = useCallback(() => {
         if (activeVideoIndex < items.length - 1) {
-            const nextIndex = activeVideoIndex + 1;
-            itemRefs.current[nextIndex]?.scrollIntoView({ behavior: 'smooth' });
-            // safePlay(nextIndex) is handled by video el's ref or other logic if needed, 
-            // but setting active index via scroll observer is usually how this app works.
+            jumpToIndex(activeVideoIndex + 1);
         }
-    }, [activeVideoIndex, items.length]);
+    }, [activeVideoIndex, jumpToIndex, items.length]);
 
     useEffect(() => {
         if (galleryTimerRef.current) clearTimeout(galleryTimerRef.current);
@@ -854,8 +869,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
             const onEnded = () => {
                 if (vIdx !== latestActiveIndexRef.current % 2) return;
                 if (playbackModeRef.current === 'next' && latestActiveIndexRef.current < itemsRef.current.length - 1) {
-                    const nextIndex = latestActiveIndexRef.current + 1;
-                    itemRefs.current[nextIndex]?.scrollIntoView({ behavior: 'smooth' });
+                    jumpToIndex(latestActiveIndexRef.current + 1);
                 }
             };
 
@@ -902,7 +916,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
             sharedVideosRef.current = [];
         };
-    }, []); // Created once, never re-created
+    }, [jumpToIndex]); // Created once; jumpToIndex is stable
 
     // Keep the shared video elements' classes in sync with display state
     useEffect(() => {
@@ -1376,9 +1390,9 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                 </button>
                                 <button
                                     onClick={() => {
-                                        const newMode = playbackMode === 'loop' ? 'next' : 'loop';
+                                        const newMode = getNextPlaybackMode(playbackMode);
                                         setPlaybackMode(newMode);
-                                        onNotify(`播放模式: ${newMode === 'loop' ? '单片循环' : '自动连播'}`, 'success');
+                                        onNotify(`播放模式: ${getPlaybackModeLabel(newMode)}`, 'success');
                                     }}
                                     className="p-2.5 text-white/70 hover:text-white transition-all bg-transparent border border-white/[0.05] hover:bg-white/10 rounded-full"
                                     title="播放模式"
@@ -1925,7 +1939,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                         className={`flex-1 flex flex-col items-center justify-center transition-all active:scale-95 ${tab === 'latest' ? 'text-white' : 'text-primary'}`}
                     >
                         <div className="relative">
-                            <Home size={22} className={tab === 'latest' ? '' : 'fill-primary'} />
+                            {tab === 'latest' ? <Clock size={22} /> : <Shuffle size={22} className="fill-primary/20" />}
                             {tab === 'latest' && <div className="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full" />}
                         </div>
                         <span className="text-[10px] font-black mt-0.5 tracking-tighter opacity-80">{tab === 'latest' ? '最新' : '随机'}</span>
@@ -1933,15 +1947,15 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
                     <button
                         onClick={() => {
-                            const newMode = playbackMode === 'loop' ? 'next' : 'loop';
+                            const newMode = getNextPlaybackMode(playbackMode);
                             setPlaybackMode(newMode);
-                            onNotify(`播放模式: ${newMode === 'loop' ? '单片循环' : '自动连播'}`, 'success');
+                            onNotify(`播放模式: ${getPlaybackModeLabel(newMode)}`, 'success');
                         }}
                         className={`flex-1 flex flex-col items-center justify-center transition-all active:scale-95 ${playbackMode === 'next' ? 'text-primary' : 'text-white/40'}`}
                     >
-                        {playbackMode === 'next' ? <ArrowRightCircle size={22} className="fill-primary/20" /> : <Repeat size={22} />}
+                        {playbackMode === 'loop' ? <Repeat size={22} /> : <ArrowRightCircle size={22} className="fill-primary/20" />}
                         <span className="text-[10px] font-black mt-0.5 tracking-tighter opacity-80">
-                            {playbackMode === 'next' ? '连播' : '循环'}
+                            {playbackMode === 'loop' ? '循环' : '连播'}
                         </span>
                     </button>
 
@@ -1970,42 +1984,11 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                     </button>
 
                     <div className="flex-1 relative flex flex-col items-center justify-center">
-                        <AnimatePresence>
-                            {(showVolumeSlider && !isIOS) && (
-                                <motion.div
-                                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                    className="absolute bottom-full mb-4 bg-black/80 backdrop-blur-xl rounded-2xl p-4 flex flex-col items-center gap-3 border border-white/10 shadow-2xl z-[100]"
-                                >
-                                    <div className="flex justify-between w-full px-1">
-                                        <span className="text-[10px] font-bold text-white/50">音量</span>
-                                        <span className="text-[10px] font-bold text-primary">{Math.round(volume * 100)}%</span>
-                                    </div>
-                                    <input
-                                        type="range"
-                                        min="0"
-                                        max="1"
-                                        step="0.01"
-                                        value={isMuted ? 0 : volume}
-                                        onChange={(e) => {
-                                            const v = parseFloat(e.target.value);
-                                            setVolume(v);
-                                            if (v > 0) setIsMuted(false);
-                                            else setIsMuted(true);
-                                        }}
-                                        className="w-28 volume-slider appearance-none cursor-pointer"
-                                        style={{ backgroundSize: `${(isMuted ? 0 : volume) * 100}% 100%` }}
-                                    />
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
                         <button
                             onClick={() => {
                                 const nextMuted = !isMuted;
                                 setIsMuted(nextMuted);
                                 if (!nextMuted && volume === 0) setVolume(1.0);
-                                if (!isIOS) setShowVolumeSlider(!showVolumeSlider);
                                 if (window.navigator.vibrate) window.navigator.vibrate(10);
                             }}
                             className={`flex flex-col items-center justify-center transition-all active:scale-95 ${!isMuted ? 'text-white' : 'text-red-500'}`}
