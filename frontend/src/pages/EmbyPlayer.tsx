@@ -133,6 +133,9 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
     const [isMobile, setIsMobile] = useState(
         typeof window !== 'undefined' ? window.innerWidth < 768 : false
     );
+    const [canHover, setCanHover] = useState(
+        typeof window !== 'undefined' ? window.matchMedia('(hover: hover) and (pointer: fine)').matches : false
+    );
     const [isScreenLandscape, setIsScreenLandscape] = useState(
         typeof window !== 'undefined' ? window.innerWidth > window.innerHeight : false
     );
@@ -184,6 +187,9 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
         const handleResize = () => {
             setIsScreenLandscape(window.innerWidth > window.innerHeight);
             setIsMobile(window.innerWidth < 768);
+            const nextCanHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+            setCanHover(nextCanHover);
+            if (!nextCanHover) setIsPCVolumeVisible(false);
         };
         const handleFullscreenChange = () => {
             setIsFullscreen(!!document.fullscreenElement);
@@ -1421,15 +1427,17 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                 <div
                                     className="relative flex items-center"
                                     onMouseEnter={() => {
+                                        if (!canHover) return;
                                         if (volumeHideTimerRef.current) clearTimeout(volumeHideTimerRef.current);
                                         setIsPCVolumeVisible(true);
                                     }}
                                     onMouseLeave={() => {
+                                        if (!canHover) return;
                                         volumeHideTimerRef.current = setTimeout(() => setIsPCVolumeVisible(false), 800);
                                     }}
                                 >
                                     <AnimatePresence>
-                                        {isPCVolumeVisible && (
+                                        {canHover && isPCVolumeVisible && (
                                             <motion.div
                                                 initial={{ opacity: 0, x: 10, scale: 0.95 }}
                                                 animate={{ opacity: 1, x: 0, scale: 1 }}
@@ -1775,34 +1783,36 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                 : undefined
                                         }}
                                     >
-                                        <div className="flex items-center gap-2 mb-2 drop-shadow-md overflow-x-auto no-scrollbar w-full scroll-smooth pointer-events-auto">
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    if (item.Path && videoMetadata[item.Path]) {
-                                                        const m = videoMetadata[item.Path];
-                                                        if (m.platform === 'douyin' && m.sec_user_id) {
-                                                            window.open(`https://www.douyin.com/user/${m.sec_user_id}`, '_blank');
-                                                        } else if (m.platform === 'tiktok' && m.nickname) {
-                                                            window.open(`https://www.tiktok.com/@${m.nickname}`, '_blank');
+                                        {item.Path && videoMetadata[item.Path]?.nickname && (
+                                            <div className="flex items-center gap-2 mb-2 drop-shadow-md overflow-x-auto no-scrollbar w-full scroll-smooth pointer-events-auto">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (item.Path && videoMetadata[item.Path]) {
+                                                            const m = videoMetadata[item.Path];
+                                                            if (m.platform === 'douyin' && m.sec_user_id) {
+                                                                window.open(`https://www.douyin.com/user/${m.sec_user_id}`, '_blank');
+                                                            } else if (m.platform === 'tiktok' && m.nickname) {
+                                                                window.open(`https://www.tiktok.com/@${m.nickname}`, '_blank');
+                                                            }
                                                         }
-                                                    }
-                                                }}
-                                                className="text-white font-bold text-lg hover:text-primary transition-colors pointer-events-auto whitespace-nowrap flex-shrink-0 px-0.5"
-                                            >
-                                                @{item.Path && videoMetadata[item.Path]?.nickname ? videoMetadata[item.Path].nickname : (getFolderName(item.Path) || 'Emby Video')}
-                                            </button>
-                                            {item.Path && videoMetadata[item.Path]?.platform && (
-                                                <span className="flex-shrink-0 px-1.5 py-0.5 bg-primary/20 text-primary text-[10px] rounded border border-primary/20 uppercase">
-                                                    {videoMetadata[item.Path].platform}
-                                                </span>
-                                            )}
-                                            {item.Path && videoMetadata[item.Path]?.create_time > 0 && (
-                                                <span className="flex-shrink-0 text-white/40 text-[10px] font-medium ml-1 whitespace-nowrap">
-                                                    · {formatDate(videoMetadata[item.Path].create_time)}
-                                                </span>
-                                            )}
-                                        </div>
+                                                    }}
+                                                    className="text-white font-bold text-lg hover:text-primary transition-colors pointer-events-auto whitespace-nowrap flex-shrink-0 px-0.5"
+                                                >
+                                                    @{videoMetadata[item.Path].nickname}
+                                                </button>
+                                                {videoMetadata[item.Path]?.platform && (
+                                                    <span className="flex-shrink-0 px-1.5 py-0.5 bg-primary/20 text-primary text-[10px] rounded border border-primary/20 uppercase">
+                                                        {videoMetadata[item.Path].platform}
+                                                    </span>
+                                                )}
+                                                {videoMetadata[item.Path]?.create_time > 0 && (
+                                                    <span className="flex-shrink-0 text-white/40 text-[10px] font-medium ml-1 whitespace-nowrap">
+                                                        · {formatDate(videoMetadata[item.Path].create_time)}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
                                         {(() => {
                                             const descText = (item.Path && videoMetadata[item.Path]?.desc) || item.Overview;
                                             if (!descText) return null;
