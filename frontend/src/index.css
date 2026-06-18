@@ -45,7 +45,7 @@ html {
 
 @layer components {
   .glass-card {
-    @apply bg-card border border-white/5 rounded-3xl p-8 transition-all duration-500 backdrop-blur-xl relative;
+    @apply bg-card border border-white/5 rounded-2xl md:rounded-3xl p-5 md:p-8 transition-all duration-500 backdrop-blur-xl relative;
     box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
   }
 

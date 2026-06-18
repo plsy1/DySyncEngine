@@ -446,11 +446,30 @@ function App() {
       {/* Main Content Area */}
       <main 
         style={{ paddingTop: 'var(--sat)' }}
-        className="flex-1 md:ml-20 lg:ml-64 min-h-screen overflow-y-auto custom-scrollbar"
+        className="flex-1 md:ml-20 lg:ml-64 min-h-screen overflow-y-auto custom-scrollbar flex flex-col"
       >
+        {/* Mobile Top Header */}
+        <div className="md:hidden w-full px-6 py-4 flex items-center justify-between border-b border-black/5 dark:border-white/5 bg-card/45 backdrop-blur-xl sticky top-0 z-45">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary to-primary/40 p-[1px]">
+              <div className="w-full h-full bg-black rounded-xl flex items-center justify-center overflow-hidden">
+                <img src="/logo.svg" alt="DS" className="w-full h-full object-cover p-1.5" />
+              </div>
+            </div>
+            <div>
+              <h1 className="text-base font-bold tracking-tight text-white">
+                DySync<span className="text-primary font-black">.</span>
+              </h1>
+            </div>
+          </div>
+          <div className="text-[10px] font-black uppercase tracking-wider text-black/40 dark:text-white/30 bg-black/5 dark:bg-white/5 px-2.5 py-1 rounded-lg border border-black/5 dark:border-white/5">
+            v{normalizeVersion(versionState.latest || __APP_VERSION__)}
+          </div>
+        </div>
+
         <div 
-            style={{ paddingBottom: 'var(--sab)' }}
-            className="max-w-[1920px] mx-auto p-6 lg:p-10 space-y-10"
+            style={{ paddingBottom: 'calc(var(--sab) + 5.5rem)' }}
+            className="max-w-[1920px] w-full mx-auto p-4 md:p-6 lg:p-10 space-y-6 md:space-y-10 flex-1"
         >
           <AnimatePresence mode="wait">
             <motion.div
@@ -822,7 +841,7 @@ function App() {
       {/* Bottom Navigation for Mobile/PWA - Minimalist Floating Island */}
       <nav 
         style={{ marginBottom: 'max(var(--sab), 16px)' }}
-        className="md:hidden fixed bottom-0 left-6 right-6 h-16 bg-white/5 backdrop-blur-xl border border-white/20 ring-1 ring-inset ring-white/10 z-[60] flex items-center justify-around px-2 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.2)]"
+        className="md:hidden fixed bottom-0 left-6 right-6 h-16 bg-card/85 backdrop-blur-xl border border-black/10 dark:border-white/10 z-[60] flex items-center justify-around px-2 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.15)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.4)]"
       >
         <MobileNavButton active={view === 'dashboard'} onClick={() => { setView('dashboard'); setShowMoreMenu(false); }} icon={<Search size={22} />} label="发现" />
         <MobileNavButton active={view === 'subscriptions'} onClick={() => { setView('subscriptions'); setShowMoreMenu(false); }} icon={<Users size={22} />} label="订阅" />
@@ -852,7 +871,7 @@ function App() {
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="md:hidden fixed bottom-0 left-0 right-0 bg-[#060608]/80 backdrop-blur-2xl border-t border-white/20 rounded-t-[40px] z-[80] p-7 pb-[calc(28px+var(--sab))] shadow-2xl"
+              className="md:hidden fixed bottom-0 left-0 right-0 bg-card/90 backdrop-blur-2xl border-t border-black/10 dark:border-white/10 rounded-t-[40px] z-[80] p-7 pb-[calc(28px+var(--sab))] shadow-2xl"
             >
               <div className="w-12 h-1 bg-white/10 rounded-full mx-auto mb-8" />
               <div className="grid grid-cols-1 gap-2">
@@ -1026,20 +1045,15 @@ function MobileNavButton({ active, onClick, icon, label }: { active: boolean, on
   return (
     <button
       onClick={onClick}
-      className={`flex-1 flex flex-col items-center justify-center transition-all duration-300 relative ${active ? 'text-primary' : 'text-white/20'}`}
+      style={{ color: active ? 'var(--primary)' : 'var(--text-dim)' }}
+      className="flex-1 flex flex-col items-center justify-center transition-all duration-300 relative"
     >
-      <div className={`transition-all duration-300 ${active ? 'scale-110' : 'active:scale-90'}`}>
+      <div className={`transition-all duration-300 ${active ? 'scale-110' : 'active:scale-95'}`}>
         {icon}
       </div>
-      {active && (
-        <motion.span 
-          initial={{ opacity: 0, y: 5 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-[10px] font-black mt-0.5 tracking-tighter"
-        >
-          {label}
-        </motion.span>
-      )}
+      <span className="text-[10px] font-black mt-1 tracking-tighter">
+        {label}
+      </span>
     </button>
   );
 }

@@ -58,7 +58,7 @@ export const UserCard = ({ user, task, onRefresh, onDelete, onToggleAutoUpdate, 
             layout
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="glass-card overflow-hidden flex flex-col group border border-white/5 hover:border-white/10 transition-all duration-300"
+            className="glass-card !p-0 overflow-hidden flex flex-col group border border-white/5 hover:border-white/10 transition-all duration-300"
         >
             {/* Background Accent */}
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />

@@ -67,7 +67,7 @@ export const SingleDownload = ({ onNotify }: SingleDownloadProps) => {
                 <h2 className="text-xl font-bold">单视频下载 / 解析</h2>
             </div>
 
-            <form onSubmit={handleParse} className="flex gap-2">
+            <form onSubmit={handleParse} className="flex flex-col sm:flex-row gap-3">
                 <div className="relative flex-1">
                     <Link className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" size={18} />
                     <input
@@ -75,13 +75,13 @@ export const SingleDownload = ({ onNotify }: SingleDownloadProps) => {
                         value={url}
                         onChange={(e) => setUrl(e.target.value)}
                         placeholder="粘贴抖音/TikTok/快手 视频分享链接..."
-                        className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-11 pr-4 outline-none focus:border-primary/50 transition-all text-sm"
+                        className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-11 pr-4 outline-none focus:border-primary/50 transition-all text-sm font-medium"
                     />
                 </div>
                 <button
                     type="submit"
                     disabled={loading || !url}
-                    className="btn-primary py-2 px-6 flex items-center gap-2"
+                    className="btn-primary py-3 px-6 flex items-center justify-center gap-2 w-full sm:w-auto"
                 >
                     {loading ? <Loader2 className="animate-spin" size={18} /> : '解析视频'}
                 </button>
@@ -96,7 +96,7 @@ export const SingleDownload = ({ onNotify }: SingleDownloadProps) => {
                         className="mt-8 border-t border-white/5 pt-8 overflow-hidden"
                     >
                         <div className="flex flex-col md:flex-row gap-6">
-                            <div className="relative w-full md:w-48 aspect-[9/16] rounded-xl overflow-hidden border border-white/10 shadow-2xl">
+                            <div className="relative w-full max-w-[200px] mx-auto md:w-48 aspect-[9/16] rounded-xl overflow-hidden border border-white/10 shadow-2xl shrink-0">
                                 <img src={videoData.cover_url || ''} className="w-full h-full object-cover" />
                                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-4">
                                     <div className="flex items-center gap-2 text-xs font-medium">
@@ -132,18 +132,18 @@ export const SingleDownload = ({ onNotify }: SingleDownloadProps) => {
                                     </div>
                                 </div>
 
-                                <div className="flex flex-wrap gap-3">
+                                <div className="flex flex-col sm:flex-row gap-3">
                                     <button
                                         onClick={handleSaveToServer}
                                         disabled={saving}
-                                        className="flex-1 md:flex-none flex items-center justify-center gap-2 py-3 px-6 rounded-xl bg-primary text-white font-bold hover:opacity-90 active:scale-95 transition-all disabled:opacity-50"
+                                        className="flex-1 flex items-center justify-center gap-2 py-3 px-6 rounded-xl bg-primary text-white font-bold hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 w-full sm:w-auto"
                                     >
                                         {saving ? <Loader2 className="animate-spin" size={18} /> : <Server size={18} />}
                                         保存到服务器
                                     </button>
                                     <button
                                         onClick={handleLocalDownload}
-                                        className="flex-1 md:flex-none flex items-center justify-center gap-2 py-3 px-6 rounded-xl bg-white/5 border border-white/10 text-white font-bold hover:bg-white/10 active:scale-95 transition-all"
+                                        className="flex-1 flex items-center justify-center gap-2 py-3 px-6 rounded-xl bg-white/5 border border-white/10 text-white font-bold hover:bg-white/10 active:scale-95 transition-all w-full sm:w-auto"
                                     >
                                         <Download size={18} />
                                         下载到本地
