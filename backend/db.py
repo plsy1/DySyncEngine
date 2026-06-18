@@ -193,12 +193,17 @@ def add_or_update_user(session: Session, user_data: dict):
     if not uid:
         return
 
+    def next_sort_order() -> int:
+        max_order = session.query(User.sort_order).filter(User.sort_order >= 0).order_by(User.sort_order.desc()).first()
+        return ((max_order[0] if max_order and max_order[0] is not None else -1) + 1)
+
     user = session.query(User).filter_by(uid=uid).first()
     if not user:
         user = User(uid=uid)
-        max_order = session.query(User.sort_order).order_by(User.sort_order.desc()).first()
-        user.sort_order = ((max_order[0] if max_order and max_order[0] is not None else -1) + 1)
+        user.sort_order = next_sort_order()
         session.add(user)
+    elif user_data.get("subscribed") and (user.sort_order is None or user.sort_order < 0):
+        user.sort_order = next_sort_order()
 
     # 仅更新非空值
     if user_data.get("sec_user_id"):

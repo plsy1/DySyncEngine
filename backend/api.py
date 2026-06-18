@@ -200,13 +200,13 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
             update_task_progress(session, task_id, 100, status="completed", message="同步完成")
 
 
-def download_user_videos_task(sec_user_id: str, platform: str, task_id: str, max_fetch: int = 0):
+def download_user_videos_task(sec_user_id: str, platform: str, task_id: str, max_fetch: int = 0, force_full: bool = False):
     """
     后台抓取用户视频任务
     """
     try:
         with next(get_session()) as session:
-            sync_user_videos(session, sec_user_id, platform=platform, task_id=task_id, max_fetch=max_fetch)
+            sync_user_videos(session, sec_user_id, platform=platform, task_id=task_id, max_fetch=max_fetch, force_full=force_full)
     except Exception as e:
         with next(get_session()) as session:
             update_task_progress(session, task_id, 100, status="failed", message=str(e))
@@ -436,6 +436,8 @@ def download_user_videos_api(
         uid = author_info.get("uid") or sec_user_id
         
         with next(get_session()) as session:
+            existing_user = session.query(User).filter_by(uid=uid).first()
+            force_full = bool(existing_user and (existing_user.sort_order is None or existing_user.sort_order < 0))
             # 创建用户记录
             add_or_update_user(session, {
                 "uid": uid,
@@ -443,12 +445,13 @@ def download_user_videos_api(
                 "nickname": author_info.get("nickname"),
                 "avatar_url": author_info.get("avatar_thumb", {}).get("url_list", [None])[0] if isinstance(author_info.get("avatar_thumb"), dict) else author_info.get("avatar_thumb"),
                 "signature": author_info.get("signature"),
-                "platform": platform
+                "platform": platform,
+                "subscribed": True,
             })
             # 创建任务记录
             create_task(session, task_id, target_id=uid)
             
-        background_tasks.add_task(download_user_videos_task, sec_user_id, platform, task_id, max_fetch)
+        background_tasks.add_task(download_user_videos_task, sec_user_id, platform, task_id, max_fetch, force_full)
         return {"started": True, "task_id": task_id}
         
     except HTTPException:
