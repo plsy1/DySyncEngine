@@ -734,17 +734,45 @@ def download_from_share_url(share_url: str = Query(..., description="抖音分�
     
     # 2. 同步到数据库
     with next(get_session()) as session:
-        # 仅当该作者已在订阅列表中时，才更新其个人资料。避免单视频下载导致意外新增订阅作者。
         from db import User as DBUser
-        if session.query(DBUser).filter(DBUser.uid == uid).first():
+        
+        avatar_url = (
+            author_info.get("avatar_thumb", {}).get("url_list", [None])[0]
+            if isinstance(author_info.get("avatar_thumb"), dict)
+            else author_info.get("avatar_thumb")
+        )
+        
+        existing_user = session.query(DBUser).filter(DBUser.uid == uid).first()
+        if existing_user:
+            # 作者已在订阅列表中，正常更新
             add_or_update_user(session, {
                 "uid": uid,
                 "sec_user_id": sec_user_id,
                 "nickname": final_nickname,
-                "avatar_url": author_info.get("avatar_thumb", {}).get("url_list", [None])[0] if isinstance(author_info.get("avatar_thumb"), dict) else author_info.get("avatar_thumb"),
+                "avatar_url": avatar_url,
                 "signature": author_info.get("signature"),
                 "platform": platform
             })
+        else:
+            # 作者不在订阅列表，但仍写入基础信息（供 Emby 播放器左下角显示头像/昵称）
+            # auto_update 默认为 False，不会出现在"订阅中"页面也不会被自动同步
+            new_user = DBUser(
+                uid=uid,
+                sec_user_id=sec_user_id,
+                nickname=final_nickname,
+                avatar_url=avatar_url,
+                signature=author_info.get("signature"),
+                platform=platform,
+                auto_update=False,
+            )
+            # 设置 sort_order 为 -1，与正常订阅用户区分（正常从 0 开始）
+            new_user.sort_order = -1
+            session.add(new_user)
+            try:
+                session.commit()
+            except Exception:
+                session.rollback()  # 防止竞态条件导致 uid 重复插入时崩溃
+
         
         # 存储/更新 Aweme 记录
         add_aweme(session, {
@@ -856,7 +884,7 @@ def get_settings_api(session: Session = Depends(get_session), _ = Depends(get_cu
         emby_server_url=get_config(session, "emby_server_url", ""),
         emby_api_key=get_config(session, "emby_api_key", ""),
         emby_default_library=get_config(session, "emby_default_library", ""),
-        folder_name_pattern=get_config(session, "folder_name_pattern", "{nickname}_{uid}")
+        folder_name_pattern=get_config(session, "folder_name_pattern", "{platform}/{nickname}_{uid}")
     )
 
 @router.post("/settings")

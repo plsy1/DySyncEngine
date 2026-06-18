@@ -127,14 +127,14 @@ def get_author_folder_name(nickname: str, uid: str, platform: str, session=None)
     """
     根据配置的文件夹命名规则生成作者的文件夹名称
     """
-    # 默认命名规则为 "{nickname}_{uid}"
-    pattern = "{nickname}_{uid}"
+    # 默认命名规则为 "{platform}/{nickname}_{uid}"
+    pattern = "{platform}/{nickname}_{uid}"
     
     # 2. 从数据库中拉取自定义命名规则
     if session:
         try:
             from db import get_config
-            pattern = get_config(session, "folder_name_pattern", "{nickname}_{uid}")
+            pattern = get_config(session, "folder_name_pattern", "{platform}/{nickname}_{uid}")
         except Exception:
             pass
     else:
@@ -142,7 +142,7 @@ def get_author_folder_name(nickname: str, uid: str, platform: str, session=None)
         try:
             from db import SessionLocal, get_config
             with SessionLocal() as db_session:
-                pattern = get_config(db_session, "folder_name_pattern", "{nickname}_{uid}")
+                pattern = get_config(db_session, "folder_name_pattern", "{platform}/{nickname}_{uid}")
         except Exception:
             pass
 
@@ -271,9 +271,23 @@ def _extract_author_folder_from_path(local_path: str, save_dir: str) -> str | No
     except ValueError:
         return None
 
-    first_segment = relative_path.split(os.sep, 1)[0]
-    return first_segment or None
+    # relative_path 示例:
+    #   旧格式: "张三_12345/videos/xxx.mp4"  -> 作者目录 = "张三_12345"
+    #   新格式: "douyin/张三_12345/videos/xxx.mp4" -> 作者目录 = "douyin/张三_12345"
+    # 策略: 找到第一个名为 "videos" 或 "notes" 的段，取其之前的所有段作为作者目录
+    LEAF_DIRS = {"videos", "notes"}
+    parts = relative_path.split(os.sep)
+    for i, part in enumerate(parts):
+        if part.lower() in LEAF_DIRS:
+            author_parts = parts[:i]
+            if author_parts:
+                return os.path.join(*author_parts)
+            return None
 
+    # 没有找到 videos/notes（可能是较早的数据，路径就是文件本身或单层目录）
+    # 退回到原来的行为：只取第一段
+    first_segment = parts[0]
+    return first_segment or None
 
 def _find_author_folder(session, user, save_dir: str) -> str | None:
     from db import Aweme
@@ -291,22 +305,36 @@ def _find_author_folder(session, user, save_dir: str) -> str | None:
     possible_suffixes = [f"_{user.uid}", f"-{user.uid}"]
     possible_prefixes = [f"{user.uid}_", f"{user.uid}-"]
 
+    def _matches(name: str) -> bool:
+        if name == user.uid:
+            return True
+        if any(name.endswith(s) for s in possible_suffixes):
+            return True
+        if any(name.startswith(p) for p in possible_prefixes):
+            return True
+        return False
+
     try:
         for entry in os.scandir(save_dir):
             if not entry.is_dir():
                 continue
-            if entry.name == user.uid:
+            # 直接匹配（旧格式 {nickname}_{uid}）
+            if _matches(entry.name):
                 return entry.name
-            if any(entry.name.endswith(suffix) for suffix in possible_suffixes):
-                return entry.name
-            if any(entry.name.startswith(prefix) for prefix in possible_prefixes):
-                return entry.name
+            # 子目录匹配（新格式 {platform}/{nickname}_{uid}）
+            try:
+                for sub in os.scandir(entry.path):
+                    if sub.is_dir() and _matches(sub.name):
+                        return os.path.join(entry.name, sub.name)
+            except Exception:
+                pass
     except FileNotFoundError:
         return None
     except Exception as e:
         logger.error(f"扫描目录 {save_dir} 寻找作者目录失败: {e}")
 
     return None
+
 
 
 def build_folder_migration_plan(session, pattern: str | None = None) -> dict:

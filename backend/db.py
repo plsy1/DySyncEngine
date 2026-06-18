@@ -231,9 +231,9 @@ def add_or_update_user(session: Session, user_data: dict):
 
 def get_all_users(session: Session):
     """
-    获取所有作者信息
+    获取所有订阅用户信息（sort_order >= 0 的用户），不包含仅用于 Emby 元数据的临时用户（sort_order = -1）
     """
-    return session.query(User).order_by(User.sort_order.asc(), User.created_at.asc(), User.id.asc()).all()
+    return session.query(User).filter(User.sort_order >= 0).order_by(User.sort_order.asc(), User.created_at.asc(), User.id.asc()).all()
 
 
 def update_user_sort_order(session: Session, ordered_uids: list[str]):

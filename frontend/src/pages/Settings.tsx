@@ -33,7 +33,7 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
         emby_server_url: '',
         emby_api_key: '',
         emby_default_library: '',
-        folder_name_pattern: '{nickname}_{uid}',
+        folder_name_pattern: '{platform}/{nickname}_{uid}',
     });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -188,7 +188,7 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
     const fetchMigrationPreview = async () => {
         setPreviewingMigration(true);
         try {
-            const data = await api.previewFolderMigration(settings.folder_name_pattern || '{nickname}_{uid}');
+            const data = await api.previewFolderMigration(settings.folder_name_pattern || '{platform}/{nickname}_{uid}');
             setMigrationPreview(data);
             if (data.total === 0) {
                 onNotify('没有需要迁移的目录', 'success');
@@ -631,14 +631,14 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                                             type="text"
                                             value={settings.folder_name_pattern || ''}
                                             onChange={(e) => setSettings(s => ({ ...s, folder_name_pattern: e.target.value }))}
-                                            placeholder="{nickname}_{uid}"
+                                            placeholder="{platform}/{nickname}_{uid}"
                                             className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 transition-all font-bold text-sm font-mono text-white"
                                         />
                                         <p className="text-[10px] text-white/30 pl-1 leading-normal">
                                             支持替换标签：<code className="text-primary/70">{`{nickname}`}</code>（昵称）、
                                             <code className="text-primary/70">{`{uid}`}</code>（用户ID）、
                                             <code className="text-primary/70">{`{platform}`}</code>（所属平台）。<br />
-                                            默认示例：<code className="text-white/50">{`{nickname}_{uid}`}</code>
+                                            默认示例：<code className="text-white/50">{`{platform}/{nickname}_{uid}`}</code>
                                         </p>
                                     </div>
 
@@ -917,7 +917,7 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                                 <div>
                                     <h3 className="text-xl font-black text-white">已有目录迁移预览</h3>
                                     <p className="text-white/40 text-xs mt-1">
-                                        基于命名规则: <code className="text-primary font-mono">{settings.folder_name_pattern || '{nickname}_{uid}'}</code>
+                                        基于命名规则: <code className="text-primary font-mono">{settings.folder_name_pattern || '{platform}/{nickname}_{uid}'}</code>
                                     </p>
                                 </div>
                                 <button 

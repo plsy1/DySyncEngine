@@ -1691,7 +1691,7 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
 
 
                                         {/* Right Action Buttons */}
-                                        <div className="absolute right-3 md:right-4 bottom-[180px] md:bottom-12 flex flex-col gap-6 items-center pointer-events-auto z-40">
+                                        <div className="absolute right-3 md:right-4 bottom-[180px] md:bottom-12 flex flex-col gap-6 items-center pointer-events-auto z-[60]">
                                             {/* Avatar */}
                                             {item.Path && videoMetadata[item.Path]?.avatar_url && (
                                                 <div className="flex flex-col items-center mb-2">
@@ -1803,37 +1803,43 @@ export const EmbyPlayer = ({ onBack, onNotify }: EmbyPlayerProps) => {
                                                 </span>
                                             )}
                                         </div>
-                                        <div 
-                                            className="flex flex-col items-start gap-1 pointer-events-auto"
-                                            onClick={(e) => {
-                                                if (!isTruncated[item.Id]) return;
-                                                e.stopPropagation();
-                                                setExpandedDescs(prev => ({ ...prev, [item.Id]: !prev[item.Id] }));
-                                            }}
-                                            onTouchStart={(e) => {
-                                                if (isTruncated[item.Id]) e.stopPropagation();
-                                            }}
-                                        >
-                                            <p
-                                                ref={(el) => { descRefs.current[item.Id] = el; }}
-                                                className={`text-white/80 text-sm drop-shadow-md transition-all ${
-                                                    isTruncated[item.Id] ? 'cursor-pointer' : ''
-                                                } ${
-                                                    expandedDescs[item.Id] 
-                                                        ? 'whitespace-pre-wrap max-h-[40vh] overflow-y-auto no-scrollbar py-2' 
-                                                        : 'line-clamp-3'
-                                                }`}
-                                            >
-                                                {(item.Path && videoMetadata[item.Path]?.desc) || item.Overview || item.Name}
-                                            </p>
-                                            {isTruncated[item.Id] && (
-                                                <button
-                                                    className="text-white/40 text-[11px] font-bold hover:text-white transition-colors py-2 px-1 -ml-1 flex items-center gap-1 active:opacity-50"
+                                        {(() => {
+                                            const descText = (item.Path && videoMetadata[item.Path]?.desc) || item.Overview;
+                                            if (!descText) return null;
+                                            return (
+                                                <div 
+                                                    className="flex flex-col items-start gap-1 pointer-events-auto"
+                                                    onClick={(e) => {
+                                                        if (!isTruncated[item.Id]) return;
+                                                        e.stopPropagation();
+                                                        setExpandedDescs(prev => ({ ...prev, [item.Id]: !prev[item.Id] }));
+                                                    }}
+                                                    onTouchStart={(e) => {
+                                                        if (isTruncated[item.Id]) e.stopPropagation();
+                                                    }}
                                                 >
-                                                    {expandedDescs[item.Id] ? '[ 收起文本 ]' : '...... [ 展开全文 ]'}
-                                                </button>
-                                            )}
-                                        </div>
+                                                    <p
+                                                        ref={(el) => { descRefs.current[item.Id] = el; }}
+                                                        className={`text-white/80 text-sm drop-shadow-md transition-all ${
+                                                            isTruncated[item.Id] ? 'cursor-pointer' : ''
+                                                        } ${
+                                                            expandedDescs[item.Id] 
+                                                                ? 'whitespace-pre-wrap max-h-[40vh] overflow-y-auto no-scrollbar py-2' 
+                                                                : 'line-clamp-3'
+                                                        }`}
+                                                    >
+                                                        {descText}
+                                                    </p>
+                                                    {isTruncated[item.Id] && (
+                                                        <button
+                                                            className="text-white/40 text-[11px] font-bold hover:text-white transition-colors py-2 px-1 -ml-1 flex items-center gap-1 active:opacity-50"
+                                                        >
+                                                            {expandedDescs[item.Id] ? '[ 收起文本 ]' : '...... [ 展开全文 ]'}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
 
                                     {/* Progress Bar - Bottom (Douyin Style) */}
