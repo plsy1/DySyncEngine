@@ -596,7 +596,7 @@ function App() {
                               )}
 
                               {/* Grid container with internal scroll on desktop */}
-                              <div className="flex-1 md:overflow-y-auto min-h-0 custom-scrollbar md:pr-2 md:py-1 mb-4 no-scrollbar">
+                              <div className="flex-1 lg:overflow-y-auto min-h-0 custom-scrollbar lg:pr-2 lg:py-1 mb-4 no-scrollbar">
                                 {isSortingUsers ? (
                                   <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
                                     {sortDraftUsers.map(user => (
@@ -727,11 +727,11 @@ function App() {
                     <p className="text-white/30 text-sm font-medium">解析单条作品，或粘贴作者主页加入订阅同步。</p>
                   </header>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 flex-1 min-h-0">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0">
                     {/* Left Column (2/3 width): Action Panel & Recent Sync History */}
-                    <div className="md:col-span-2 flex flex-col gap-6 md:h-full md:min-h-0">
+                    <div className="lg:col-span-2 flex flex-col gap-6 lg:h-full lg:min-h-0">
                       {/* Card 1: Consolidated Action Panel */}
-                      <div className="glass-card flex flex-col md:h-[380px] shrink-0">
+                      <div className="glass-card flex flex-col lg:h-[380px] shrink-0">
                         {/* Tabs Header */}
                         <div className="flex border-b border-white/10 mb-6 gap-2 shrink-0">
                           <button
@@ -836,13 +836,13 @@ function App() {
                       </div>
 
                       {/* Card 2: Recent Sync History */}
-                      <div className="glass-card md:flex-1 flex flex-col md:overflow-hidden md:min-h-0">
+                      <div className="glass-card lg:flex-1 flex flex-col lg:overflow-hidden lg:min-h-0">
                         <div className="flex items-center gap-3 mb-5 shrink-0">
                           <History className="text-primary" size={20} />
                           <h3 className="text-xl font-bold">最近同步</h3>
                         </div>
                         {recentDownloads.length > 0 ? (
-                          <div className="divide-y divide-white/5 space-y-4 flex-1 md:overflow-y-auto no-scrollbar">
+                          <div className="divide-y divide-white/5 space-y-4 flex-1 lg:overflow-y-auto no-scrollbar">
                             {recentDownloads.map((item, idx) => (
                               <div key={`${item.aweme_id}-${idx}`} className="flex items-center gap-4 pt-4 first:pt-0">
                                 {/* Type icon wrapper */}
@@ -889,7 +889,7 @@ function App() {
                     </div>
 
                     {/* Right Column (1/3 width): Resource & Stats & Platform Distribution */}
-                    <div className="md:col-span-1 flex flex-col gap-4 md:h-full w-full md:min-h-0">
+                    <div className="lg:col-span-1 flex flex-col gap-4 lg:h-full w-full lg:min-h-0">
                       {/* Card 3: Resource & Stats */}
                       <div className="glass-card flex-1 flex flex-col">
                         <div className="flex items-center gap-3 mb-4 shrink-0">
