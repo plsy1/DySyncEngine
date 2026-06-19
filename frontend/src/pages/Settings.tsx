@@ -36,6 +36,7 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
         emby_api_key: '',
         emby_default_library: '',
         folder_name_pattern: '{platform}/{nickname}_{uid}',
+        shortcut_token: 'password',
     });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -854,7 +855,30 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                                         选择界面的展示色彩方案，支持浅色主题、经典深色主题或自动跟随操作系统的外观偏好。
                                     </p>
                                 </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">快捷指令 Token</label>
+                                    <input
+                                        type="text"
+                                        value={settings.shortcut_token || ''}
+                                        onChange={(e) => setSettings(s => ({ ...s, shortcut_token: e.target.value }))}
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 transition-all text-sm font-mono text-white"
+                                        placeholder="password"
+                                    />
+                                    <p className="text-xs text-white/40 pl-1 mt-1 leading-normal">
+                                        iPhone 快捷指令可使用 <code className="text-primary/70">/api/download_video?share_url=...&shortcut_token=...</code> 直接下载抖音/快手视频。
+                                    </p>
+                                </div>
                             </div>
+
+                            <button
+                                onClick={handleSaveSettings}
+                                disabled={saving}
+                                className="w-full flex items-center justify-center gap-2 py-3 bg-primary/10 hover:bg-primary/20 text-primary disabled:opacity-50 transition-all rounded-xl font-black text-xs border border-primary/20 mt-2 cursor-pointer"
+                            >
+                                {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                                保存高级设置
+                            </button>
                         </motion.div>
                     </div>
                 )}

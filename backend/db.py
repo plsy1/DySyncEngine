@@ -192,6 +192,10 @@ def add_aweme(session: Session, item: dict):
             if value is not None and getattr(exists, field) != value:
                 setattr(exists, field, value)
                 changed = True
+        nickname = item.get("nickname")
+        if nickname and exists.nickname != nickname and exists.nickname in (None, "", exists.uid):
+            exists.nickname = nickname
+            changed = True
         if changed:
             session.commit()
         return  # 已存在，跳过
@@ -540,6 +544,8 @@ def init_defaults(session: Session):
         set_config(session, "kuaishou_feed_min_interval", "20")
     if not get_config(session, "task_timeout_minutes"):
         set_config(session, "task_timeout_minutes", "30")
+    if not get_config(session, "shortcut_token"):
+        set_config(session, "shortcut_token", os.getenv("SHORTCUT_TOKEN", "password"))
     
     # 初始化默认管理员 (如果不存在任何账户)
     if session.query(Account).count() == 0:

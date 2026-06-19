@@ -526,12 +526,13 @@ def fetch_kuaishou_all_awemes(
     initial_cursor: str = "",
     max_pages: int = 0,
     stop_on_rate_limit: bool = False,
+    preferred_user_id: str = "",
 ) -> dict[str, Any]:
     fallback_profile_url = user_ref if user_ref.startswith("http") else ""
-    user_id = user_ref
-    if fallback_profile_url:
+    user_id = preferred_user_id or user_ref
+    if fallback_profile_url and not preferred_user_id:
         profile = fetch_kuaishou_user_profile(fallback_profile_url).get("user", {})
-        user_id = profile.get("uid") or profile.get("sec_uid") or user_ref
+        user_id = profile.get("uid") or profile.get("sec_uid") or user_id
     if max_fetch <= 0 and max_pages <= 0:
         max_fetch = int(os.getenv("KUAISHOU_DEFAULT_MAX_FETCH", "20"))
 

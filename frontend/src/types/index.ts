@@ -28,6 +28,7 @@ export interface GlobalSettings {
   emby_api_key?: string;
   emby_default_library?: string;
   folder_name_pattern?: string;
+  shortcut_token?: string;
 }
 
 export interface FolderMigrationItem {

@@ -1,6 +1,6 @@
 # 🚀 DySyncEngine
 
-**DySyncEngine** 是一款专为高效同步、管理与沉浸式播放网络视频设计的现代化全栈引擎。它不仅支持 **抖音 (Douyin)** 和 **TikTok** 的全量/增量视频抓取与下载，还集成了一个媲美原生的 **PWA 沉浸式视频播放器**，并支持将内容自动/手动推送至 **Telegram**。
+**DySyncEngine** 是一款专为高效同步、管理与沉浸式播放网络视频设计的现代化全栈引擎。它支持 **抖音 (Douyin)**、**TikTok** 的全量/增量视频抓取与下载，并提供 **快手 (Kuaishou)** 单作品解析下载与视频订阅同步能力；同时集成了一个媲美原生的 **PWA 沉浸式视频播放器**，并支持将内容自动/手动推送至 **Telegram**。
 
 <p align="center">
   <img src="./screenshort/main-page.png" width="76.5%" alt="Dashboard" />
@@ -12,7 +12,7 @@
 ## ✨ 核心特性
 
 ### 1. 📥 智能抓取与下载
-- **双平台支持**：完美支持抖音与 TikTok 视频、图文内容的解析与下载。
+- **多平台支持**：支持抖音、TikTok 视频/图文内容的解析与下载，并支持快手单个视频/图文作品解析下载。
 - **全量/增量同步**：一键抓取用户所有历史作品，或实时监控作者动态进行增量更新。
 - **自动化订阅**：可配置的后台调度器，定时巡检已关注的作者，新作品自动入库。
 - **高并发下载**：基于高效下载引擎，支持断点续传与多线程处理。
@@ -52,6 +52,8 @@
 本项目中的 **抖音和 TikTok 内容抓取** 功能基于开源项目 [Douyin_TikTok_Download_API](https://github.com/Evil0ctal/Douyin_TikTok_Download_API) 实现。
 - 关于抓取引擎的具体配置、Cookie 维护及底层原理，请参考 [Douyin_TikTok_Download_API 项目说明](https://github.com/Evil0ctal/Douyin_TikTok_Download_API/blob/main/README.md)。
 - **Cookie 配置**：容器首次启动会自动初始化 `./config` 下的抓取配置文件。登录 WebUI 后进入「全局配置」页面，直接粘贴并保存抖音/TikTok Cookie 即可，无需手动编辑或挂载 `config.yaml`。抖音 Cookie 可使用 [chrome-cookie-sniffer](https://github.com/Evil0ctal/Douyin_TikTok_Download_API/tree/main/chrome-cookie-sniffer) 获取。
+- **快手支持范围**：当前支持快手单个作品链接解析与下载，包括视频作品和图文作品；快手作者订阅同步目前使用 PC Feed 接口，仅同步视频作品，暂不支持订阅同步中的图文作品。该接口存在较频繁的风控/限流，订阅同步可能需要稍后重试。
+- **快捷指令下载**：`GET /api/download_video?share_url=作品链接&shortcut_token=专用令牌` 可直接返回抖音/快手视频文件，文件名会自动使用作品标题。专用令牌可通过环境变量 `SHORTCUT_TOKEN` 配置；该接口只返回视频，图文作品会返回 400。
 
 ---
 

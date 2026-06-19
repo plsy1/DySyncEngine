@@ -29,7 +29,7 @@ from db import (
 from fetch import fetch_all_awemes, fetch_user_profile, fetch_video_profile
 from downloader import download_video, DOWNLOAD_API
 from kuaishou import download_kuaishou_images, download_kuaishou_video
-from auth import create_access_token, verify_password, get_password_hash, get_current_user
+from auth import create_access_token, verify_password, get_password_hash, get_current_user, SECRET_KEY, ALGORITHM
 from utils import extract_share_url, get_url_platform, resolve_redirect, extract_sec_user_id, sanitize_filename, run_coro_safe
 from telegram_uploader import tg_uploader
 import re
@@ -39,6 +39,8 @@ import io
 import os
 import zipfile
 import unicodedata
+import hmac
+import jwt
 from loguru import logger
 import asyncio
 from telethon.errors import SessionPasswordNeededError
@@ -85,7 +87,8 @@ def process_single_aweme_download(session: Session, aweme: Any) -> bool:
     filename = aweme.desc if aweme.desc else aweme.aweme_id
     type_folder = "notes" if aweme.aweme_type == 68 else "videos"
     from utils import get_author_folder_name
-    author_folder_name = get_author_folder_name(aweme.nickname, aweme.uid, aweme.platform, session)
+    folder_nickname = (user.nickname if user and user.nickname else aweme.nickname) or aweme.uid
+    author_folder_name = get_author_folder_name(folder_nickname, aweme.uid, aweme.platform, session)
     author_folder = os.path.join(author_folder_name, type_folder)
     
     try:
@@ -153,6 +156,7 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
             initial_cursor=user.sync_head_cursor or "",
             max_pages=head_pages,
             stop_on_rate_limit=True,
+            preferred_user_id=uid or "",
         )
         result = dict(head_result)
 
@@ -166,6 +170,7 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
                 initial_cursor=user.sync_cursor or "",
                 max_pages=backfill_pages,
                 stop_on_rate_limit=True,
+                preferred_user_id=uid or "",
             )
             seen_aweme_ids = {item.get("aweme_id") for item in result.get("awemes", [])}
             result["awemes"] = result.get("awemes", []) + [
@@ -183,13 +188,15 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
                 "initial_cursor": "" if force_full or max_fetch > 0 else ((user.sync_cursor if user else "") or ""),
                 "max_pages": 0 if max_fetch > 0 else int(get_config(session, "kuaishou_sync_max_pages", os.getenv("KUAISHOU_SYNC_MAX_PAGES", "3"))),
                 "stop_on_rate_limit": True,
+                "preferred_user_id": uid or "",
             }
         result = fetch_all_awemes(sec_user_id, platform=platform, latest_create_time=last_create_time, count=20, max_fetch=max_fetch, **fetch_kwargs)
     new_data = result.get("awemes", [])
     author_info = result.get("author", {})
 
-    # 如果抓取到了作者信息（特别是 TikTok），更新/初始化用户信息
-    if author_info:
+    # 如果抓取到了作者信息（特别是 TikTok），更新/初始化用户信息。
+    # 快手作者信息以添加订阅时写入的 users 表为准，作品列表接口只作为作品来源。
+    if author_info and platform != "kuaishou":
         uid = author_info.get("uid") or uid
         add_or_update_user(session, {
             "uid": uid,
@@ -216,7 +223,9 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
         item["platform"] = platform
         if not item.get("uid"):
             item["uid"] = uid
-        if not item.get("nickname") and stored_user and stored_user.nickname:
+        if platform == "kuaishou" and stored_user and stored_user.nickname:
+            item["nickname"] = stored_user.nickname
+        elif not item.get("nickname") and stored_user and stored_user.nickname:
             item["nickname"] = stored_user.nickname
         add_aweme(session, item)
 
@@ -524,7 +533,8 @@ def download_user_videos_api(
         ensure_platform_supported(platform, "作者订阅")
         
         # 尝试抓取基本资料
-        profile = fetch_user_profile(final_url if platform == "kuaishou" else extract_sec_user_id(final_url), platform=platform)
+        profile_target = url if platform == "kuaishou" else extract_sec_user_id(final_url)
+        profile = fetch_user_profile(profile_target, platform=platform)
         author_info = profile.get("user", {})
         
         sec_user_id = final_url if platform == "kuaishou" else (author_info.get("sec_uid") or author_info.get("uid") or extract_sec_user_id(final_url))
@@ -574,7 +584,11 @@ def refresh_user_videos_api(
     
     def task_wrapper(sec_user_id: str, platform: str, task_id: str, max_fetch: int, force_full: bool):
         with next(get_session()) as session:
-            sync_user_videos(session, sec_user_id, platform=platform, task_id=task_id, max_fetch=max_fetch, force_full=force_full)
+            try:
+                sync_user_videos(session, sec_user_id, platform=platform, task_id=task_id, max_fetch=max_fetch, force_full=force_full)
+            except Exception as e:
+                logger.error(f"刷新用户作品任务失败: {sec_user_id} | 错误: {e}")
+                update_task_progress(session, task_id, 100, status="failed", message=str(e))
 
     with next(get_session()) as session:
         mark_stale_active_tasks_as_failed(session)
@@ -719,6 +733,46 @@ class VideoParseInfo(BaseModel):
     create_time: int = 0
 
 
+def _first_url(value: Any) -> str | None:
+    if isinstance(value, dict):
+        url_list = value.get("url_list")
+        if isinstance(url_list, list):
+            return next((url for url in url_list if isinstance(url, str) and url), None)
+    if isinstance(value, list):
+        return next((url for url in value if isinstance(url, str) and url), None)
+    if isinstance(value, str) and value:
+        return value
+    return None
+
+
+def _validate_download_video_access(
+    request: Request,
+    session: Session,
+    token_query: str | None = None,
+    shortcut_token: str | None = None,
+) -> None:
+    configured_shortcut_token = get_config(session, "shortcut_token", os.getenv("SHORTCUT_TOKEN", "")) or ""
+    if configured_shortcut_token and shortcut_token and hmac.compare_digest(shortcut_token, configured_shortcut_token):
+        return
+
+    auth_header = request.headers.get("authorization", "")
+    bearer_token = auth_header[7:].strip() if auth_header.lower().startswith("bearer ") else ""
+    final_token = bearer_token or token_query
+    if not final_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing token")
+
+    try:
+        payload = jwt.decode(final_token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if not username:
+            raise ValueError("missing subject")
+        from db import get_account
+        if not get_account(session, username):
+            raise ValueError("account not found")
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
+
+
 @router.post("/parse_video", response_model=VideoParseInfo)
 def parse_video_api(share_url: str = Query(..., description="分享链接")):
     """
@@ -727,22 +781,94 @@ def parse_video_api(share_url: str = Query(..., description="分享链接")):
     share_url = extract_share_url(share_url)
     share_url = resolve_redirect(share_url)
     platform = get_url_platform(share_url)
-    video_data = fetch_video_profile(share_url, minimal=False)
+    try:
+        video_data = fetch_video_profile(share_url, minimal=False)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     
     author = video_data.get("author", {})
     video = video_data.get("video", {})
-    
     
     return VideoParseInfo(
         aweme_id=video_data.get("aweme_id", ""),
         aweme_type=video_data.get("aweme_type", 0),
         desc=video_data.get("desc"),
-        video_url=video.get("play_addr", {}).get("url_list", [None])[0],
-        cover_url=video.get("origin_cover", {}).get("url_list", [None])[0],
+        video_url=_first_url(video.get("play_addr")),
+        cover_url=_first_url(video.get("origin_cover")) or _first_url(video.get("cover")),
         author_name=author.get("nickname"),
-        author_avatar=author.get("avatar_thumb", {}).get("url_list", [None])[0],
+        author_avatar=_first_url(author.get("avatar_thumb")),
         platform=platform,
         create_time=video_data.get("create_time", 0)
+    )
+
+
+@public_router.get("/download_video")
+async def download_video_file_api(
+    request: Request,
+    share_url: str = Query(..., description="抖音/快手单个视频作品链接"),
+    filename: str | None = Query(None, description="保存的文件名，不传则使用作品标题"),
+    token: str | None = Query(None, description="JWT token"),
+    shortcut_token: str | None = Query(None, description="iOS Shortcut 专用 token"),
+    session: Session = Depends(get_session),
+):
+    """
+    统一视频文件下载接口：支持抖音视频和快手视频；图文内容不在此接口处理。
+    """
+    _validate_download_video_access(request, session, token_query=token, shortcut_token=shortcut_token)
+
+    share_url = extract_share_url(share_url)
+    share_url = resolve_redirect(share_url)
+    platform = get_url_platform(share_url)
+
+    from urllib.parse import quote
+    clean_filename = sanitize_filename(filename) if filename else None
+
+    def encoded_video_filename(default_name: str) -> str:
+        base_name = clean_filename or sanitize_filename(default_name)
+        return quote(f"{base_name}.mp4")
+
+    def profile_filename(video_data: dict[str, Any]) -> str:
+        return video_data.get("desc") or video_data.get("aweme_id") or "video"
+
+    try:
+        video_data = fetch_video_profile(share_url, minimal=False)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if video_data.get("aweme_type") == 68:
+        raise HTTPException(status_code=400, detail="该链接不是视频作品，统一视频接口仅返回视频文件")
+
+    output_filename = encoded_video_filename(profile_filename(video_data))
+
+    if platform == "kuaishou":
+        try:
+            content, content_type = download_kuaishou_video(share_url)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return StreamingResponse(
+            io.BytesIO(content),
+            media_type=content_type,
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{output_filename}"}
+        )
+
+    params = {
+        "url": share_url,
+        "prefix": "false",
+        "with_watermark": "false"
+    }
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.get(DOWNLOAD_API, params=params)
+        resp.raise_for_status()
+
+    content_type = resp.headers.get("content-type", "video/mp4")
+    disposition = resp.headers.get("content-disposition", "")
+    if "application/zip" in content_type or ".zip" in disposition.lower():
+        raise HTTPException(status_code=400, detail="该链接不是视频作品，统一视频接口仅返回视频文件")
+
+    return StreamingResponse(
+        io.BytesIO(resp.content),
+        media_type=content_type,
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{output_filename}"}
     )
 
 
@@ -836,8 +962,9 @@ def download_from_share_url(share_url: str = Query(..., description="抖音分�
     uid = author_info.get("uid")
     sec_user_id = author_info.get("sec_uid")
 
-    # 1. 抓取/补充完整 Profile 以确保数据库信息的完整性
-    if sec_user_id:
+    # 1. 抓取/补充完整 Profile 以确保数据库信息的完整性。
+    # 快手单作品解析结果里的 sec_uid 通常就是 uid，不能再用它查 profile 覆盖作者昵称。
+    if sec_user_id and platform != "kuaishou":
         try:
             profile = fetch_user_profile(sec_user_id, platform=platform)
             full_user_info = profile.get("user", {})
@@ -859,6 +986,11 @@ def download_from_share_url(share_url: str = Query(..., description="抖音分�
         )
         
         existing_user = session.query(DBUser).filter(DBUser.uid == uid).first()
+        if platform == "kuaishou" and existing_user:
+            final_nickname = existing_user.nickname or final_nickname
+            avatar_url = existing_user.avatar_url or avatar_url
+            author_info["signature"] = existing_user.signature or author_info.get("signature")
+
         if existing_user:
             # 作者已在订阅列表中，正常更新
             add_or_update_user(session, {
@@ -945,6 +1077,7 @@ class GlobalSettings(BaseModel):
     emby_api_key: str | None = None
     emby_default_library: str | None = None
     folder_name_pattern: str | None = None
+    shortcut_token: str | None = None
 
 class FolderMigrationItem(BaseModel):
     uid: str
@@ -1004,7 +1137,8 @@ def get_settings_api(session: Session = Depends(get_session), _ = Depends(get_cu
         emby_server_url=get_config(session, "emby_server_url", ""),
         emby_api_key=get_config(session, "emby_api_key", ""),
         emby_default_library=get_config(session, "emby_default_library", ""),
-        folder_name_pattern=get_config(session, "folder_name_pattern", "{platform}/{nickname}_{uid}")
+        folder_name_pattern=get_config(session, "folder_name_pattern", "{platform}/{nickname}_{uid}"),
+        shortcut_token=get_config(session, "shortcut_token", os.getenv("SHORTCUT_TOKEN", "password")),
     )
 
 @router.post("/settings")
@@ -1023,6 +1157,8 @@ def update_settings_api(req: GlobalSettings, session: Session = Depends(get_sess
         set_config(session, "emby_default_library", req.emby_default_library)
     if req.folder_name_pattern is not None:
         set_config(session, "folder_name_pattern", req.folder_name_pattern.strip())
+    if req.shortcut_token is not None:
+        set_config(session, "shortcut_token", req.shortcut_token.strip() or "password")
     return {"success": True}
 
 import hashlib
