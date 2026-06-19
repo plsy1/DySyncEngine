@@ -28,7 +28,7 @@ from db import (
 )
 from fetch import fetch_all_awemes, fetch_user_profile, fetch_video_profile
 from downloader import download_video, DOWNLOAD_API
-from kuaishou import download_kuaishou_images, download_kuaishou_video
+from kuaishou import download_kuaishou_images, download_kuaishou_video, download_kuaishou_video_from_profile
 from auth import create_access_token, verify_password, get_password_hash, get_current_user, SECRET_KEY, ALGORITHM
 from utils import extract_share_url, get_url_platform, resolve_redirect, extract_sec_user_id, sanitize_filename, run_coro_safe
 from telegram_uploader import tg_uploader
@@ -830,19 +830,11 @@ async def download_video_file_api(
     def profile_filename(video_data: dict[str, Any]) -> str:
         return video_data.get("desc") or video_data.get("aweme_id") or "video"
 
-    try:
-        video_data = fetch_video_profile(share_url, minimal=False)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    if video_data.get("aweme_type") == 68:
-        raise HTTPException(status_code=400, detail="该链接不是视频作品，统一视频接口仅返回视频文件")
-
-    output_filename = encoded_video_filename(profile_filename(video_data))
-
     if platform == "kuaishou":
         try:
-            content, content_type = download_kuaishou_video(share_url)
+            video_data = fetch_video_profile(share_url, minimal=False)
+            output_filename = encoded_video_filename(profile_filename(video_data))
+            content, content_type = download_kuaishou_video_from_profile(video_data, share_url)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         return StreamingResponse(
@@ -850,6 +842,8 @@ async def download_video_file_api(
             media_type=content_type,
             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{output_filename}"}
         )
+
+    output_filename = encoded_video_filename("video")
 
     params = {
         "url": share_url,

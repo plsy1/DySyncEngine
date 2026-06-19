@@ -750,13 +750,17 @@ def fetch_kuaishou_video_profile(share_url: str) -> dict[str, Any]:
 
 def download_kuaishou_video(share_url: str) -> tuple[bytes, str]:
     profile = fetch_kuaishou_video_profile(share_url)
+    return download_kuaishou_video_from_profile(profile, share_url)
+
+
+def download_kuaishou_video_from_profile(profile: dict[str, Any], fallback_url: str = "") -> tuple[bytes, str]:
     video_url = profile.get("video", {}).get("play_addr", {}).get("url_list", [None])[0]
     if not video_url:
         raise ValueError("无法提取快手视频直链")
 
     headers = {
         **get_kuaishou_headers(),
-        "Referer": profile.get("share_url") or share_url,
+        "Referer": profile.get("share_url") or fallback_url,
     }
     with httpx.Client(headers=headers, follow_redirects=True, timeout=60) as client:
         response = client.get(video_url)

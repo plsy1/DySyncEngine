@@ -196,7 +196,7 @@ def fetch_tiktok_all_awemes(sec_user_id: str, latest_create_time: int = 0, count
     return {"awemes": all_awemes, "author": author_profile}
 
 
-def fetch_video_profile(share_url: str, minimal: bool = True) -> dict:
+def fetch_video_profile(share_url: str, minimal: bool = True, timeout: int = 30) -> dict:
     """
     根据抖音分享链接获取单个视频的 profile 数据
     :param share_url: 例如 https://www.iesdouyin.com/share/video/7596608527918652852
@@ -212,7 +212,7 @@ def fetch_video_profile(share_url: str, minimal: bool = True) -> dict:
     }
 
     try:
-        with httpx.Client(timeout=30) as client:
+        with httpx.Client(timeout=timeout) as client:
             resp = client.get(HYBRID_VIDEO_API, params=params)
             resp.raise_for_status()
             data = resp.json().get("data", {})
