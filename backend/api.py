@@ -16,6 +16,7 @@ from db import (
     create_task,
     update_task_progress,
     get_all_active_tasks,
+    mark_stale_active_tasks_as_failed,
     get_config,
     set_config,
     update_account_password,
@@ -576,6 +577,7 @@ def refresh_user_videos_api(
             sync_user_videos(session, sec_user_id, platform=platform, task_id=task_id, max_fetch=max_fetch, force_full=force_full)
 
     with next(get_session()) as session:
+        mark_stale_active_tasks_as_failed(session)
         # 检查是否已有该用户的任务正在运行
         from db import Task as DbTask
         # 获取 uid (从 db 查，如果查不到就用 sec_user_id 占位)

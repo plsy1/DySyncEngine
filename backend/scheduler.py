@@ -2,14 +2,17 @@
 import asyncio
 import time
 from typing import Optional
+from collections import defaultdict
 from loguru import logger
-from db import get_session, get_auto_update_users, get_config
+from db import get_session, get_auto_update_users, get_config, mark_stale_active_tasks_as_failed
 
 class SchedulerManager:
     def __init__(self):
         self.last_run: Optional[int] = None
         self.next_run: Optional[int] = None
         self.is_running: bool = False
+        self.repair_last_run: Optional[int] = None
+        self.repair_is_running: bool = False
         self._trigger_event = asyncio.Event()
 
     async def run(self):
@@ -28,7 +31,6 @@ class SchedulerManager:
                 now = int(time.time())
                 if self.last_run is None:
                     # 首次启动时，不要立即运行，而是等待一个完整的间隔
-                    self.last_run = now
                     self.next_run = now + interval_seconds
                     logger.info(f"首次启动，调度器将在 {interval_mins} 分钟后开始第一次任务")
                 else:
@@ -68,6 +70,7 @@ class SchedulerManager:
             from api import sync_user_videos
             # 1. 临时获取需要更新的用户清单 (避免长连接占用和跨线程共享 session)
             with next(get_session()) as session:
+                mark_stale_active_tasks_as_failed(session)
                 users = get_auto_update_users(session)
                 update_list = []
                 for u in users:
@@ -80,20 +83,20 @@ class SchedulerManager:
                     
             if update_list:
                 logger.info(f"开始自动更新 {len(update_list)} 个用户的视频...")
+                platform_groups = defaultdict(list)
                 for item in update_list:
-                    try:
-                        logger.info(f"正在自动更新用户: {item['nickname']} ({item['uid']})")
-                        
-                        # 定义在后台线程执行的任务，为其分配独立的会话
-                        def sync_in_thread():
-                            with next(get_session()) as session:
-                                sync_user_videos(session, item['sec_user_id'], platform=item['platform'])
-                        
-                        # 使用 to_thread 避免阻塞事件循环，特别是处理 13+ 用户时
-                        await asyncio.to_thread(sync_in_thread)
-                        
-                    except Exception as e:
-                        logger.error(f"更新用户 {item['uid']} 失败: {e}")
+                    platform_groups[item["platform"] or "douyin"].append(item)
+
+                async def run_platform_queue(platform: str, items: list[dict]):
+                    logger.info(f"平台 {platform} 自动更新队列开始，共 {len(items)} 个用户")
+                    for item in items:
+                        await self._sync_one_user(sync_user_videos, item)
+                    logger.info(f"平台 {platform} 自动更新队列完成")
+
+                await asyncio.gather(*[
+                    run_platform_queue(platform, items)
+                    for platform, items in platform_groups.items()
+                ])
             else:
                 logger.info("没有需要自动更新的用户")
 
@@ -106,10 +109,27 @@ class SchedulerManager:
                 except Exception as repair_err:
                     logger.error(f"定时损坏修复任务执行出错: {repair_err}")
 
+            self.repair_is_running = True
             await asyncio.to_thread(repair_in_thread)
+            self.repair_last_run = int(time.time())
+            self.repair_is_running = False
             
         except Exception as e:
             logger.error(f"执行更新逻辑时出错: {e}")
+            self.repair_is_running = False
+
+    async def _sync_one_user(self, sync_user_videos, item: dict):
+        try:
+            logger.info(f"正在自动更新用户: {item['nickname']} ({item['uid']})")
+
+            def sync_in_thread():
+                with next(get_session()) as session:
+                    sync_user_videos(session, item['sec_user_id'], platform=item['platform'])
+
+            await asyncio.to_thread(sync_in_thread)
+
+        except Exception as e:
+            logger.error(f"更新用户 {item['uid']} 失败: {e}")
 
     def trigger_now(self):
         """
@@ -121,7 +141,10 @@ class SchedulerManager:
         return {
             "last_run": self.last_run,
             "next_run": self.next_run,
-            "is_running": self.is_running
+            "is_running": self.is_running,
+            "repair_last_run": self.repair_last_run,
+            "repair_next_run": self.next_run,
+            "repair_is_running": self.repair_is_running
         }
 
 # 单例

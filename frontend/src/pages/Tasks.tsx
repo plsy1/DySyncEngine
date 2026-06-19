@@ -33,7 +33,7 @@ export function Tasks({ onNotify, activeTasks }: TasksProps) {
     const handleRunScheduler = async () => {
         try {
             await api.runSchedulerNow();
-            onNotify('定时更新任务已手动触发');
+            onNotify('订阅更新任务已手动触发');
             loadSchedulerStatus();
         } catch (err) {
             onNotify('触发失败', 'error');
@@ -67,8 +67,8 @@ export function Tasks({ onNotify, activeTasks }: TasksProps) {
         }
     };
 
-    const formatTime = (ts: number | null) => {
-        if (!ts) return '从未执行';
+    const formatTime = (ts: number | null, emptyText = '从未执行') => {
+        if (!ts) return emptyText;
         return new Date(ts * 1000).toLocaleString();
     };
 
@@ -89,7 +89,7 @@ export function Tasks({ onNotify, activeTasks }: TasksProps) {
                             <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
                                 <Clock size={20} />
                             </div>
-                            <h3 className="font-semibold text-lg">全量调度器</h3>
+                            <h3 className="font-semibold text-lg">订阅更新调度器</h3>
                         </div>
                         {schedulerStatus?.is_running && (
                             <span className="flex items-center gap-1.5 text-xs font-medium text-primary px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20">
@@ -106,7 +106,7 @@ export function Tasks({ onNotify, activeTasks }: TasksProps) {
                         </div>
                         <div className="flex justify-between items-center text-base">
                             <span className="text-white/60 font-semibold">下次运行</span>
-                            <span className="font-bold text-primary">{formatTime(schedulerStatus?.next_run || null)}</span>
+                            <span className="font-bold text-primary">{formatTime(schedulerStatus?.next_run || null, '等待调度')}</span>
                         </div>
                     </div>
 
@@ -120,7 +120,7 @@ export function Tasks({ onNotify, activeTasks }: TasksProps) {
                         ) : (
                             <Play size={18} />
                         )}
-                        立即执行全量更新
+                        立即执行订阅更新
                     </button>
                 </div>
 
@@ -148,16 +148,36 @@ export function Tasks({ onNotify, activeTasks }: TasksProps) {
 
                 {/* Corrupted File Repair Card */}
                 <div className="card p-6 border border-white/5 bg-white/2 backdrop-blur-sm rounded-3xl space-y-6 flex flex-col">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center text-red-400">
-                            <AlertTriangle size={20} />
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center text-red-400">
+                                <AlertTriangle size={20} />
+                            </div>
+                            <h3 className="font-semibold text-lg">损坏文件修复</h3>
                         </div>
-                        <h3 className="font-semibold text-lg">损坏文件修复</h3>
+                        {schedulerStatus?.repair_is_running && (
+                            <span className="flex items-center gap-1.5 text-xs font-medium text-red-400 px-2.5 py-1 rounded-full bg-red-500/10 border border-red-500/20">
+                                <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+                                定时扫描
+                            </span>
+                        )}
                     </div>
 
-                    <p className="text-sm text-white/60 leading-relaxed flex-1 pt-2">
-                        扫描已下载的资源。若视频大小小于 1KB 或图文中包含小于 1KB 的图片，则判定为损坏并自动重新下载。
-                    </p>
+                    <div className="space-y-4 pt-2 flex-1">
+                        <p className="text-sm text-white/60 leading-relaxed">
+                            扫描已下载资源，小于 1KB 的视频或图片会自动重新下载。
+                        </p>
+                        <div className="space-y-3">
+                            <div className="flex justify-between items-center text-base">
+                                <span className="text-white/60 font-semibold">上次运行</span>
+                                <span className="font-medium text-white/60">{formatTime(schedulerStatus?.repair_last_run || null)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-base">
+                                <span className="text-white/60 font-semibold">下次运行</span>
+                                <span className="font-bold text-red-400">{formatTime(schedulerStatus?.repair_next_run || null, '等待调度')}</span>
+                            </div>
+                        </div>
+                    </div>
 
                     <button
                         onClick={handleRepairCorrupted}

@@ -343,10 +343,48 @@ def update_task_progress(session: Session, task_id: str, progress: int, status: 
     return False
 
 
+def _get_task_timeout_minutes(session: Session) -> int:
+    value = os.getenv("TASK_TIMEOUT_MINUTES", "30")
+    try:
+        value = get_config(session, "task_timeout_minutes", value) or value
+    except Exception:
+        pass
+
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        return 30
+
+
+def mark_stale_active_tasks_as_failed(session: Session, timeout_minutes: int | None = None) -> int:
+    """
+    将长时间没有进度更新的 pending/running 任务标记为失败，避免残留任务卡住后续操作。
+    """
+    timeout = timeout_minutes if timeout_minutes is not None else _get_task_timeout_minutes(session)
+    cutoff = int(time.time()) - (max(1, timeout) * 60)
+    stale_tasks = session.query(Task).filter(
+        Task.status.in_(["running", "pending"]),
+        Task.updated_at < cutoff
+    ).all()
+
+    if not stale_tasks:
+        return 0
+
+    logger.info(f"清理超时任务，共发现 {len(stale_tasks)} 个超过 {timeout} 分钟未更新的任务")
+    now = int(time.time())
+    for task in stale_tasks:
+        task.status = "failed"
+        task.message = "任务超时，可能已被中断"
+        task.updated_at = now
+    session.commit()
+    return len(stale_tasks)
+
+
 def get_active_tasks_by_targets(session: Session, target_ids: list[str]):
     """
     获取指定目标列表的活跃任务（running）
     """
+    mark_stale_active_tasks_as_failed(session)
     return session.query(Task).filter(
         Task.target_id.in_(target_ids),
         Task.status == "running"
@@ -357,6 +395,7 @@ def get_all_active_tasks(session: Session):
     """
     获取所有活跃任务
     """
+    mark_stale_active_tasks_as_failed(session)
     return session.query(Task).filter(Task.status == "running").all()
 
 
@@ -499,6 +538,8 @@ def init_defaults(session: Session):
         set_config(session, "kuaishou_sync_max_pages", "3")
     if not get_config(session, "kuaishou_feed_min_interval"):
         set_config(session, "kuaishou_feed_min_interval", "20")
+    if not get_config(session, "task_timeout_minutes"):
+        set_config(session, "task_timeout_minutes", "30")
     
     # 初始化默认管理员 (如果不存在任何账户)
     if session.query(Account).count() == 0:

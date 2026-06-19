@@ -80,6 +80,9 @@ export interface SchedulerStatus {
   last_run: number | null;
   next_run: number | null;
   is_running: boolean;
+  repair_last_run: number | null;
+  repair_next_run: number | null;
+  repair_is_running: boolean;
 }
 
 export interface VideoParseInfo {
