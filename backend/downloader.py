@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 from loguru import logger
 from utils import sanitize_filename, get_url_platform
-from kuaishou import download_kuaishou_video
+from kuaishou import download_kuaishou_images, download_kuaishou_video
 
 from config import config
 
@@ -40,6 +40,27 @@ def download_video(share_url: str, author_folder: str, filename: str, aweme_id: 
 
     try:
         if get_url_platform(share_url) == "kuaishou":
+            try:
+                images, _ = download_kuaishou_images(share_url)
+            except ValueError:
+                images = []
+
+            if images:
+                if os.path.basename(parent_path) == "videos":
+                    parent_path = os.path.join(os.path.dirname(parent_path), "notes")
+                    Path(parent_path).mkdir(parents=True, exist_ok=True)
+                base_name = sanitize_filename(filename)
+                image_folder = os.path.join(parent_path, f"{base_name} [{aweme_id}]")
+                Path(image_folder).mkdir(parents=True, exist_ok=True)
+                for image_name, content, _ in images:
+                    if len(content) < 1024:
+                        logger.warning(f"下载的快手图文图片小于1KB，判定为损坏，跳过保存: {aweme_id}/{image_name}")
+                        return None
+                    with open(os.path.join(image_folder, image_name), "wb") as f:
+                        f.write(content)
+                logger.info(f"快手图文下载完成: {image_folder}")
+                return image_folder
+
             content, _ = download_kuaishou_video(share_url)
             if len(content) < 1024:
                 logger.warning(f"下载的快手视频文件内容小于1KB，判定为损坏，跳过保存: {aweme_id}")

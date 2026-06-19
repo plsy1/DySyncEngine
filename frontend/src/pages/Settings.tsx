@@ -30,6 +30,8 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
         download_note: true,
         auto_update_interval: 120,
         max_initial_fetch: 0,
+        kuaishou_sync_max_pages: 3,
+        kuaishou_feed_min_interval: 20,
         emby_server_url: '',
         emby_api_key: '',
         emby_default_library: '',
@@ -620,6 +622,30 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                                             onChange={(e) => setSettings(s => ({ ...s, max_initial_fetch: parseInt(e.target.value) || 0 }))}
                                             className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 transition-all font-bold text-base text-white"
                                         />
+                                    </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div className="space-y-2">
+                                            <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">快手每轮页数</label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                value={settings.kuaishou_sync_max_pages || 3}
+                                                onChange={(e) => setSettings(s => ({ ...s, kuaishou_sync_max_pages: Math.max(1, parseInt(e.target.value) || 1) }))}
+                                                className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 transition-all font-bold text-base text-white"
+                                            />
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">快手请求间隔 (秒)</label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                value={settings.kuaishou_feed_min_interval || 20}
+                                                onChange={(e) => setSettings(s => ({ ...s, kuaishou_feed_min_interval: Math.max(1, parseInt(e.target.value) || 1) }))}
+                                                className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 transition-all font-bold text-base text-white"
+                                            />
+                                        </div>
                                     </div>
                                 </div>
 

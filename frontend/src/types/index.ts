@@ -22,6 +22,8 @@ export interface GlobalSettings {
   download_note: boolean;
   auto_update_interval: number;
   max_initial_fetch?: number;
+  kuaishou_sync_max_pages?: number;
+  kuaishou_feed_min_interval?: number;
   emby_server_url?: string;
   emby_api_key?: string;
   emby_default_library?: string;

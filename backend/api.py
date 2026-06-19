@@ -27,7 +27,7 @@ from db import (
 )
 from fetch import fetch_all_awemes, fetch_user_profile, fetch_video_profile
 from downloader import download_video, DOWNLOAD_API
-from kuaishou import download_kuaishou_video
+from kuaishou import download_kuaishou_images, download_kuaishou_video
 from auth import create_access_token, verify_password, get_password_hash, get_current_user
 from utils import extract_share_url, get_url_platform, resolve_redirect, extract_sec_user_id, sanitize_filename, run_coro_safe
 from telegram_uploader import tg_uploader
@@ -36,6 +36,7 @@ import httpx
 import uuid
 import io
 import os
+import zipfile
 import unicodedata
 from loguru import logger
 import asyncio
@@ -46,11 +47,7 @@ router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 def ensure_platform_supported(platform: str, feature: str) -> None:
-    if platform == "kuaishou":
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail=f"快手{feature}暂未接入：当前仅完成链接识别和平台展示，缺少快手抓取器实现",
-        )
+    return None
 
 
 class DownloadResult(BaseModel):
@@ -95,6 +92,8 @@ def process_single_aweme_download(session: Session, aweme: Any) -> bool:
             aweme.share_url, author_folder, filename, aweme.aweme_id
         )
         if saved_path:
+            if aweme.platform == "kuaishou" and os.path.isdir(saved_path):
+                aweme.aweme_type = 68
             aweme.downloaded = True
             aweme.local_path = saved_path
             logger.info(f"下载成功: {aweme.aweme_id} -> {saved_path}")
@@ -119,6 +118,14 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
     from db import User
     user = session.query(User).filter_by(sec_user_id=sec_user_id).first()
     uid = user.uid if user else None
+    is_kuaishou_backfill = bool(
+        platform == "kuaishou"
+        and user
+        and user.sync_incomplete
+        and user.sync_cursor
+        and not force_full
+        and max_fetch <= 0
+    )
         
     # 获取作者最新作品时间
     last_create_time = 0 if force_full else (get_latest_create_time(session, uid) if uid else 0)
@@ -127,7 +134,56 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
         update_task_progress(session, task_id, 20, message="正在抓取视频列表...")
 
     # 执行抓取
-    result = fetch_all_awemes(sec_user_id, platform=platform, latest_create_time=last_create_time, count=20, max_fetch=max_fetch)
+    result: dict[str, Any]
+    head_result: dict[str, Any] | None = None
+    backfill_result: dict[str, Any] | None = None
+    if is_kuaishou_backfill:
+        total_pages = max(1, int(get_config(session, "kuaishou_sync_max_pages", os.getenv("KUAISHOU_SYNC_MAX_PAGES", "3"))))
+        head_pages = max(1, int(os.getenv("KUAISHOU_SYNC_HEAD_MAX_PAGES", "1")))
+        backfill_pages = max(1, total_pages - head_pages)
+        head_cutoff = user.sync_head_latest_time or last_create_time
+
+        head_result = fetch_all_awemes(
+            sec_user_id,
+            platform=platform,
+            latest_create_time=head_cutoff,
+            count=20,
+            max_fetch=0,
+            initial_cursor=user.sync_head_cursor or "",
+            max_pages=head_pages,
+            stop_on_rate_limit=True,
+        )
+        result = dict(head_result)
+
+        if not head_result.get("has_more") and not head_result.get("rate_limited"):
+            backfill_result = fetch_all_awemes(
+                sec_user_id,
+                platform=platform,
+                latest_create_time=0,
+                count=20,
+                max_fetch=0,
+                initial_cursor=user.sync_cursor or "",
+                max_pages=backfill_pages,
+                stop_on_rate_limit=True,
+            )
+            seen_aweme_ids = {item.get("aweme_id") for item in result.get("awemes", [])}
+            result["awemes"] = result.get("awemes", []) + [
+                item for item in backfill_result.get("awemes", [])
+                if item.get("aweme_id") not in seen_aweme_ids
+            ]
+            result["author"] = result.get("author") or backfill_result.get("author", {})
+            result["has_more"] = bool(backfill_result.get("has_more"))
+            result["next_cursor"] = backfill_result.get("next_cursor") or ""
+            result["rate_limited"] = bool(backfill_result.get("rate_limited"))
+    else:
+        fetch_kwargs = {}
+        if platform == "kuaishou":
+            fetch_kwargs = {
+                "initial_cursor": "" if force_full or max_fetch > 0 else ((user.sync_cursor if user else "") or ""),
+                "max_pages": 0 if max_fetch > 0 else int(get_config(session, "kuaishou_sync_max_pages", os.getenv("KUAISHOU_SYNC_MAX_PAGES", "3"))),
+                "stop_on_rate_limit": True,
+            }
+        result = fetch_all_awemes(sec_user_id, platform=platform, latest_create_time=last_create_time, count=20, max_fetch=max_fetch, **fetch_kwargs)
     new_data = result.get("awemes", [])
     author_info = result.get("author", {})
 
@@ -154,9 +210,37 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
         update_task_progress(session, task_id, 30, message="正在处理抓取结果...", target_id=uid)
 
     # 为每条作品打上平台标记并保存
+    stored_user = session.query(User).filter_by(uid=uid).first()
     for item in new_data:
         item["platform"] = platform
+        if not item.get("uid"):
+            item["uid"] = uid
+        if not item.get("nickname") and stored_user and stored_user.nickname:
+            item["nickname"] = stored_user.nickname
         add_aweme(session, item)
+
+    if platform == "kuaishou":
+        user = session.query(User).filter_by(uid=uid).first()
+        if user:
+            if head_result:
+                head_has_more = bool(head_result.get("has_more"))
+                user.sync_head_cursor = (head_result.get("next_cursor") or "") if head_has_more else None
+                user.sync_head_latest_time = head_cutoff if head_has_more else 0
+                if backfill_result:
+                    backfill_has_more = bool(backfill_result.get("has_more"))
+                    user.sync_cursor = (backfill_result.get("next_cursor") or "") if backfill_has_more else None
+                    user.sync_incomplete = backfill_has_more
+                else:
+                    user.sync_incomplete = True
+            else:
+                has_more = bool(result.get("has_more"))
+                next_cursor = result.get("next_cursor") or ""
+                user.sync_cursor = next_cursor if has_more else None
+                user.sync_incomplete = has_more
+                user.sync_head_cursor = None
+                user.sync_head_latest_time = 0
+            user.updated_at = int(datetime.now().timestamp())
+            session.commit()
 
     # 获取未下载作品
     undownloaded_awemes = get_undownloaded_awemes_by_uid(session, uid)
@@ -164,7 +248,13 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
 
     if total_new == 0:
         if task_id:
-            update_task_progress(session, task_id, 100, status="completed", message="已是最新，无需下载")
+            if platform == "kuaishou" and result.get("has_more"):
+                message = "本轮未发现新作品，后续作品将在下次更新继续抓取"
+            elif platform == "kuaishou" and result.get("rate_limited"):
+                message = "快手触发限流，已保存进度，下次更新继续"
+            else:
+                message = "已是最新，无需下载"
+            update_task_progress(session, task_id, 100, status="completed", message=message)
         return
 
     logger.info(f"开始同步用户 {uid}，发现 {total_new} 个新作品")
@@ -197,7 +287,11 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
         run_coro_safe(tg_uploader.sync_user_content(tg_chat, uid, task_id=task_id))
     else:
         if task_id:
-            update_task_progress(session, task_id, 100, status="completed", message="同步完成")
+            if platform == "kuaishou" and result.get("has_more"):
+                message = "本轮同步完成，后续作品将在下次更新继续抓取"
+            else:
+                message = "同步完成"
+            update_task_progress(session, task_id, 100, status="completed", message=message)
 
 
 def download_user_videos_task(sec_user_id: str, platform: str, task_id: str, max_fetch: int = 0, force_full: bool = False):
@@ -427,12 +521,12 @@ def download_user_videos_api(
         final_url = resolve_redirect(url)
         platform = get_url_platform(final_url)
         ensure_platform_supported(platform, "作者订阅")
-        sec_user_id = extract_sec_user_id(final_url)
         
         # 尝试抓取基本资料
-        profile = fetch_user_profile(sec_user_id, platform=platform)
+        profile = fetch_user_profile(final_url if platform == "kuaishou" else extract_sec_user_id(final_url), platform=platform)
         author_info = profile.get("user", {})
         
+        sec_user_id = final_url if platform == "kuaishou" else (author_info.get("sec_uid") or author_info.get("uid") or extract_sec_user_id(final_url))
         uid = author_info.get("uid") or sec_user_id
         
         with next(get_session()) as session:
@@ -659,9 +753,26 @@ async def download_proxy_api(share_url: str = Query(..., description="抖音分�
     share_url = resolve_redirect(share_url)
     if get_url_platform(share_url) == "kuaishou":
         from urllib.parse import quote
-        content, content_type = download_kuaishou_video(share_url)
         clean_filename = sanitize_filename(filename)
         encoded_filename = quote(clean_filename)
+        try:
+            images, _ = download_kuaishou_images(share_url)
+        except ValueError:
+            images = []
+
+        if images:
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as z:
+                for image_name, content, _ in images:
+                    z.writestr(image_name, content)
+            zip_buffer.seek(0)
+            return StreamingResponse(
+                zip_buffer,
+                media_type="application/zip",
+                headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}.zip"}
+            )
+
+        content, content_type = download_kuaishou_video(share_url)
         return StreamingResponse(
             io.BytesIO(content),
             media_type=content_type,
@@ -826,6 +937,8 @@ class GlobalSettings(BaseModel):
     download_note: bool
     auto_update_interval: int
     max_initial_fetch: int = 0
+    kuaishou_sync_max_pages: int = 3
+    kuaishou_feed_min_interval: int = 20
     emby_server_url: str | None = None
     emby_api_key: str | None = None
     emby_default_library: str | None = None
@@ -884,6 +997,8 @@ def get_settings_api(session: Session = Depends(get_session), _ = Depends(get_cu
         download_note=get_config(session, "download_note", "true") == "true",
         auto_update_interval=int(get_config(session, "auto_update_interval", "120")),
         max_initial_fetch=int(get_config(session, "max_initial_fetch", "0")),
+        kuaishou_sync_max_pages=int(get_config(session, "kuaishou_sync_max_pages", os.getenv("KUAISHOU_SYNC_MAX_PAGES", "3"))),
+        kuaishou_feed_min_interval=int(get_config(session, "kuaishou_feed_min_interval", os.getenv("KUAISHOU_FEED_MIN_INTERVAL", "20"))),
         emby_server_url=get_config(session, "emby_server_url", ""),
         emby_api_key=get_config(session, "emby_api_key", ""),
         emby_default_library=get_config(session, "emby_default_library", ""),
@@ -896,6 +1011,8 @@ def update_settings_api(req: GlobalSettings, session: Session = Depends(get_sess
     set_config(session, "download_note", "true" if req.download_note else "false")
     set_config(session, "auto_update_interval", str(req.auto_update_interval))
     set_config(session, "max_initial_fetch", str(req.max_initial_fetch))
+    set_config(session, "kuaishou_sync_max_pages", str(max(1, req.kuaishou_sync_max_pages)))
+    set_config(session, "kuaishou_feed_min_interval", str(max(1, req.kuaishou_feed_min_interval)))
     if req.emby_server_url is not None:
         set_config(session, "emby_server_url", req.emby_server_url)
     if req.emby_api_key is not None:

@@ -4,7 +4,7 @@ from loguru import logger
 
 from config import config
 from utils import get_url_platform
-from kuaishou import fetch_kuaishou_video_profile
+from kuaishou import fetch_kuaishou_all_awemes, fetch_kuaishou_user_profile, fetch_kuaishou_video_profile
 
 API_URL = config.FETCH_USER_POST_API
 PROFILE_API = config.USER_PROFILE_API
@@ -17,7 +17,7 @@ def fetch_user_profile(sec_user_id: str, platform: str = "douyin") -> dict:
     headers = {"accept": "application/json"}
 
     if platform == "kuaishou":
-        raise NotImplementedError("快手用户资料抓取暂未接入")
+        return fetch_kuaishou_user_profile(sec_user_id)
     
     if platform == "tiktok":
         # 对于 TikTok，如果没有专门的 profile 接口，可以从 fetch_user_post 中获取第一个作品的作者信息
@@ -60,12 +60,12 @@ def fetch_user_profile(sec_user_id: str, platform: str = "douyin") -> dict:
         data = resp.json().get("data", {})
         return data
 
-def fetch_all_awemes(sec_user_id: str, platform: str = "douyin", latest_create_time: int = 0, count: int = 20, max_fetch: int = 0):
+def fetch_all_awemes(sec_user_id: str, platform: str = "douyin", latest_create_time: int = 0, count: int = 20, max_fetch: int = 0, **kwargs):
     """
     抓取用户作品，支持 Douyin 和 TikTok
     """
     if platform == "kuaishou":
-        raise NotImplementedError("快手作者作品列表抓取暂未接入")
+        return fetch_kuaishou_all_awemes(sec_user_id, latest_create_time, count, max_fetch, **kwargs)
 
     if platform == "tiktok":
         return fetch_tiktok_all_awemes(sec_user_id, latest_create_time, count, max_fetch)

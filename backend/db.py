@@ -76,6 +76,10 @@ class User(Base):
     updated_at = Column(Integer, default=lambda: int(time.time()))
     sort_order = Column(Integer, default=0)
     platform = Column(String, default="douyin")
+    sync_cursor = Column(String, nullable=True)
+    sync_incomplete = Column(Boolean, default=False)
+    sync_head_cursor = Column(String, nullable=True)
+    sync_head_latest_time = Column(Integer, default=0)
 
 
 class Account(Base):
@@ -128,6 +132,18 @@ with engine.connect() as conn:
     if "sort_order" not in columns:
         conn.execute(text("ALTER TABLE users ADD COLUMN sort_order INTEGER DEFAULT 0"))
         conn.commit()
+    if "sync_cursor" not in columns:
+        conn.execute(text("ALTER TABLE users ADD COLUMN sync_cursor TEXT"))
+        conn.commit()
+    if "sync_incomplete" not in columns:
+        conn.execute(text("ALTER TABLE users ADD COLUMN sync_incomplete BOOLEAN DEFAULT 0"))
+        conn.commit()
+    if "sync_head_cursor" not in columns:
+        conn.execute(text("ALTER TABLE users ADD COLUMN sync_head_cursor TEXT"))
+        conn.commit()
+    if "sync_head_latest_time" not in columns:
+        conn.execute(text("ALTER TABLE users ADD COLUMN sync_head_latest_time INTEGER DEFAULT 0"))
+        conn.commit()
     users_for_order = conn.execute(text(
         "SELECT id, sort_order FROM users "
         "ORDER BY CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END, sort_order ASC, created_at ASC, id ASC"
@@ -170,6 +186,14 @@ def add_aweme(session: Session, item: dict):
     """
     exists = session.query(Aweme).filter_by(aweme_id=item["aweme_id"]).first()
     if exists:
+        changed = False
+        for field in ("aweme_type", "platform", "share_url"):
+            value = item.get(field)
+            if value is not None and getattr(exists, field) != value:
+                setattr(exists, field, value)
+                changed = True
+        if changed:
+            session.commit()
         return  # 已存在，跳过
     aweme = Aweme(
         aweme_id=item["aweme_id"],
@@ -471,6 +495,10 @@ def init_defaults(session: Session):
         set_config(session, "auto_update_interval", "120")
     if not get_config(session, "max_initial_fetch"):
         set_config(session, "max_initial_fetch", "0")
+    if not get_config(session, "kuaishou_sync_max_pages"):
+        set_config(session, "kuaishou_sync_max_pages", "3")
+    if not get_config(session, "kuaishou_feed_min_interval"):
+        set_config(session, "kuaishou_feed_min_interval", "20")
     
     # 初始化默认管理员 (如果不存在任何账户)
     if session.query(Account).count() == 0:

@@ -92,7 +92,12 @@ def extract_sec_user_id(url: str) -> str:
     platform = get_url_platform(url)
     
     if platform == "kuaishou":
-        raise NotImplementedError("快手作者订阅暂未接入：已能识别快手链接，但还缺少快手用户主页解析和作品列表抓取实现")
+        try:
+            from kuaishou import extract_kuaishou_user_id
+            return extract_kuaishou_user_id(url)
+        except Exception as e:
+            logger.error(f"获取快手用户 ID 失败: {e}")
+            raise ValueError("无法从快手主页提取用户 ID")
 
     if platform == "tiktok":
         # 对于 TikTok，调用专用 API 获取 sec_user_id
