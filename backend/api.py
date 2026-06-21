@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Query, BackgroundTasks, Depends, HTTPException, status, Form, Request, Response
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse, FileResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from starlette.background import BackgroundTask
 from datetime import datetime, timedelta
 from typing import Any, Optional
 from db import (
@@ -28,7 +30,7 @@ from db import (
 )
 from fetch import fetch_all_awemes, fetch_user_profile, fetch_video_profile
 from downloader import download_video, DOWNLOAD_API
-from kuaishou import download_kuaishou_images, download_kuaishou_video, download_kuaishou_video_from_profile
+from kuaishou import download_kuaishou_images, download_kuaishou_video_from_profile_to_file
 from auth import create_access_token, verify_password, get_password_hash, get_current_user, SECRET_KEY, ALGORITHM
 from utils import extract_share_url, get_url_platform, resolve_redirect, extract_sec_user_id, sanitize_filename, run_coro_safe
 from telegram_uploader import tg_uploader
@@ -47,10 +49,19 @@ from telethon.errors import SessionPasswordNeededError
 
 public_router = APIRouter()
 router = APIRouter(dependencies=[Depends(get_current_user)])
+DOWNLOAD_CACHE_DIR = os.path.join(os.path.dirname(__file__), "data", "cache", "downloads")
 
 
 def ensure_platform_supported(platform: str, feature: str) -> None:
     return None
+
+
+def cleanup_file(path: str) -> None:
+    try:
+        if path and os.path.exists(path):
+            os.remove(path)
+    except Exception as e:
+        logger.warning(f"清理临时文件失败: {path} | {e}")
 
 
 class DownloadResult(BaseModel):
@@ -745,6 +756,58 @@ def _first_url(value: Any) -> str | None:
     return None
 
 
+def _prepare_single_work_url(raw_url: str) -> tuple[str, str]:
+    share_url = extract_share_url(raw_url)
+    platform = get_url_platform(share_url)
+    if platform != "kuaishou":
+        share_url = resolve_redirect(share_url)
+    return share_url, platform
+
+
+def _video_parse_info_from_profile(video_data: dict[str, Any], platform: str) -> VideoParseInfo:
+    author = video_data.get("author", {})
+    video = video_data.get("video", {})
+
+    return VideoParseInfo(
+        aweme_id=video_data.get("aweme_id", ""),
+        aweme_type=video_data.get("aweme_type", 0),
+        desc=video_data.get("desc"),
+        video_url=_first_url(video.get("play_addr")),
+        cover_url=_first_url(video.get("origin_cover")) or _first_url(video.get("cover")),
+        author_name=author.get("nickname"),
+        author_avatar=_first_url(author.get("avatar_thumb")),
+        platform=platform,
+        create_time=video_data.get("create_time", 0)
+    )
+
+
+def content_disposition(filename: str, fallback: str = "video.mp4") -> str:
+    from urllib.parse import quote
+    safe_name = sanitize_filename(filename)
+    ascii_fallback = sanitize_filename(fallback)
+    return f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quote(safe_name)}"
+
+
+def usable_filename(name: str | None) -> str | None:
+    if not name:
+        return None
+    sanitized = sanitize_filename(str(name))
+    if not sanitized:
+        return None
+    if not sanitized.strip(" ._-"):
+        return None
+    return sanitized
+
+
+def fallback_video_filename(video_data: dict[str, Any]) -> str:
+    fallback = video_data.get("aweme_id") or "video"
+    return f"{sanitize_filename(str(fallback))}.mp4"
+
+
+def profile_filename(video_data: dict[str, Any]) -> str:
+    return usable_filename(video_data.get("desc")) or usable_filename(video_data.get("aweme_id")) or "video"
+
+
 def _validate_download_video_access(
     request: Request,
     session: Session,
@@ -778,28 +841,13 @@ def parse_video_api(share_url: str = Query(..., description="分享链接")):
     """
     解析单个视频信息，返回直链及元数据
     """
-    share_url = extract_share_url(share_url)
-    share_url = resolve_redirect(share_url)
-    platform = get_url_platform(share_url)
+    share_url, platform = _prepare_single_work_url(share_url)
     try:
         video_data = fetch_video_profile(share_url, minimal=False)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    
-    author = video_data.get("author", {})
-    video = video_data.get("video", {})
-    
-    return VideoParseInfo(
-        aweme_id=video_data.get("aweme_id", ""),
-        aweme_type=video_data.get("aweme_type", 0),
-        desc=video_data.get("desc"),
-        video_url=_first_url(video.get("play_addr")),
-        cover_url=_first_url(video.get("origin_cover")) or _first_url(video.get("cover")),
-        author_name=author.get("nickname"),
-        author_avatar=_first_url(author.get("avatar_thumb")),
-        platform=platform,
-        create_time=video_data.get("create_time", 0)
-    )
+
+    return _video_parse_info_from_profile(video_data, platform)
 
 
 @public_router.get("/download_video")
@@ -816,34 +864,34 @@ async def download_video_file_api(
     """
     _validate_download_video_access(request, session, token_query=token, shortcut_token=shortcut_token)
 
-    share_url = extract_share_url(share_url)
-    share_url = resolve_redirect(share_url)
-    platform = get_url_platform(share_url)
+    share_url, platform = _prepare_single_work_url(share_url)
 
-    from urllib.parse import quote
-    clean_filename = sanitize_filename(filename) if filename else None
+    clean_filename = usable_filename(filename)
 
-    def encoded_video_filename(default_name: str) -> str:
-        base_name = clean_filename or sanitize_filename(default_name)
-        return quote(f"{base_name}.mp4")
-
-    def profile_filename(video_data: dict[str, Any]) -> str:
-        return video_data.get("desc") or video_data.get("aweme_id") or "video"
+    def video_filename(default_name: str) -> str:
+        base_name = clean_filename or usable_filename(default_name) or "video"
+        return f"{base_name}.mp4"
 
     if platform == "kuaishou":
-        try:
+        def fetch_kuaishou_video_file() -> tuple[dict[str, Any], str, str]:
             video_data = fetch_video_profile(share_url, minimal=False)
-            output_filename = encoded_video_filename(profile_filename(video_data))
-            content, content_type = download_kuaishou_video_from_profile(video_data, share_url)
+            temp_path = os.path.join(DOWNLOAD_CACHE_DIR, f"{uuid.uuid4().hex}.mp4")
+            content_type = download_kuaishou_video_from_profile_to_file(video_data, temp_path, share_url)
+            return video_data, temp_path, content_type
+
+        try:
+            video_data, temp_path, content_type = await run_in_threadpool(fetch_kuaishou_video_file)
+            output_filename = video_filename(profile_filename(video_data))
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        return StreamingResponse(
-            io.BytesIO(content),
+        return FileResponse(
+            temp_path,
             media_type=content_type,
-            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{output_filename}"}
+            headers={"Content-Disposition": content_disposition(output_filename, fallback=fallback_video_filename(video_data))},
+            background=BackgroundTask(cleanup_file, temp_path),
         )
 
-    output_filename = encoded_video_filename("video")
+    output_filename = video_filename("video")
 
     params = {
         "url": share_url,
@@ -862,7 +910,7 @@ async def download_video_file_api(
     return StreamingResponse(
         io.BytesIO(resp.content),
         media_type=content_type,
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{output_filename}"}
+        headers={"Content-Disposition": content_disposition(output_filename)}
     )
 
 
@@ -871,14 +919,11 @@ async def download_proxy_api(share_url: str = Query(..., description="抖音分�
     """
     代理下载：通过服务器请求 DOWNLOAD_API 并直接流式返回给客户端，实现浏览器本地下载
     """
-    share_url = extract_share_url(share_url)
-    share_url = resolve_redirect(share_url)
-    if get_url_platform(share_url) == "kuaishou":
-        from urllib.parse import quote
-        clean_filename = sanitize_filename(filename)
-        encoded_filename = quote(clean_filename)
+    share_url, platform = _prepare_single_work_url(share_url)
+    if platform == "kuaishou":
+        clean_filename = usable_filename(filename)
         try:
-            images, _ = download_kuaishou_images(share_url)
+            images, _ = await run_in_threadpool(download_kuaishou_images, share_url)
         except ValueError:
             images = []
 
@@ -891,14 +936,21 @@ async def download_proxy_api(share_url: str = Query(..., description="抖音分�
             return StreamingResponse(
                 zip_buffer,
                 media_type="application/zip",
-                headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}.zip"}
+                headers={"Content-Disposition": content_disposition(f"{clean_filename or 'images'}.zip", fallback="images.zip")}
             )
 
-        content, content_type = download_kuaishou_video(share_url)
-        return StreamingResponse(
-            io.BytesIO(content),
+        def fetch_kuaishou_proxy_video_file() -> tuple[dict[str, Any], str, str]:
+            video_data = fetch_video_profile(share_url, minimal=False)
+            temp_path = os.path.join(DOWNLOAD_CACHE_DIR, f"{uuid.uuid4().hex}.mp4")
+            content_type = download_kuaishou_video_from_profile_to_file(video_data, temp_path, share_url)
+            return video_data, temp_path, content_type
+
+        video_data, temp_path, content_type = await run_in_threadpool(fetch_kuaishou_proxy_video_file)
+        return FileResponse(
+            temp_path,
             media_type=content_type,
-            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}.mp4"}
+            headers={"Content-Disposition": content_disposition(f"{clean_filename or profile_filename(video_data)}.mp4", fallback=fallback_video_filename(video_data))},
+            background=BackgroundTask(cleanup_file, temp_path),
         )
     
     params = {

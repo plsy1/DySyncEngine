@@ -769,6 +769,35 @@ def download_kuaishou_video_from_profile(profile: dict[str, Any], fallback_url: 
         return response.content, content_type
 
 
+def download_kuaishou_video_from_profile_to_file(profile: dict[str, Any], output_path: str, fallback_url: str = "") -> str:
+    video_url = profile.get("video", {}).get("play_addr", {}).get("url_list", [None])[0]
+    if not video_url:
+        raise ValueError("无法提取快手视频直链")
+
+    headers = {
+        **get_kuaishou_headers(),
+        "Referer": profile.get("share_url") or fallback_url,
+    }
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    try:
+        with httpx.Client(headers=headers, follow_redirects=True, timeout=60) as client:
+            with client.stream("GET", video_url) as response:
+                response.raise_for_status()
+                content_type = response.headers.get("content-type", "video/mp4")
+                with open(output_path, "wb") as file:
+                    for chunk in response.iter_bytes():
+                        if chunk:
+                            file.write(chunk)
+                return content_type
+    except Exception:
+        try:
+            if os.path.exists(output_path):
+                os.remove(output_path)
+        except Exception as cleanup_error:
+            logger.warning(f"清理失败的快手临时视频文件失败: {output_path} | {cleanup_error}")
+        raise
+
+
 def download_kuaishou_images(share_url: str) -> tuple[list[tuple[str, bytes, str]], dict[str, Any]]:
     profile = fetch_kuaishou_video_profile(share_url)
     image_urls = profile.get("images", {}).get("url_list", [])
