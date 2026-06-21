@@ -104,7 +104,7 @@ def process_single_aweme_download(session: Session, aweme: Any) -> bool:
     
     try:
         saved_path = download_video(
-            aweme.share_url, author_folder, filename, aweme.aweme_id
+            aweme.share_url, author_folder, filename, aweme.aweme_id, aweme.aweme_type
         )
         if saved_path:
             if aweme.platform == "kuaishou" and os.path.isdir(saved_path):
@@ -1085,7 +1085,7 @@ def download_from_share_url(share_url: str = Query(..., description="抖音分�
         from utils import get_author_folder_name
         author_folder_name = get_author_folder_name(final_nickname, uid, platform, session)
         author_folder = os.path.join(author_folder_name, type_folder)
-        saved_path = download_video(share_url, author_folder, filename, aweme_id)
+        saved_path = download_video(share_url, author_folder, filename, aweme_id, aweme_type)
         
         if saved_path:
             # 更新下载状态 and 路径

@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 from loguru import logger
 from utils import sanitize_filename, get_url_platform
-from kuaishou import download_kuaishou_images, download_kuaishou_video
+from kuaishou import download_kuaishou_images, download_kuaishou_video_from_profile_to_file, fetch_kuaishou_video_profile
 
 from config import config
 
@@ -22,7 +22,7 @@ import zipfile
 import io
 import shutil
 
-def download_video(share_url: str, author_folder: str, filename: str, aweme_id: str) -> str | None:
+def download_video(share_url: str, author_folder: str, filename: str, aweme_id: str, aweme_type: int | None = None) -> str | None:
     """
     下载视频并保存到作者文件夹
     如果返回的是 ZIP (图文)，则自动解压到以 filename 命名的文件夹中
@@ -40,10 +40,12 @@ def download_video(share_url: str, author_folder: str, filename: str, aweme_id: 
 
     try:
         if get_url_platform(share_url) == "kuaishou":
-            try:
-                images, _ = download_kuaishou_images(share_url)
-            except ValueError:
-                images = []
+            images = []
+            if aweme_type in (68, None):
+                try:
+                    images, _ = download_kuaishou_images(share_url)
+                except ValueError:
+                    images = []
 
             if images:
                 if os.path.basename(parent_path) == "videos":
@@ -61,15 +63,17 @@ def download_video(share_url: str, author_folder: str, filename: str, aweme_id: 
                 logger.info(f"快手图文下载完成: {image_folder}")
                 return image_folder
 
-            content, _ = download_kuaishou_video(share_url)
-            if len(content) < 1024:
-                logger.warning(f"下载的快手视频文件内容小于1KB，判定为损坏，跳过保存: {aweme_id}")
-                return None
-
             base_name = sanitize_filename(filename)
             file_path = os.path.join(parent_path, f"{base_name} [{aweme_id}].mp4")
-            with open(file_path, "wb") as f:
-                f.write(content)
+            profile = fetch_kuaishou_video_profile(share_url)
+            download_kuaishou_video_from_profile_to_file(profile, file_path, share_url)
+            if os.path.getsize(file_path) < 1024:
+                logger.warning(f"下载的快手视频文件内容小于1KB，判定为损坏，跳过保存: {aweme_id}")
+                try:
+                    os.remove(file_path)
+                except Exception:
+                    pass
+                return None
             logger.info(f"快手视频下载完成: {file_path}")
             return file_path
 
