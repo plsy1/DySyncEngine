@@ -29,8 +29,17 @@ def run_coro_safe(coro):
 def extract_share_url(text: str) -> str:
     """
     从一段文字中提取出支持平台的 URL
-    支持 douyin.com, tiktok.com, kuaishou.com, kuaishou.cn, kwai.com, gifshow.com, ksurl.cn, chenzhongtech.com, kuaishouzt.com, kwai.net 相关的域名
+    支持抖音、TikTok、快手和小红书相关域名
     """
+    xiaohongshu_pattern = (
+        r'(?:https?://)?(?:[a-zA-Z0-9-]+\.)?'
+        r'(?:xiaohongshu\.com|xhslink\.com|rednote\.com)/[^\s<>"，。；！？、【】《》]+'
+    )
+    match = re.search(xiaohongshu_pattern, text, re.IGNORECASE)
+    if match:
+        url = match.group(0).rstrip(".,;:!?)]}'\"")
+        return url if url.startswith(("http://", "https://")) else f"https://{url}"
+
     pattern = r'https?://(?:[a-zA-Z0-9-]+\.)?(?:douyin\.com|tiktok\.com|kuaishou\.com|kuaishou\.cn|kwai\.com|gifshow\.com|ksurl\.cn|chenzhongtech\.com|kuaishouzt\.com|kwai\.net)/[^\s#?]+'
     match = re.search(pattern, text)
     if match:
@@ -42,6 +51,8 @@ def get_url_platform(url: str) -> str:
     识别链接所属平台
     """
     normalized_url = url.lower()
+    if any(domain in normalized_url for domain in ("xiaohongshu.com", "xhslink.com", "rednote.com")):
+        return "xiaohongshu"
     if "tiktok.com" in normalized_url:
         return "tiktok"
     if any(domain in normalized_url for domain in ("kuaishou.com", "kuaishou.cn", "kwai.com", "gifshow.com", "ksurl.cn", "chenzhongtech.com", "kuaishouzt.com", "kwai.net")):

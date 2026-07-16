@@ -4,6 +4,7 @@ import os
 import re
 import threading
 import time
+import zipfile
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -817,3 +818,45 @@ def download_kuaishou_images(share_url: str) -> tuple[list[tuple[str, bytes, str
             extension = "webp" if "webp" in content_type else "jpg"
             images.append((f"{index:02d}.{extension}", response.content, content_type))
     return images, profile
+
+
+def download_kuaishou_images_from_profile_to_zip(
+    profile: dict[str, Any],
+    output_path: str,
+    fallback_url: str = "",
+) -> str:
+    image_urls = profile.get("images", {}).get("url_list", [])
+    if not image_urls:
+        raise ValueError("无法提取快手图文图片直链")
+
+    headers = {
+        **get_kuaishou_headers(),
+        "Referer": profile.get("share_url") or fallback_url,
+    }
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    try:
+        with httpx.Client(headers=headers, follow_redirects=True, timeout=60) as client:
+            with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as archive:
+                for index, image_url in enumerate(image_urls, start=1):
+                    with client.stream("GET", image_url) as response:
+                        response.raise_for_status()
+                        content_type = response.headers.get("content-type", "image/jpeg")
+                        extension = "webp" if "webp" in content_type else "jpg"
+                        image_name = f"{index:02d}.{extension}"
+                        image_size = 0
+                        with archive.open(image_name, "w") as image_file:
+                            for chunk in response.iter_bytes():
+                                if chunk:
+                                    image_file.write(chunk)
+                                    image_size += len(chunk)
+                        if image_size < 1024:
+                            raise ValueError(f"快手图文图片内容异常: {image_name}")
+        return "application/zip"
+    except Exception:
+        try:
+            if os.path.exists(output_path):
+                os.remove(output_path)
+        except Exception as cleanup_error:
+            logger.warning(f"清理失败的快手临时图文文件失败: {output_path} | {cleanup_error}")
+        raise

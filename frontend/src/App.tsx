@@ -851,7 +851,9 @@ function App() {
                                     ? 'bg-white/10 text-white' 
                                     : item.platform === 'kuaishou' 
                                       ? 'bg-orange-500/10 text-orange-400' 
-                                      : 'bg-red-500/10 text-red-400'
+                                      : item.platform === 'xiaohongshu'
+                                        ? 'bg-rose-500/10 text-rose-400'
+                                        : 'bg-red-500/10 text-red-400'
                                 }`}>
                                   {item.aweme_type === 68 ? <FileText size={18} /> : <Play size={18} />}
                                 </div>
@@ -865,9 +867,11 @@ function App() {
                                         ? 'bg-black text-white border border-white/20' 
                                         : item.platform === 'kuaishou' 
                                           ? 'bg-orange-500/20 text-orange-400 border border-orange-500/10' 
-                                          : 'bg-red-500/20 text-red-500 border border-red-500/10'
+                                          : item.platform === 'xiaohongshu'
+                                            ? 'bg-rose-500/20 text-rose-400 border border-rose-500/10'
+                                            : 'bg-red-500/20 text-red-500 border border-red-500/10'
                                     }`}>
-                                      {item.platform === 'tiktok' ? 'TikTok' : item.platform === 'kuaishou' ? '快手' : '抖音'}
+                                      {item.platform === 'tiktok' ? 'TikTok' : item.platform === 'kuaishou' ? '快手' : item.platform === 'xiaohongshu' ? '小红书' : '抖音'}
                                     </span>
                                   </div>
                                   <p className="text-xs text-white/45 truncate" title={item.desc}>{item.desc || '（无描述文字）'}</p>

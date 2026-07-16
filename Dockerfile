@@ -28,9 +28,10 @@ RUN cp /app/3rd/douyin_api/crawlers/douyin/web/config.yaml \
        /app/3rd/douyin_api/crawlers/douyin/web/config.yaml.default && \
     cp /app/3rd/douyin_api/crawlers/tiktok/web/config.yaml \
        /app/3rd/douyin_api/crawlers/tiktok/web/config.yaml.default && \
-    mkdir -p /app/defaults/kuaishou_web
+    mkdir -p /app/defaults/kuaishou_web /app/defaults/xiaohongshu_web
 
 COPY defaults/kuaishou_web/config.yaml.default /app/defaults/kuaishou_web/config.yaml.default
+COPY defaults/xiaohongshu_web/config.yaml.default /app/defaults/xiaohongshu_web/config.yaml.default
 
 # Copy entrypoint script
 COPY entrypoint.sh /app/entrypoint.sh

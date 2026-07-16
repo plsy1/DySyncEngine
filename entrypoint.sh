@@ -29,8 +29,12 @@ init_config() {
     fi
 
     if [ -s "$PERSISTENT_DST" ]; then
-        cp "$PERSISTENT_DST" "$RUNTIME_DST"
-        echo "[entrypoint] 已同步运行时配置: $RUNTIME_DST"
+        if [ "$PERSISTENT_DST" = "$RUNTIME_DST" ]; then
+            echo "[entrypoint] 持久化配置即运行时配置: $RUNTIME_DST"
+        else
+            cp "$PERSISTENT_DST" "$RUNTIME_DST"
+            echo "[entrypoint] 已同步运行时配置: $RUNTIME_DST"
+        fi
     fi
 }
 
@@ -49,6 +53,11 @@ init_config \
     "/app/defaults/kuaishou_web/config.yaml.default" \
     "/app/config/kuaishou_web/config.yaml" \
     "/app/config/kuaishou_web/config.yaml"
+
+init_config \
+    "/app/defaults/xiaohongshu_web/config.yaml.default" \
+    "/app/config/xiaohongshu_web/config.yaml" \
+    "/app/config/xiaohongshu_web/config.yaml"
 
 echo "[entrypoint] 配置初始化完成，正在启动服务..."
 exec uvicorn backend.main:app --host 0.0.0.0 --port "${PORT:-80}"

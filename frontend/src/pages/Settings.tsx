@@ -17,12 +17,14 @@ interface CookiesState {
     douyin_status: CookieStatus;
     tiktok_status: CookieStatus;
     kuaishou_status: CookieStatus;
+    xiaohongshu_status: CookieStatus;
     douyin_cookie_preview: string;
     tiktok_cookie_preview: string;
     kuaishou_cookie_preview: string;
+    xiaohongshu_cookie_preview: string;
 }
 
-type CookiePlatform = 'douyin' | 'tiktok' | 'kuaishou';
+type CookiePlatform = 'douyin' | 'tiktok' | 'kuaishou' | 'xiaohongshu';
 
 export const Settings = ({ onBack, onNotify }: SettingsProps) => {
     const [settings, setSettings] = useState<GlobalSettings>({
@@ -72,16 +74,20 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
         douyin_status: 'loading',
         tiktok_status: 'loading',
         kuaishou_status: 'loading',
+        xiaohongshu_status: 'loading',
         douyin_cookie_preview: '',
         tiktok_cookie_preview: '',
         kuaishou_cookie_preview: '',
+        xiaohongshu_cookie_preview: '',
     });
     const [douyinCookie, setDouyinCookie] = useState('');
     const [tiktokCookie, setTiktokCookie] = useState('');
     const [kuaishouCookie, setKuaishouCookie] = useState('');
+    const [xiaohongshuCookie, setXiaohongshuCookie] = useState('');
     const [savingDouyinCookie, setSavingDouyinCookie] = useState(false);
     const [savingTiktokCookie, setSavingTiktokCookie] = useState(false);
     const [savingKuaishouCookie, setSavingKuaishouCookie] = useState(false);
+    const [savingXiaohongshuCookie, setSavingXiaohongshuCookie] = useState(false);
     const [checkingCookies, setCheckingCookies] = useState(false);
     const [migrationPreview, setMigrationPreview] = useState<FolderMigrationPreview | null>(null);
     const [previewingMigration, setPreviewingMigration] = useState(false);
@@ -165,12 +171,14 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                 douyin_status: data.douyin_status as CookieStatus,
                 tiktok_status: data.tiktok_status as CookieStatus,
                 kuaishou_status: data.kuaishou_status as CookieStatus,
+                xiaohongshu_status: data.xiaohongshu_status as CookieStatus,
                 douyin_cookie_preview: data.douyin_cookie_preview,
                 tiktok_cookie_preview: data.tiktok_cookie_preview,
                 kuaishou_cookie_preview: data.kuaishou_cookie_preview,
+                xiaohongshu_cookie_preview: data.xiaohongshu_cookie_preview,
             });
         } catch (err) {
-            setCookiesState(s => ({ ...s, douyin_status: 'unknown', tiktok_status: 'unknown', kuaishou_status: 'unknown' }));
+            setCookiesState(s => ({ ...s, douyin_status: 'unknown', tiktok_status: 'unknown', kuaishou_status: 'unknown', xiaohongshu_status: 'unknown' }));
         } finally {
             setCheckingCookies(false);
         }
@@ -266,20 +274,21 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
     };
 
     const handleSaveCookie = async (platform: CookiePlatform) => {
-        const cookie = platform === 'douyin' ? douyinCookie : platform === 'tiktok' ? tiktokCookie : kuaishouCookie;
+        const cookie = platform === 'douyin' ? douyinCookie : platform === 'tiktok' ? tiktokCookie : platform === 'kuaishou' ? kuaishouCookie : xiaohongshuCookie;
         if (!cookie.trim()) {
             onNotify('Cookie 不能为空', 'error');
             return;
         }
-        const setSaving = platform === 'douyin' ? setSavingDouyinCookie : platform === 'tiktok' ? setSavingTiktokCookie : setSavingKuaishouCookie;
+        const setSaving = platform === 'douyin' ? setSavingDouyinCookie : platform === 'tiktok' ? setSavingTiktokCookie : platform === 'kuaishou' ? setSavingKuaishouCookie : setSavingXiaohongshuCookie;
         setSaving(true);
         try {
             await api.updateCookie(platform, cookie.trim());
-            const platformName = platform === 'douyin' ? '抖音' : platform === 'tiktok' ? 'TikTok' : '快手';
+            const platformName = platform === 'douyin' ? '抖音' : platform === 'tiktok' ? 'TikTok' : platform === 'kuaishou' ? '快手' : '小红书';
             onNotify(`${platformName} Cookie 已保存，正在验证...`, 'success');
             if (platform === 'douyin') setDouyinCookie('');
             else if (platform === 'tiktok') setTiktokCookie('');
-            else setKuaishouCookie('');
+            else if (platform === 'kuaishou') setKuaishouCookie('');
+            else setXiaohongshuCookie('');
             // 重新检测状态
             await fetchCookiesStatus(true);
         } catch (err: any) {
@@ -313,7 +322,7 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
         );
     }
 
-    const hasInvalidCookie = cookiesState.douyin_status === 'invalid' || cookiesState.tiktok_status === 'invalid' || cookiesState.kuaishou_status === 'invalid';
+    const hasInvalidCookie = cookiesState.douyin_status === 'invalid' || cookiesState.tiktok_status === 'invalid' || cookiesState.kuaishou_status === 'invalid' || cookiesState.xiaohongshu_status === 'invalid';
 
     return (
         <div className="space-y-10 pb-20">
@@ -393,7 +402,7 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                                     重新检测
                                 </button>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 {/* 抖音 Cookie */}
                                 <motion.div
                                     initial={{ opacity: 0, y: 10 }}
@@ -552,6 +561,60 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                                     >
                                         {savingKuaishouCookie ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                                         保存快手 Cookie
+                                    </button>
+                                </motion.div>
+
+                                {/* 小红书 Cookie */}
+                                <motion.div
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: 0.15 }}
+                                    className={`p-6 border rounded-3xl space-y-4 flex flex-col backdrop-blur-sm ${
+                                        cookiesState.xiaohongshu_status === 'invalid'
+                                            ? 'border-red-500/30 bg-red-500/5'
+                                            : cookiesState.xiaohongshu_status === 'valid'
+                                            ? 'border-emerald-500/20 bg-emerald-500/5'
+                                            : 'border-white/5 bg-white/2'
+                                    }`}
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                                                cookiesState.xiaohongshu_status === 'invalid' ? 'bg-red-500/15 text-red-400'
+                                                : cookiesState.xiaohongshu_status === 'valid' ? 'bg-emerald-500/15 text-emerald-400'
+                                                : 'bg-white/8 text-white/40'
+                                            }`}>
+                                                <Cookie size={18} />
+                                            </div>
+                                            <div>
+                                                <h4 className="font-bold text-white">小红书 Cookie</h4>
+                                                {cookiesState.xiaohongshu_cookie_preview && (
+                                                    <p className="text-white/30 text-xs font-mono mt-0.5 truncate max-w-[140px]">{cookiesState.xiaohongshu_cookie_preview}</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <CookieStatusBadge status={cookiesState.xiaohongshu_status} />
+                                    </div>
+
+                                    <div className="space-y-2 flex-1">
+                                        <label className="text-white/50 text-xs font-black uppercase tracking-widest pl-1">粘贴新 Cookie</label>
+                                        <textarea
+                                            value={xiaohongshuCookie}
+                                            onChange={(e) => setXiaohongshuCookie(e.target.value)}
+                                            rows={4}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 px-4 outline-none focus:border-primary/50 transition-all text-xs font-mono resize-none text-white"
+                                            placeholder={cookiesState.xiaohongshu_cookie_preview ? `当前已配置: ${cookiesState.xiaohongshu_cookie_preview}` : "从小红书网页版复制完整的 Cookie 字符串粘贴到此处（可选）..."}
+                                        />
+                                        <p className="text-white/30 text-xs pl-1">Cookie 可选；配置后可提高视频画质与作品页解析成功率。</p>
+                                    </div>
+
+                                    <button
+                                        onClick={() => handleSaveCookie('xiaohongshu')}
+                                        disabled={savingXiaohongshuCookie || !xiaohongshuCookie.trim()}
+                                        className="w-full flex items-center justify-center gap-2 py-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 disabled:opacity-40 transition-all rounded-xl font-black text-xs border border-rose-500/20 cursor-pointer"
+                                    >
+                                        {savingXiaohongshuCookie ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                                        保存小红书 Cookie
                                     </button>
                                 </motion.div>
                             </div>
@@ -866,7 +929,7 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                                         placeholder="password"
                                     />
                                     <p className="text-xs text-white/40 pl-1 mt-1 leading-normal">
-                                        iPhone 快捷指令可使用 <code className="text-primary/70">/api/download_video?share_url=...&shortcut_token=...</code> 直接下载抖音/快手视频。
+                                        iPhone 快捷指令可使用 <code className="text-primary/70">/api/download_video?share_url=...&shortcut_token=...</code> 下载抖音、TikTok、快手或小红书作品；视频返回 MP4，图文返回 ZIP。
                                     </p>
                                 </div>
                             </div>

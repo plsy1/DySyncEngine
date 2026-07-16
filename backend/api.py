@@ -30,7 +30,15 @@ from db import (
 )
 from fetch import fetch_all_awemes, fetch_user_profile, fetch_video_profile
 from downloader import download_video, DOWNLOAD_API
-from kuaishou import download_kuaishou_images, download_kuaishou_video_from_profile_to_file
+from kuaishou import (
+    download_kuaishou_images_from_profile_to_zip,
+    download_kuaishou_video_from_profile_to_file,
+)
+from xiaohongshu import (
+    download_xiaohongshu_images_from_profile_to_zip,
+    download_xiaohongshu_video_from_profile_to_file,
+    get_xiaohongshu_headers,
+)
 from auth import create_access_token, verify_password, get_password_hash, get_current_user, SECRET_KEY, ALGORITHM
 from utils import extract_share_url, get_url_platform, resolve_redirect, extract_sec_user_id, sanitize_filename, run_coro_safe
 from telegram_uploader import tg_uploader
@@ -39,10 +47,10 @@ import httpx
 import uuid
 import io
 import os
-import zipfile
 import unicodedata
 import hmac
 import jwt
+from urllib.parse import urljoin, urlparse
 from loguru import logger
 import asyncio
 from telethon.errors import SessionPasswordNeededError
@@ -53,7 +61,8 @@ DOWNLOAD_CACHE_DIR = os.path.join(os.path.dirname(__file__), "data", "cache", "d
 
 
 def ensure_platform_supported(platform: str, feature: str) -> None:
-    return None
+    if platform == "xiaohongshu" and feature == "作者订阅":
+        raise HTTPException(status_code=400, detail="小红书目前支持单作品解析与下载，暂不支持作者订阅")
 
 
 def cleanup_file(path: str) -> None:
@@ -799,13 +808,30 @@ def usable_filename(name: str | None) -> str | None:
     return sanitized
 
 
-def fallback_video_filename(video_data: dict[str, Any]) -> str:
-    fallback = video_data.get("aweme_id") or "video"
-    return f"{sanitize_filename(str(fallback))}.mp4"
-
-
 def profile_filename(video_data: dict[str, Any]) -> str:
     return usable_filename(video_data.get("desc")) or usable_filename(video_data.get("aweme_id")) or "video"
+
+
+def prepare_direct_platform_work_file(share_url: str, platform: str) -> tuple[dict[str, Any], str, str, str]:
+    video_data = fetch_video_profile(share_url, minimal=False)
+    image_urls = video_data.get("images", {}).get("url_list", [])
+    extension = ".zip" if image_urls else ".mp4"
+    temp_path = os.path.join(DOWNLOAD_CACHE_DIR, f"{uuid.uuid4().hex}{extension}")
+
+    if platform == "kuaishou":
+        if image_urls:
+            content_type = download_kuaishou_images_from_profile_to_zip(video_data, temp_path, share_url)
+        else:
+            content_type = download_kuaishou_video_from_profile_to_file(video_data, temp_path, share_url)
+    elif platform == "xiaohongshu":
+        if image_urls:
+            content_type = download_xiaohongshu_images_from_profile_to_zip(video_data, temp_path, share_url)
+        else:
+            content_type = download_xiaohongshu_video_from_profile_to_file(video_data, temp_path, share_url)
+    else:
+        raise ValueError(f"不支持直接下载的平台: {platform}")
+
+    return video_data, temp_path, content_type, extension
 
 
 def _validate_download_video_access(
@@ -850,17 +876,70 @@ def parse_video_api(share_url: str = Query(..., description="分享链接")):
     return _video_parse_info_from_profile(video_data, platform)
 
 
+def _validate_xiaohongshu_image_url(url: str) -> None:
+    parsed = urlparse(url)
+    hostname = (parsed.hostname or "").lower()
+    allowed_suffixes = (
+        ".xhscdn.com",
+        ".xhscdn.net",
+        ".xiaohongshu.com",
+        ".rednote.com",
+    )
+    if parsed.scheme not in ("http", "https") or not any(
+        hostname == suffix[1:] or hostname.endswith(suffix)
+        for suffix in allowed_suffixes
+    ):
+        raise HTTPException(status_code=400, detail="不支持的小红书图片地址")
+
+
+@router.get("/xiaohongshu/image")
+async def xiaohongshu_image_proxy(url: str = Query(..., description="小红书图片地址")):
+    """代理小红书 CDN 图片，补齐 Cookie 和 Referer 以供 WebUI 展示封面。"""
+    current_url = url
+    headers = get_xiaohongshu_headers()
+    headers["Accept"] = "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"
+
+    try:
+        async with httpx.AsyncClient(headers=headers, follow_redirects=False, timeout=20) as client:
+            for _ in range(5):
+                _validate_xiaohongshu_image_url(current_url)
+                response = await client.get(current_url)
+                if response.is_redirect:
+                    location = response.headers.get("location")
+                    if not location:
+                        raise HTTPException(status_code=502, detail="小红书图片重定向地址缺失")
+                    current_url = urljoin(current_url, location)
+                    continue
+
+                response.raise_for_status()
+                content_type = response.headers.get("content-type", "image/jpeg").split(";", 1)[0]
+                if not content_type.startswith("image/"):
+                    raise HTTPException(status_code=502, detail="小红书封面返回了非图片内容")
+                return Response(
+                    content=response.content,
+                    media_type=content_type,
+                    headers={"Cache-Control": "private, max-age=3600"},
+                )
+    except HTTPException:
+        raise
+    except httpx.HTTPError as error:
+        logger.warning(f"代理小红书封面失败: {current_url} | {error}")
+        raise HTTPException(status_code=502, detail="加载小红书封面失败") from error
+
+    raise HTTPException(status_code=502, detail="小红书图片重定向次数过多")
+
+
 @public_router.get("/download_video")
 async def download_video_file_api(
     request: Request,
-    share_url: str = Query(..., description="抖音/快手单个视频作品链接"),
+    share_url: str = Query(..., description="抖音/TikTok/快手/小红书单个作品链接"),
     filename: str | None = Query(None, description="保存的文件名，不传则使用作品标题"),
     token: str | None = Query(None, description="JWT token"),
     shortcut_token: str | None = Query(None, description="iOS Shortcut 专用 token"),
     session: Session = Depends(get_session),
 ):
     """
-    统一视频文件下载接口：支持抖音视频和快手视频；图文内容不在此接口处理。
+    统一作品文件下载接口：视频返回 MP4，图文返回包含全部图片的 ZIP。
     """
     _validate_download_video_access(request, session, token_query=token, shortcut_token=shortcut_token)
 
@@ -868,30 +947,27 @@ async def download_video_file_api(
 
     clean_filename = usable_filename(filename)
 
-    def video_filename(default_name: str) -> str:
-        base_name = clean_filename or usable_filename(default_name) or "video"
-        return f"{base_name}.mp4"
+    def media_filename(default_name: str, extension: str) -> str:
+        base_name = clean_filename or usable_filename(default_name) or "work"
+        return f"{base_name}{extension}"
 
-    if platform == "kuaishou":
-        def fetch_kuaishou_video_file() -> tuple[dict[str, Any], str, str]:
-            video_data = fetch_video_profile(share_url, minimal=False)
-            temp_path = os.path.join(DOWNLOAD_CACHE_DIR, f"{uuid.uuid4().hex}.mp4")
-            content_type = download_kuaishou_video_from_profile_to_file(video_data, temp_path, share_url)
-            return video_data, temp_path, content_type
-
+    if platform in ("kuaishou", "xiaohongshu"):
         try:
-            video_data, temp_path, content_type = await run_in_threadpool(fetch_kuaishou_video_file)
-            output_filename = video_filename(profile_filename(video_data))
+            video_data, temp_path, content_type, extension = await run_in_threadpool(
+                prepare_direct_platform_work_file,
+                share_url,
+                platform,
+            )
+            output_filename = media_filename(profile_filename(video_data), extension)
+            fallback_name = f"{sanitize_filename(str(video_data.get('aweme_id') or 'work'))}{extension}"
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         return FileResponse(
             temp_path,
             media_type=content_type,
-            headers={"Content-Disposition": content_disposition(output_filename, fallback=fallback_video_filename(video_data))},
+            headers={"Content-Disposition": content_disposition(output_filename, fallback=fallback_name)},
             background=BackgroundTask(cleanup_file, temp_path),
         )
-
-    output_filename = video_filename("video")
 
     params = {
         "url": share_url,
@@ -904,52 +980,38 @@ async def download_video_file_api(
 
     content_type = resp.headers.get("content-type", "video/mp4")
     disposition = resp.headers.get("content-disposition", "")
-    if "application/zip" in content_type or ".zip" in disposition.lower():
-        raise HTTPException(status_code=400, detail="该链接不是视频作品，统一视频接口仅返回视频文件")
+    extension = ".zip" if "application/zip" in content_type or ".zip" in disposition.lower() else ".mp4"
+    output_filename = media_filename("images" if extension == ".zip" else "video", extension)
 
     return StreamingResponse(
         io.BytesIO(resp.content),
         media_type=content_type,
-        headers={"Content-Disposition": content_disposition(output_filename)}
+        headers={"Content-Disposition": content_disposition(output_filename, fallback=f"work{extension}")}
     )
 
 
 @router.get("/download_proxy")
-async def download_proxy_api(share_url: str = Query(..., description="抖音分享链接"), filename: str = Query("video", description="保存的文件名")):
+async def download_proxy_api(share_url: str = Query(..., description="单作品分享链接"), filename: str | None = Query(None, description="保存的文件名")):
     """
     代理下载：通过服务器请求 DOWNLOAD_API 并直接流式返回给客户端，实现浏览器本地下载
     """
     share_url, platform = _prepare_single_work_url(share_url)
-    if platform == "kuaishou":
+    if platform in ("kuaishou", "xiaohongshu"):
         clean_filename = usable_filename(filename)
         try:
-            images, _ = await run_in_threadpool(download_kuaishou_images, share_url)
-        except ValueError:
-            images = []
-
-        if images:
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as z:
-                for image_name, content, _ in images:
-                    z.writestr(image_name, content)
-            zip_buffer.seek(0)
-            return StreamingResponse(
-                zip_buffer,
-                media_type="application/zip",
-                headers={"Content-Disposition": content_disposition(f"{clean_filename or 'images'}.zip", fallback="images.zip")}
+            video_data, temp_path, content_type, extension = await run_in_threadpool(
+                prepare_direct_platform_work_file,
+                share_url,
+                platform,
             )
-
-        def fetch_kuaishou_proxy_video_file() -> tuple[dict[str, Any], str, str]:
-            video_data = fetch_video_profile(share_url, minimal=False)
-            temp_path = os.path.join(DOWNLOAD_CACHE_DIR, f"{uuid.uuid4().hex}.mp4")
-            content_type = download_kuaishou_video_from_profile_to_file(video_data, temp_path, share_url)
-            return video_data, temp_path, content_type
-
-        video_data, temp_path, content_type = await run_in_threadpool(fetch_kuaishou_proxy_video_file)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error))
+        output_filename = f"{clean_filename or profile_filename(video_data)}{extension}"
+        fallback_name = f"{sanitize_filename(str(video_data.get('aweme_id') or 'work'))}{extension}"
         return FileResponse(
             temp_path,
             media_type=content_type,
-            headers={"Content-Disposition": content_disposition(f"{clean_filename or profile_filename(video_data)}.mp4", fallback=fallback_video_filename(video_data))},
+            headers={"Content-Disposition": content_disposition(output_filename, fallback=fallback_name)},
             background=BackgroundTask(cleanup_file, temp_path),
         )
     
@@ -988,15 +1050,16 @@ async def download_proxy_api(share_url: str = Query(..., description="抖音分�
 
 
 @router.post("/download_share_url", response_model=ShareDownloadResult)
-def download_from_share_url(share_url: str = Query(..., description="抖音分享链接")):
+def download_from_share_url(share_url: str = Query(..., description="单作品分享链接")):
     """
-    直接下载单个抖音分享链接视频，并同步存储用户信息与视频记录到数据库
+    直接下载单个作品，并同步存储用户信息与作品记录到数据库
     """
 
-    share_url = extract_share_url(share_url)
-    share_url = resolve_redirect(share_url)
-    platform = get_url_platform(share_url)
-    video_data = fetch_video_profile(share_url, minimal=False)
+    share_url, platform = _prepare_single_work_url(share_url)
+    try:
+        video_data = fetch_video_profile(share_url, minimal=False)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
 
     aweme_id = video_data.get("aweme_id")
     aweme_type = video_data.get("aweme_type", 0)
@@ -1010,7 +1073,7 @@ def download_from_share_url(share_url: str = Query(..., description="抖音分�
 
     # 1. 抓取/补充完整 Profile 以确保数据库信息的完整性。
     # 快手单作品解析结果里的 sec_uid 通常就是 uid，不能再用它查 profile 覆盖作者昵称。
-    if sec_user_id and platform != "kuaishou":
+    if sec_user_id and platform not in ("kuaishou", "xiaohongshu"):
         try:
             profile = fetch_user_profile(sec_user_id, platform=platform)
             full_user_info = profile.get("user", {})
@@ -1032,7 +1095,7 @@ def download_from_share_url(share_url: str = Query(..., description="抖音分�
         )
         
         existing_user = session.query(DBUser).filter(DBUser.uid == uid).first()
-        if platform == "kuaishou" and existing_user:
+        if platform in ("kuaishou", "xiaohongshu") and existing_user:
             final_nickname = existing_user.nickname or final_nickname
             avatar_url = existing_user.avatar_url or avatar_url
             author_info["signature"] = existing_user.signature or author_info.get("signature")
@@ -1562,6 +1625,10 @@ COOKIE_CONFIG_PATHS = {
         "KUAISHOU_WEB_CONFIG_PATH",
         os.path.join(CONFIG_BASE, "kuaishou_web", "config.yaml"),
     ),
+    "xiaohongshu": os.getenv(
+        "XIAOHONGSHU_WEB_CONFIG_PATH",
+        os.path.join(CONFIG_BASE, "xiaohongshu_web", "config.yaml"),
+    ),
 }
 RUNTIME_COOKIE_CONFIG_PATHS = {
     "douyin": os.getenv(
@@ -1575,6 +1642,10 @@ RUNTIME_COOKIE_CONFIG_PATHS = {
     "kuaishou": os.getenv(
         "KUAISHOU_WEB_RUNTIME_CONFIG_PATH",
         os.path.join(CONFIG_BASE, "kuaishou_web", "config.yaml"),
+    ),
+    "xiaohongshu": os.getenv(
+        "XIAOHONGSHU_WEB_RUNTIME_CONFIG_PATH",
+        os.path.join(CONFIG_BASE, "xiaohongshu_web", "config.yaml"),
     ),
 }
 
@@ -1603,7 +1674,7 @@ def _write_cookie_to_yaml(platform: str, cookie: str) -> bool:
         # 如果文件不存在（新用户且 entrypoint 尚未运行），先确保目录存在
         os.makedirs(os.path.dirname(path), exist_ok=True)
         if not os.path.exists(path):
-            if platform == "kuaishou":
+            if platform in ("kuaishou", "xiaohongshu"):
                 with open(path, "w", encoding="utf-8") as f:
                     f.write("headers:\n  User-Agent: Mozilla/5.0\n  Cookie:\n")
             else:
@@ -1689,12 +1760,14 @@ class CookieStatusResponse(BaseModel):
     douyin_status: str   # "valid" | "invalid" | "empty"
     tiktok_status: str
     kuaishou_status: str
+    xiaohongshu_status: str
     douyin_cookie_preview: str  # 前20字符预览，确认是否已填写
     tiktok_cookie_preview: str
     kuaishou_cookie_preview: str
+    xiaohongshu_cookie_preview: str
 
 class UpdateCookieRequest(BaseModel):
-    platform: str  # "douyin" | "tiktok" | "kuaishou"
+    platform: str  # "douyin" | "tiktok" | "kuaishou" | "xiaohongshu"
     cookie: str
 
 
@@ -1706,23 +1779,28 @@ async def get_cookies_status(check: bool = Query(True, description="是否验证
     douyin_cookie = _read_cookie_from_yaml("douyin")
     tiktok_cookie = _read_cookie_from_yaml("tiktok")
     kuaishou_cookie = _read_cookie_from_yaml("kuaishou")
+    xiaohongshu_cookie = _read_cookie_from_yaml("xiaohongshu")
     
     if check:
         douyin_status = await _check_cookie_validity("douyin")
         tiktok_status = await _check_cookie_validity("tiktok")
         kuaishou_status = await _check_cookie_validity("kuaishou")
+        xiaohongshu_status = await _check_cookie_validity("xiaohongshu")
     else:
         douyin_status = "empty" if not douyin_cookie else "unknown"
         tiktok_status = "empty" if not tiktok_cookie else "unknown"
         kuaishou_status = "empty" if not kuaishou_cookie else "unknown"
+        xiaohongshu_status = "empty" if not xiaohongshu_cookie else "unknown"
     
     return CookieStatusResponse(
         douyin_status=douyin_status,
         tiktok_status=tiktok_status,
         kuaishou_status=kuaishou_status,
+        xiaohongshu_status=xiaohongshu_status,
         douyin_cookie_preview=douyin_cookie[:30] + "..." if len(douyin_cookie) > 30 else douyin_cookie,
         tiktok_cookie_preview=tiktok_cookie[:30] + "..." if len(tiktok_cookie) > 30 else tiktok_cookie,
         kuaishou_cookie_preview=kuaishou_cookie[:30] + "..." if len(kuaishou_cookie) > 30 else kuaishou_cookie,
+        xiaohongshu_cookie_preview=xiaohongshu_cookie[:30] + "..." if len(xiaohongshu_cookie) > 30 else xiaohongshu_cookie,
     )
 
 
@@ -1731,8 +1809,8 @@ def update_cookie(req: UpdateCookieRequest, _ = Depends(get_current_user)):
     """
     更新指定平台的 Cookie（写入对应 config.yaml）
     """
-    if req.platform not in ("douyin", "tiktok", "kuaishou"):
-        raise HTTPException(status_code=400, detail="platform 必须为 douyin、tiktok 或 kuaishou")
+    if req.platform not in ("douyin", "tiktok", "kuaishou", "xiaohongshu"):
+        raise HTTPException(status_code=400, detail="platform 必须为 douyin、tiktok、kuaishou 或 xiaohongshu")
     success = _write_cookie_to_yaml(req.platform, req.cookie.strip())
     if not success:
         raise HTTPException(status_code=500, detail=f"写入 {req.platform} config.yaml 失败，请检查文件是否存在")

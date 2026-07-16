@@ -211,15 +211,17 @@ export const getCookiesStatus = async (check: boolean = true): Promise<{
   douyin_status: string;
   tiktok_status: string;
   kuaishou_status: string;
+  xiaohongshu_status: string;
   douyin_cookie_preview: string;
   tiktok_cookie_preview: string;
   kuaishou_cookie_preview: string;
+  xiaohongshu_cookie_preview: string;
 }> => {
   const { data } = await api.get('cookies/status', { params: { check } });
   return data;
 };
 
-export const updateCookie = async (platform: 'douyin' | 'tiktok' | 'kuaishou', cookie: string): Promise<{ success: boolean }> => {
+export const updateCookie = async (platform: 'douyin' | 'tiktok' | 'kuaishou' | 'xiaohongshu', cookie: string): Promise<{ success: boolean }> => {
   const { data } = await api.post('cookies', { platform, cookie });
   return data;
 };

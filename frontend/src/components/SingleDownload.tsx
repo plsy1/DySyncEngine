@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Download, Server, Link, Loader2, Sparkles } from 'lucide-react';
+import { Download, Server, Link, Loader2, Sparkles, ImageOff } from 'lucide-react';
 import type { VideoParseInfo } from '../types';
 import * as api from '../api';
 
@@ -18,6 +18,7 @@ export const SingleDownload = ({ onNotify, inline = false }: SingleDownloadProps
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [videoData, setVideoData] = useState<VideoParseInfo | null>(null);
+    const [coverFailed, setCoverFailed] = useState(false);
 
     const formatDate = (timestamp?: number) => {
         if (!timestamp) return '';
@@ -32,9 +33,10 @@ export const SingleDownload = ({ onNotify, inline = false }: SingleDownloadProps
         setLoading(true);
         try {
             const data = await api.parseVideo(url);
+            setCoverFailed(false);
             setVideoData(data);
         } catch (err) {
-            onNotify(getErrorDetail(err) || '解析视频失败，请检查链接是否正确', 'error');
+            onNotify(getErrorDetail(err) || '解析作品失败，请检查链接是否正确', 'error');
         } finally {
             setLoading(false);
         }
@@ -45,7 +47,7 @@ export const SingleDownload = ({ onNotify, inline = false }: SingleDownloadProps
         setSaving(true);
         try {
             await api.downloadShareUrl(url);
-            onNotify('视频已成功保存到服务器', 'success');
+            onNotify('作品已成功保存到服务器', 'success');
         } catch (err) {
             onNotify(getErrorDetail(err) || '保存失败', 'error');
         } finally {
@@ -61,12 +63,18 @@ export const SingleDownload = ({ onNotify, inline = false }: SingleDownloadProps
         onNotify('正在准备下载，请稍候...', 'success');
     };
 
+    const coverUrl = videoData?.cover_url
+        ? videoData.platform === 'xiaohongshu'
+            ? `/api/xiaohongshu/image?url=${encodeURIComponent(videoData.cover_url)}&token=${encodeURIComponent(localStorage.getItem('token') || '')}`
+            : videoData.cover_url
+        : '';
+
     const renderContent = () => (
         <>
             {!inline && (
                 <div className="flex items-center gap-3 mb-6">
                     <Sparkles className="text-primary" size={20} />
-                    <h2 className="text-xl font-bold">单视频下载 / 解析</h2>
+                    <h2 className="text-xl font-bold">单作品下载 / 解析</h2>
                 </div>
             )}
 
@@ -77,7 +85,7 @@ export const SingleDownload = ({ onNotify, inline = false }: SingleDownloadProps
                         type="text"
                         value={url}
                         onChange={(e) => setUrl(e.target.value)}
-                        placeholder="粘贴抖音/TikTok/快手 视频分享链接..."
+                        placeholder="粘贴抖音/TikTok/快手/小红书作品分享链接..."
                         className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-11 pr-4 outline-none focus:border-primary/50 transition-all text-sm font-medium"
                     />
                 </div>
@@ -86,7 +94,7 @@ export const SingleDownload = ({ onNotify, inline = false }: SingleDownloadProps
                     disabled={loading || !url}
                     className="btn-primary py-3 px-6 flex items-center justify-center gap-2 w-full sm:w-auto"
                 >
-                    {loading ? <Loader2 className="animate-spin" size={18} /> : '解析视频'}
+                    {loading ? <Loader2 className="animate-spin" size={18} /> : '解析作品'}
                 </button>
             </form>
 
@@ -101,7 +109,18 @@ export const SingleDownload = ({ onNotify, inline = false }: SingleDownloadProps
                         <div className="flex gap-4 items-start">
                             {/* Compact Video Cover */}
                             <div className="relative w-24 aspect-[9/16] rounded-xl overflow-hidden border border-white/10 shadow-xl shrink-0">
-                                <img src={videoData.cover_url || ''} className="w-full h-full object-cover" />
+                                {coverUrl && !coverFailed ? (
+                                    <img
+                                        src={coverUrl}
+                                        alt={videoData.desc || '作品封面'}
+                                        className="w-full h-full object-cover"
+                                        onError={() => setCoverFailed(true)}
+                                    />
+                                ) : (
+                                    <div className="w-full h-full bg-white/5 flex items-center justify-center text-white/20">
+                                        <ImageOff size={24} />
+                                    </div>
+                                )}
                                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent p-2 text-center">
                                     <div className="text-[10px] text-white/80 font-bold truncate">
                                         {videoData.author_name}
@@ -116,8 +135,8 @@ export const SingleDownload = ({ onNotify, inline = false }: SingleDownloadProps
                                         <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${videoData.aweme_type === 68 ? 'bg-amber-500/20 text-amber-500 border border-amber-500/10' : 'bg-blue-500/20 text-blue-500 border border-blue-500/10'}`}>
                                             {videoData.aweme_type === 68 ? '图文' : '视频'}
                                         </span>
-                                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${videoData.platform === 'tiktok' ? 'bg-black text-white border border-white/20' : videoData.platform === 'kuaishou' ? 'bg-orange-500/20 text-orange-400' : 'bg-red-500/20 text-red-500 border border-red-500/10'}`}>
-                                            {videoData.platform === 'tiktok' ? 'TikTok' : videoData.platform === 'kuaishou' ? '快手' : 'Douyin'}
+                                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${videoData.platform === 'tiktok' ? 'bg-black text-white border border-white/20' : videoData.platform === 'kuaishou' ? 'bg-orange-500/20 text-orange-400' : videoData.platform === 'xiaohongshu' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/10' : 'bg-red-500/20 text-red-500 border border-red-500/10'}`}>
+                                            {videoData.platform === 'tiktok' ? 'TikTok' : videoData.platform === 'kuaishou' ? '快手' : videoData.platform === 'xiaohongshu' ? '小红书' : 'Douyin'}
                                         </span>
                                         {videoData.create_time > 0 && (
                                             <span className="text-[10px] text-white/30 font-medium">
@@ -152,7 +171,7 @@ export const SingleDownload = ({ onNotify, inline = false }: SingleDownloadProps
                                         </button>
                                     </div>
                                     <p className="text-[9px] text-white/20 italic leading-none">
-                                        * 下载到本地将尝试直接打开无水印直链
+                                        * 视频下载为 MP4，图文下载为包含全部图片的 ZIP
                                     </p>
                                 </div>
                             </div>

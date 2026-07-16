@@ -5,6 +5,7 @@ from loguru import logger
 from config import config
 from utils import get_url_platform
 from kuaishou import fetch_kuaishou_all_awemes, fetch_kuaishou_user_profile, fetch_kuaishou_video_profile
+from xiaohongshu import fetch_xiaohongshu_video_profile
 
 API_URL = config.FETCH_USER_POST_API
 PROFILE_API = config.USER_PROFILE_API
@@ -203,8 +204,11 @@ def fetch_video_profile(share_url: str, minimal: bool = True, timeout: int = 30)
     :param minimal: 是否只返回 minimal 数据
     :return: dict，视频 profile 数据
     """
-    if get_url_platform(share_url) == "kuaishou":
+    platform = get_url_platform(share_url)
+    if platform == "kuaishou":
         return fetch_kuaishou_video_profile(share_url)
+    if platform == "xiaohongshu":
+        return fetch_xiaohongshu_video_profile(share_url)
 
     params = {
         "url": share_url,
