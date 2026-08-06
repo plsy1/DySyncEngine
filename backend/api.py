@@ -28,19 +28,16 @@ from db import (
     mark_all_tg_exported,
     User,
 )
-from fetch import fetch_all_awemes, fetch_user_profile, fetch_video_profile
+from platforms import (
+    fetch_all_awemes,
+    fetch_user_profile,
+    get_adapter,
+    get_adapter_for_url,
+)
 from downloader import download_video, DOWNLOAD_API
-from kuaishou import (
-    download_kuaishou_images_from_profile_to_zip,
-    download_kuaishou_video_from_profile_to_file,
-)
-from xiaohongshu import (
-    download_xiaohongshu_images_from_profile_to_zip,
-    download_xiaohongshu_video_from_profile_to_file,
-    get_xiaohongshu_headers,
-)
+from platforms.xiaohongshu import get_xiaohongshu_headers
 from auth import create_access_token, verify_password, get_password_hash, get_current_user, SECRET_KEY, ALGORITHM
-from utils import extract_share_url, get_url_platform, resolve_redirect, extract_sec_user_id, sanitize_filename, run_coro_safe
+from utils import extract_share_url, resolve_redirect, sanitize_filename, run_coro_safe
 from telegram_uploader import tg_uploader
 import re
 import httpx
@@ -61,8 +58,12 @@ DOWNLOAD_CACHE_DIR = os.path.join(os.path.dirname(__file__), "data", "cache", "d
 
 
 def ensure_platform_supported(platform: str, feature: str) -> None:
-    if platform == "xiaohongshu" and feature == "作者订阅":
-        raise HTTPException(status_code=400, detail="小红书目前支持单作品解析与下载，暂不支持作者订阅")
+    if feature != "作者订阅":
+        return
+    try:
+        get_adapter(platform).require_subscriptions()
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 def cleanup_file(path: str) -> None:
@@ -116,7 +117,8 @@ def process_single_aweme_download(session: Session, aweme: Any) -> bool:
             aweme.share_url, author_folder, filename, aweme.aweme_id, aweme.aweme_type
         )
         if saved_path:
-            if aweme.platform == "kuaishou" and os.path.isdir(saved_path):
+            adapter = get_adapter(aweme.platform or "douyin")
+            if adapter.capabilities.reclassify_directory_as_note and os.path.isdir(saved_path):
                 aweme.aweme_type = 68
             aweme.downloaded = True
             aweme.local_path = saved_path
@@ -135,6 +137,8 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
     """
     同步指定用户的视频：拉取 Profile、增量抓取 Awemes、下载未下载的视频
     """
+    adapter = get_adapter(platform)
+
     if task_id:
         update_task_progress(session, task_id, 5, message="正在获取用户信息...")
         
@@ -142,8 +146,8 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
     from db import User
     user = session.query(User).filter_by(sec_user_id=sec_user_id).first()
     uid = user.uid if user else None
-    is_kuaishou_backfill = bool(
-        platform == "kuaishou"
+    is_cursor_backfill = bool(
+        adapter.capabilities.cursor_backfill
         and user
         and user.sync_incomplete
         and user.sync_cursor
@@ -161,7 +165,7 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
     result: dict[str, Any]
     head_result: dict[str, Any] | None = None
     backfill_result: dict[str, Any] | None = None
-    if is_kuaishou_backfill:
+    if is_cursor_backfill:
         total_pages = max(1, int(get_config(session, "kuaishou_sync_max_pages", os.getenv("KUAISHOU_SYNC_MAX_PAGES", "3"))))
         head_pages = max(1, int(os.getenv("KUAISHOU_SYNC_HEAD_MAX_PAGES", "1")))
         backfill_pages = max(1, total_pages - head_pages)
@@ -203,7 +207,7 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
             result["rate_limited"] = bool(backfill_result.get("rate_limited"))
     else:
         fetch_kwargs = {}
-        if platform == "kuaishou":
+        if adapter.capabilities.cursor_backfill:
             fetch_kwargs = {
                 "initial_cursor": "" if force_full or max_fetch > 0 else ((user.sync_cursor if user else "") or ""),
                 "max_pages": 0 if max_fetch > 0 else int(get_config(session, "kuaishou_sync_max_pages", os.getenv("KUAISHOU_SYNC_MAX_PAGES", "3"))),
@@ -215,8 +219,8 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
     author_info = result.get("author", {})
 
     # 如果抓取到了作者信息（特别是 TikTok），更新/初始化用户信息。
-    # 快手作者信息以添加订阅时写入的 users 表为准，作品列表接口只作为作品来源。
-    if author_info and platform != "kuaishou":
+    # 部分平台的作品列表不提供完整作者资料，以添加订阅时写入的 users 表为准。
+    if author_info and adapter.capabilities.feed_author_authoritative:
         uid = author_info.get("uid") or uid
         add_or_update_user(session, {
             "uid": uid,
@@ -243,13 +247,13 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
         item["platform"] = platform
         if not item.get("uid"):
             item["uid"] = uid
-        if platform == "kuaishou" and stored_user and stored_user.nickname:
+        if not adapter.capabilities.feed_author_authoritative and stored_user and stored_user.nickname:
             item["nickname"] = stored_user.nickname
         elif not item.get("nickname") and stored_user and stored_user.nickname:
             item["nickname"] = stored_user.nickname
         add_aweme(session, item)
 
-    if platform == "kuaishou":
+    if adapter.capabilities.cursor_backfill:
         user = session.query(User).filter_by(uid=uid).first()
         if user:
             if head_result:
@@ -278,10 +282,10 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
 
     if total_new == 0:
         if task_id:
-            if platform == "kuaishou" and result.get("has_more"):
+            if adapter.capabilities.cursor_backfill and result.get("has_more"):
                 message = "本轮未发现新作品，后续作品将在下次更新继续抓取"
-            elif platform == "kuaishou" and result.get("rate_limited"):
-                message = "快手触发限流，已保存进度，下次更新继续"
+            elif adapter.capabilities.cursor_backfill and result.get("rate_limited"):
+                message = f"{adapter.display_name}触发限流，已保存进度，下次更新继续"
             else:
                 message = "已是最新，无需下载"
             update_task_progress(session, task_id, 100, status="completed", message=message)
@@ -317,7 +321,7 @@ def sync_user_videos(session, sec_user_id: str, platform: str = "douyin", task_i
         run_coro_safe(tg_uploader.sync_user_content(tg_chat, uid, task_id=task_id))
     else:
         if task_id:
-            if platform == "kuaishou" and result.get("has_more"):
+            if adapter.capabilities.cursor_backfill and result.get("has_more"):
                 message = "本轮同步完成，后续作品将在下次更新继续抓取"
             else:
                 message = "同步完成"
@@ -549,15 +553,16 @@ def download_user_videos_api(
     try:
         url = extract_share_url(url)
         final_url = resolve_redirect(url)
-        platform = get_url_platform(final_url)
+        adapter = get_adapter_for_url(final_url)
+        platform = adapter.slug
         ensure_platform_supported(platform, "作者订阅")
         
         # 尝试抓取基本资料
-        profile_target = url if platform == "kuaishou" else extract_sec_user_id(final_url)
+        profile_target = adapter.subscription_profile_target(url, final_url)
         profile = fetch_user_profile(profile_target, platform=platform)
         author_info = profile.get("user", {})
         
-        sec_user_id = final_url if platform == "kuaishou" else (author_info.get("sec_uid") or author_info.get("uid") or extract_sec_user_id(final_url))
+        sec_user_id = adapter.subscription_reference(url, final_url, author_info)
         uid = author_info.get("uid") or sec_user_id
         
         with next(get_session()) as session:
@@ -767,10 +772,10 @@ def _first_url(value: Any) -> str | None:
 
 def _prepare_single_work_url(raw_url: str) -> tuple[str, str]:
     share_url = extract_share_url(raw_url)
-    platform = get_url_platform(share_url)
-    if platform != "kuaishou":
+    adapter = get_adapter_for_url(share_url)
+    if adapter.capabilities.resolve_work_redirects:
         share_url = resolve_redirect(share_url)
-    return share_url, platform
+    return share_url, adapter.slug
 
 
 def _video_parse_info_from_profile(video_data: dict[str, Any], platform: str) -> VideoParseInfo:
@@ -813,23 +818,23 @@ def profile_filename(video_data: dict[str, Any]) -> str:
 
 
 def prepare_direct_platform_work_file(share_url: str, platform: str) -> tuple[dict[str, Any], str, str, str]:
-    video_data = fetch_video_profile(share_url, minimal=False)
-    image_urls = video_data.get("images", {}).get("url_list", [])
-    extension = ".zip" if image_urls else ".mp4"
+    adapter = get_adapter(platform)
+    video_data = adapter.fetch_work_profile(share_url, minimal=False)
+    image_data = video_data.get("images")
+    image_urls = image_data.get("url_list", []) if isinstance(image_data, dict) else []
+    has_animated_images = adapter.capabilities.animated_image_media and adapter.has_animated_image_media(video_data)
+
+    if not adapter.capabilities.direct_media_download:
+        if not has_animated_images:
+            raise NotImplementedError
+
+    extension = ".zip" if image_urls or has_animated_images else ".mp4"
     temp_path = os.path.join(DOWNLOAD_CACHE_DIR, f"{uuid.uuid4().hex}{extension}")
 
-    if platform == "kuaishou":
-        if image_urls:
-            content_type = download_kuaishou_images_from_profile_to_zip(video_data, temp_path, share_url)
-        else:
-            content_type = download_kuaishou_video_from_profile_to_file(video_data, temp_path, share_url)
-    elif platform == "xiaohongshu":
-        if image_urls:
-            content_type = download_xiaohongshu_images_from_profile_to_zip(video_data, temp_path, share_url)
-        else:
-            content_type = download_xiaohongshu_video_from_profile_to_file(video_data, temp_path, share_url)
+    if image_urls or has_animated_images:
+        content_type = adapter.download_images_to_zip(video_data, temp_path, share_url)
     else:
-        raise ValueError(f"不支持直接下载的平台: {platform}")
+        content_type = adapter.download_video_to_file(video_data, temp_path, share_url)
 
     return video_data, temp_path, content_type, extension
 
@@ -868,8 +873,9 @@ def parse_video_api(share_url: str = Query(..., description="分享链接")):
     解析单个视频信息，返回直链及元数据
     """
     share_url, platform = _prepare_single_work_url(share_url)
+    adapter = get_adapter(platform)
     try:
-        video_data = fetch_video_profile(share_url, minimal=False)
+        video_data = adapter.fetch_work_profile(share_url, minimal=False)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -944,6 +950,7 @@ async def download_video_file_api(
     _validate_download_video_access(request, session, token_query=token, shortcut_token=shortcut_token)
 
     share_url, platform = _prepare_single_work_url(share_url)
+    adapter = get_adapter(platform)
 
     clean_filename = usable_filename(filename)
 
@@ -951,7 +958,7 @@ async def download_video_file_api(
         base_name = clean_filename or usable_filename(default_name) or "work"
         return f"{base_name}{extension}"
 
-    if platform in ("kuaishou", "xiaohongshu"):
+    if adapter.capabilities.direct_media_download or adapter.capabilities.animated_image_media:
         try:
             video_data, temp_path, content_type, extension = await run_in_threadpool(
                 prepare_direct_platform_work_file,
@@ -960,14 +967,17 @@ async def download_video_file_api(
             )
             output_filename = media_filename(profile_filename(video_data), extension)
             fallback_name = f"{sanitize_filename(str(video_data.get('aweme_id') or 'work'))}{extension}"
+        except NotImplementedError:
+            pass
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        return FileResponse(
-            temp_path,
-            media_type=content_type,
-            headers={"Content-Disposition": content_disposition(output_filename, fallback=fallback_name)},
-            background=BackgroundTask(cleanup_file, temp_path),
-        )
+        else:
+            return FileResponse(
+                temp_path,
+                media_type=content_type,
+                headers={"Content-Disposition": content_disposition(output_filename, fallback=fallback_name)},
+                background=BackgroundTask(cleanup_file, temp_path),
+            )
 
     params = {
         "url": share_url,
@@ -996,7 +1006,8 @@ async def download_proxy_api(share_url: str = Query(..., description="单作品�
     代理下载：通过服务器请求 DOWNLOAD_API 并直接流式返回给客户端，实现浏览器本地下载
     """
     share_url, platform = _prepare_single_work_url(share_url)
-    if platform in ("kuaishou", "xiaohongshu"):
+    adapter = get_adapter(platform)
+    if adapter.capabilities.direct_media_download or adapter.capabilities.animated_image_media:
         clean_filename = usable_filename(filename)
         try:
             video_data, temp_path, content_type, extension = await run_in_threadpool(
@@ -1004,16 +1015,19 @@ async def download_proxy_api(share_url: str = Query(..., description="单作品�
                 share_url,
                 platform,
             )
+        except NotImplementedError:
+            pass
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error))
-        output_filename = f"{clean_filename or profile_filename(video_data)}{extension}"
-        fallback_name = f"{sanitize_filename(str(video_data.get('aweme_id') or 'work'))}{extension}"
-        return FileResponse(
-            temp_path,
-            media_type=content_type,
-            headers={"Content-Disposition": content_disposition(output_filename, fallback=fallback_name)},
-            background=BackgroundTask(cleanup_file, temp_path),
-        )
+        else:
+            output_filename = f"{clean_filename or profile_filename(video_data)}{extension}"
+            fallback_name = f"{sanitize_filename(str(video_data.get('aweme_id') or 'work'))}{extension}"
+            return FileResponse(
+                temp_path,
+                media_type=content_type,
+                headers={"Content-Disposition": content_disposition(output_filename, fallback=fallback_name)},
+                background=BackgroundTask(cleanup_file, temp_path),
+            )
     
     params = {
         "url": share_url,
@@ -1056,8 +1070,9 @@ def download_from_share_url(share_url: str = Query(..., description="单作品�
     """
 
     share_url, platform = _prepare_single_work_url(share_url)
+    adapter = get_adapter(platform)
     try:
-        video_data = fetch_video_profile(share_url, minimal=False)
+        video_data = adapter.fetch_work_profile(share_url, minimal=False)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -1073,7 +1088,7 @@ def download_from_share_url(share_url: str = Query(..., description="单作品�
 
     # 1. 抓取/补充完整 Profile 以确保数据库信息的完整性。
     # 快手单作品解析结果里的 sec_uid 通常就是 uid，不能再用它查 profile 覆盖作者昵称。
-    if sec_user_id and platform not in ("kuaishou", "xiaohongshu"):
+    if sec_user_id and not adapter.capabilities.single_work_author_complete:
         try:
             profile = fetch_user_profile(sec_user_id, platform=platform)
             full_user_info = profile.get("user", {})
@@ -1095,7 +1110,7 @@ def download_from_share_url(share_url: str = Query(..., description="单作品�
         )
         
         existing_user = session.query(DBUser).filter(DBUser.uid == uid).first()
-        if platform in ("kuaishou", "xiaohongshu") and existing_user:
+        if adapter.capabilities.single_work_author_complete and existing_user:
             final_nickname = existing_user.nickname or final_nickname
             avatar_url = existing_user.avatar_url or avatar_url
             author_info["signature"] = existing_user.signature or author_info.get("signature")

@@ -11,6 +11,8 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 from loguru import logger
 
+from platforms.base import PlatformAdapter, PlatformCapabilities
+
 
 KUAISHOU_HEADERS = {
     "User-Agent": (
@@ -37,7 +39,7 @@ def _wait_for_feed_slot(min_interval: float) -> None:
 
 
 def read_kuaishou_cookie() -> str:
-    project_root = os.path.dirname(os.path.dirname(__file__))
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     config_base = os.getenv("CONFIG_BASE", os.path.join(project_root, "config"))
     path = os.getenv("KUAISHOU_WEB_CONFIG_PATH", os.path.join(config_base, "kuaishou_web", "config.yaml"))
     if not os.path.exists(path):
@@ -799,8 +801,11 @@ def download_kuaishou_video_from_profile_to_file(profile: dict[str, Any], output
         raise
 
 
-def download_kuaishou_images(share_url: str) -> tuple[list[tuple[str, bytes, str]], dict[str, Any]]:
-    profile = fetch_kuaishou_video_profile(share_url)
+def download_kuaishou_images(
+    share_url: str,
+    profile: dict[str, Any] | None = None,
+) -> tuple[list[tuple[str, bytes, str]], dict[str, Any]]:
+    profile = profile or fetch_kuaishou_video_profile(share_url)
     image_urls = profile.get("images", {}).get("url_list", [])
     if not image_urls:
         raise ValueError("无法提取快手图文图片直链")
@@ -860,3 +865,90 @@ def download_kuaishou_images_from_profile_to_zip(
         except Exception as cleanup_error:
             logger.warning(f"清理失败的快手临时图文文件失败: {output_path} | {cleanup_error}")
         raise
+
+
+class KuaishouAdapter(PlatformAdapter):
+    slug = "kuaishou"
+    display_name = "快手"
+    domains = (
+        "kuaishou.com",
+        "kuaishou.cn",
+        "kwai.com",
+        "gifshow.com",
+        "ksurl.cn",
+        "chenzhongtech.com",
+        "kuaishouzt.com",
+        "kwai.net",
+    )
+    capabilities = PlatformCapabilities(
+        direct_media_download=True,
+        cursor_backfill=True,
+        resolve_work_redirects=False,
+        feed_author_authoritative=False,
+        single_work_author_complete=True,
+        reclassify_directory_as_note=True,
+    )
+
+    def extract_user_id(self, url: str) -> str:
+        return extract_kuaishou_user_id(url)
+
+    def fetch_user_profile(self, target: str) -> dict[str, Any]:
+        return fetch_kuaishou_user_profile(target)
+
+    def fetch_all_awemes(
+        self,
+        user_ref: str,
+        latest_create_time: int = 0,
+        count: int = 20,
+        max_fetch: int = 0,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        return fetch_kuaishou_all_awemes(
+            user_ref,
+            latest_create_time=latest_create_time,
+            count=count,
+            max_fetch=max_fetch,
+            **kwargs,
+        )
+
+    def fetch_work_profile(
+        self,
+        share_url: str,
+        minimal: bool = True,
+        timeout: int = 30,
+    ) -> dict[str, Any]:
+        return fetch_kuaishou_video_profile(share_url)
+
+    def subscription_profile_target(self, original_url: str, final_url: str) -> str:
+        return original_url
+
+    def subscription_reference(
+        self,
+        original_url: str,
+        final_url: str,
+        author: dict[str, Any],
+    ) -> str:
+        return final_url
+
+    def download_video_to_file(
+        self,
+        profile: dict[str, Any],
+        output_path: str,
+        fallback_url: str = "",
+    ) -> str:
+        return download_kuaishou_video_from_profile_to_file(profile, output_path, fallback_url)
+
+    def download_images(
+        self,
+        share_url: str,
+        profile: dict[str, Any] | None = None,
+    ) -> tuple[list[tuple[str, bytes, str]], dict[str, Any]]:
+        return download_kuaishou_images(share_url, profile=profile)
+
+    def download_images_to_zip(
+        self,
+        profile: dict[str, Any],
+        output_path: str,
+        fallback_url: str = "",
+    ) -> str:
+        return download_kuaishou_images_from_profile_to_zip(profile, output_path, fallback_url)

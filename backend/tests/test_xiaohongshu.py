@@ -5,7 +5,10 @@ from unittest.mock import MagicMock, patch
 import httpx
 
 from utils import extract_share_url, get_url_platform
-from xiaohongshu import fetch_xiaohongshu_video_profile
+from platforms.xiaohongshu import (
+    download_xiaohongshu_images,
+    fetch_xiaohongshu_video_profile,
+)
 
 
 class XiaohongshuProfileTests(unittest.TestCase):
@@ -45,7 +48,7 @@ class XiaohongshuProfileTests(unittest.TestCase):
         client.__enter__.return_value = client
         client.get.return_value = self._response(note)
 
-        with patch("xiaohongshu.httpx.Client", return_value=client):
+        with patch("platforms.xiaohongshu.httpx.Client", return_value=client):
             profile = fetch_xiaohongshu_video_profile(
                 "https://www.xiaohongshu.com/explore/67f123456789abcdef012345?xsec_token=test-token"
             )
@@ -69,7 +72,7 @@ class XiaohongshuProfileTests(unittest.TestCase):
         client.__enter__.return_value = client
         client.get.return_value = self._response(note)
 
-        with patch("xiaohongshu.httpx.Client", return_value=client):
+        with patch("platforms.xiaohongshu.httpx.Client", return_value=client):
             profile = fetch_xiaohongshu_video_profile(
                 "https://www.xiaohongshu.com/explore/67fabcdef012345678901234?xsec_token=test-token"
             )
@@ -80,6 +83,88 @@ class XiaohongshuProfileTests(unittest.TestCase):
             profile["video"]["play_addr"]["url_list"][0],
             "https://sns-video-bd.xhscdn.com/video/test.mp4",
         )
+
+    def test_extracts_live_photo_streams_from_image_note(self):
+        note = {
+            "noteId": "67f123456789abcdef012346",
+            "type": "normal",
+            "title": "实况图",
+            "imageList": [
+                {
+                    "livePhoto": True,
+                    "urlDefault": "https://sns-img.example/01.webp",
+                    "stream": {
+                        "h264": [{
+                            "masterUrl": "https://sns-video.example/01.mp4",
+                            "height": 1440,
+                            "size": 1000,
+                        }],
+                    },
+                },
+                {"urlDefault": "https://sns-img.example/02.webp"},
+            ],
+        }
+        client = MagicMock()
+        client.__enter__.return_value = client
+        client.get.return_value = self._response(note)
+
+        with patch("platforms.xiaohongshu.httpx.Client", return_value=client):
+            profile = fetch_xiaohongshu_video_profile(
+                "https://www.xiaohongshu.com/explore/67f123456789abcdef012346?xsec_token=test-token"
+            )
+
+        self.assertEqual(
+            profile["images"]["media"],
+            [
+                {
+                    "image_url": "https://sns-img.example/01.webp",
+                    "video_url": "https://sns-video.example/01.mp4",
+                },
+                {
+                    "image_url": "https://sns-img.example/02.webp",
+                    "video_url": "",
+                },
+            ],
+        )
+
+    def test_downloads_live_photo_as_video_and_keeps_static_images(self):
+        profile = {
+            "share_url": "https://www.xiaohongshu.com/explore/example",
+            "images": {
+                "url_list": [
+                    "https://sns-img.example/01.webp",
+                    "https://sns-img.example/02.webp",
+                ],
+                "media": [
+                    {
+                        "image_url": "https://sns-img.example/01.webp",
+                        "video_url": "https://sns-video.example/01.mp4",
+                    },
+                    {
+                        "image_url": "https://sns-img.example/02.webp",
+                        "video_url": "",
+                    },
+                ],
+            },
+        }
+        video_response = MagicMock()
+        video_response.headers = {"content-type": "video/mp4"}
+        video_response.content = b"0" * 2048
+        video_response.raise_for_status.return_value = None
+        image_response = MagicMock()
+        image_response.headers = {"content-type": "image/webp"}
+        image_response.content = b"1" * 2048
+        image_response.raise_for_status.return_value = None
+        client = MagicMock()
+        client.__enter__.return_value = client
+        client.get.side_effect = [video_response, image_response]
+
+        with patch("platforms.xiaohongshu.httpx.Client", return_value=client):
+            media, _ = download_xiaohongshu_images("https://xhslink.com/example", profile=profile)
+
+        self.assertEqual([item[0] for item in media], ["01.mp4", "02.webp"])
+        client.get.assert_any_call("https://sns-video.example/01.mp4")
+        client.get.assert_any_call("https://sns-img.example/02.webp")
 
     def test_preserves_short_link_query(self):
         url = extract_share_url(

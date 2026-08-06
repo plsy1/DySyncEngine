@@ -6,6 +6,8 @@ import asyncio
 import os
 from collections import Counter
 
+from platforms import detect_platform, extract_supported_url, get_adapter_for_url
+
 _main_loop = None
 
 def set_main_loop(loop: asyncio.AbstractEventLoop):
@@ -27,37 +29,12 @@ def run_coro_safe(coro):
             return None
 
 def extract_share_url(text: str) -> str:
-    """
-    从一段文字中提取出支持平台的 URL
-    支持抖音、TikTok、快手和小红书相关域名
-    """
-    xiaohongshu_pattern = (
-        r'(?:https?://)?(?:[a-zA-Z0-9-]+\.)?'
-        r'(?:xiaohongshu\.com|xhslink\.com|rednote\.com)/[^\s<>"，。；！？、【】《》]+'
-    )
-    match = re.search(xiaohongshu_pattern, text, re.IGNORECASE)
-    if match:
-        url = match.group(0).rstrip(".,;:!?)]}'\"")
-        return url if url.startswith(("http://", "https://")) else f"https://{url}"
-
-    pattern = r'https?://(?:[a-zA-Z0-9-]+\.)?(?:douyin\.com|tiktok\.com|kuaishou\.com|kuaishou\.cn|kwai\.com|gifshow\.com|ksurl\.cn|chenzhongtech\.com|kuaishouzt\.com|kwai\.net)/[^\s#?]+'
-    match = re.search(pattern, text)
-    if match:
-        return match.group(0)
-    return text
+    """从文本中提取已注册平台的分享链接。"""
+    return extract_supported_url(text)
 
 def get_url_platform(url: str) -> str:
-    """
-    识别链接所属平台
-    """
-    normalized_url = url.lower()
-    if any(domain in normalized_url for domain in ("xiaohongshu.com", "xhslink.com", "rednote.com")):
-        return "xiaohongshu"
-    if "tiktok.com" in normalized_url:
-        return "tiktok"
-    if any(domain in normalized_url for domain in ("kuaishou.com", "kuaishou.cn", "kwai.com", "gifshow.com", "ksurl.cn", "chenzhongtech.com", "kuaishouzt.com", "kwai.net")):
-        return "kuaishou"
-    return "douyin"
+    """识别链接所属的已注册平台。"""
+    return detect_platform(url)
 
 def resolve_redirect(url: str, max_redirects=5, timeout=10) -> str:
     """
@@ -96,38 +73,8 @@ def resolve_redirect(url: str, max_redirects=5, timeout=10) -> str:
     return url
 
 def extract_sec_user_id(url: str) -> str:
-    """
-    从跳转后的主页 URL 中提取 sec_user_id
-    支持抖音 (正则) 和 TikTok (API 接口)
-    """
-    platform = get_url_platform(url)
-    
-    if platform == "kuaishou":
-        try:
-            from kuaishou import extract_kuaishou_user_id
-            return extract_kuaishou_user_id(url)
-        except Exception as e:
-            logger.error(f"获取快手用户 ID 失败: {e}")
-            raise ValueError("无法从快手主页提取用户 ID")
-
-    if platform == "tiktok":
-        # 对于 TikTok，调用专用 API 获取 sec_user_id
-        try:
-            with httpx.Client(timeout=10) as client:
-                resp = client.get(config.TIKTOK_SEC_USER_ID_API, params={"url": url})
-                resp.raise_for_status()
-                data = resp.json()
-                if data.get("code") == 200:
-                    return data.get("data")
-        except Exception as e:
-            logger.error(f"获取 TikTok sec_user_id 失败: {e}")
-        raise ValueError("无法获取 TikTok sec_user_id")
-    else:
-        # 对于抖音，使用常规正则提取
-        match = re.search(r"/user/([^/?]+)", url)
-        if match:
-            return match.group(1)
-        raise ValueError("无法从 URL 提取抖音 sec_user_id")
+    """由链接所属的平台适配器提取作者标识。"""
+    return get_adapter_for_url(url).extract_user_id(url)
 
 def sanitize_filename(name: str) -> str:
     """去除非法文件名字符并限制长度"""

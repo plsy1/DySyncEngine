@@ -929,7 +929,7 @@ export const Settings = ({ onBack, onNotify }: SettingsProps) => {
                                         placeholder="password"
                                     />
                                     <p className="text-xs text-white/40 pl-1 mt-1 leading-normal">
-                                        iPhone 快捷指令可使用 <code className="text-primary/70">/api/download_video?share_url=...&shortcut_token=...</code> 下载抖音、TikTok、快手或小红书作品；视频返回 MP4，图文返回 ZIP。
+                                        iPhone 快捷指令可使用 <code className="text-primary/70">/api/download_video?share_url=...&shortcut_token=...</code> 下载抖音、TikTok、快手或小红书作品；视频返回 MP4，图文返回 ZIP，抖音/小红书实况图按 MP4 视频保存。
                                     </p>
                                 </div>
                             </div>

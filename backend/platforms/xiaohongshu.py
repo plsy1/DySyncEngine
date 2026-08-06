@@ -11,6 +11,8 @@ import httpx
 import yaml
 from loguru import logger
 
+from platforms.base import PlatformAdapter, PlatformCapabilities
+
 
 XIAOHONGSHU_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -20,7 +22,7 @@ XIAOHONGSHU_USER_AGENT = (
 
 
 def read_xiaohongshu_cookie() -> str:
-    project_root = os.path.dirname(os.path.dirname(__file__))
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     config_base = os.getenv("CONFIG_BASE", os.path.join(project_root, "config"))
     path = os.getenv(
         "XIAOHONGSHU_WEB_CONFIG_PATH",
@@ -144,19 +146,44 @@ def _first_url(value: Any) -> str:
     return ""
 
 
-def _extract_image_urls(note: dict[str, Any]) -> list[str]:
-    result: list[str] = []
+def _extract_image_url(image: dict[str, Any]) -> str:
+    return _first_url(
+        image.get("urlDefault")
+        or image.get("urlPre")
+        or image.get("url")
+        or image.get("urlList")
+    )
+
+
+def _extract_stream_url(streams: Any) -> str:
+    candidates: list[dict[str, Any]] = []
+    if isinstance(streams, dict):
+        for codec in ("h264", "h265", "av1"):
+            items = streams.get(codec)
+            if isinstance(items, list):
+                candidates.extend(item for item in items if isinstance(item, dict))
+    if not candidates:
+        return ""
+
+    best = max(candidates, key=_stream_score)
+    return _first_url(best.get("backupUrls")) or _first_url(best.get("masterUrl"))
+
+
+def _extract_image_video_url(image: dict[str, Any]) -> str:
+    if not image.get("livePhoto"):
+        return ""
+    return _extract_stream_url(image.get("stream"))
+
+
+def _extract_image_media(note: dict[str, Any]) -> list[dict[str, str]]:
+    result: list[dict[str, str]] = []
     for image in note.get("imageList") or []:
         if not isinstance(image, dict):
             continue
-        url = _first_url(
-            image.get("urlDefault")
-            or image.get("urlPre")
-            or image.get("url")
-            or image.get("urlList")
-        )
-        if url and url not in result:
-            result.append(url)
+        image_url = _extract_image_url(image)
+        video_url = _extract_image_video_url(image)
+        if image_url or video_url:
+            result.append({"image_url": image_url, "video_url": video_url})
     return result
 
 
@@ -175,18 +202,7 @@ def _extract_video_url(note: dict[str, Any]) -> str:
     if isinstance(origin_key, str) and origin_key:
         return f"https://sns-video-bd.xhscdn.com/{origin_key.lstrip('/')}"
 
-    streams = _deep_get(note, "video", "media", "stream") or {}
-    candidates: list[dict[str, Any]] = []
-    if isinstance(streams, dict):
-        for codec in ("h264", "h265", "av1"):
-            items = streams.get(codec)
-            if isinstance(items, list):
-                candidates.extend(item for item in items if isinstance(item, dict))
-    if not candidates:
-        return ""
-
-    best = max(candidates, key=_stream_score)
-    return _first_url(best.get("backupUrls")) or _first_url(best.get("masterUrl"))
+    return _extract_stream_url(_deep_get(note, "video", "media", "stream"))
 
 
 def _avatar_url(user: dict[str, Any]) -> str:
@@ -222,11 +238,12 @@ def fetch_xiaohongshu_video_profile(share_url: str) -> dict[str, Any]:
         raise ValueError("无法解析小红书作品，请使用包含 xsec_token 的最新公开分享链接")
 
     note_id = str(note.get("noteId") or note_id)
-    image_urls = _extract_image_urls(note)
+    image_media = _extract_image_media(note)
+    image_urls = [item["image_url"] for item in image_media if item["image_url"]]
     video_url = _extract_video_url(note)
     note_type = str(note.get("type") or "").lower()
     is_video = note_type == "video" and bool(video_url)
-    if not video_url and not image_urls:
+    if not video_url and not image_media:
         raise ValueError("无法提取小红书作品文件地址")
 
     user = note.get("user") if isinstance(note.get("user"), dict) else {}
@@ -248,7 +265,10 @@ def fetch_xiaohongshu_video_profile(share_url: str) -> dict[str, Any]:
             "play_addr": {"url_list": [video_url] if is_video else []},
             "origin_cover": {"url_list": [cover_url] if cover_url else []},
         },
-        "images": {"url_list": [] if is_video else image_urls},
+        "images": {
+            "url_list": [] if is_video else image_urls,
+            "media": [] if is_video else image_media,
+        },
         "author": {
             "uid": uid,
             "sec_uid": uid,
@@ -280,6 +300,32 @@ def _content_extension(content_type: str, url: str, default: str = "jpg") -> str
         return mapping[normalized]
     suffix = Path(urlparse(url).path).suffix.lower().lstrip(".")
     return suffix if suffix in set(mapping.values()) else default
+
+
+def _profile_image_media(profile: dict[str, Any]) -> list[dict[str, str]]:
+    image_data = profile.get("images")
+    if not isinstance(image_data, dict):
+        return []
+
+    media = image_data.get("media")
+    if isinstance(media, list):
+        normalized = [
+            {
+                "image_url": _clean_url(item.get("image_url")),
+                "video_url": _clean_url(item.get("video_url")),
+            }
+            for item in media
+            if isinstance(item, dict)
+            and (_clean_url(item.get("image_url")) or _clean_url(item.get("video_url")))
+        ]
+        if normalized:
+            return normalized
+
+    return [
+        {"image_url": image_url, "video_url": ""}
+        for image_url in image_data.get("url_list", [])
+        if isinstance(image_url, str) and image_url
+    ]
 
 
 def download_xiaohongshu_video_from_profile_to_file(
@@ -322,9 +368,9 @@ def download_xiaohongshu_images_from_profile_to_zip(
     output_path: str,
     fallback_url: str = "",
 ) -> str:
-    image_urls = profile.get("images", {}).get("url_list", [])
-    if not image_urls:
-        raise ValueError("无法提取小红书图文图片直链")
+    media_items = _profile_image_media(profile)
+    if not media_items:
+        raise ValueError("无法提取小红书图文媒体直链")
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     try:
@@ -334,11 +380,19 @@ def download_xiaohongshu_images_from_profile_to_zip(
             timeout=60,
         ) as client:
             with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as archive:
-                for index, image_url in enumerate(image_urls, start=1):
-                    with client.stream("GET", image_url) as response:
+                for index, item in enumerate(media_items, start=1):
+                    video_url = item["video_url"]
+                    media_url = video_url or item["image_url"]
+                    with client.stream("GET", media_url) as response:
                         response.raise_for_status()
-                        content_type = response.headers.get("content-type", "image/jpeg")
-                        extension = _content_extension(content_type, image_url)
+                        content_type = response.headers.get(
+                            "content-type",
+                            "video/mp4" if video_url else "image/jpeg",
+                        )
+                        extension = "mp4" if video_url else _content_extension(
+                            content_type,
+                            media_url,
+                        )
                         image_name = f"{index:02d}.{extension}"
                         image_size = 0
                         with archive.open(image_name, "w") as image_file:
@@ -347,7 +401,7 @@ def download_xiaohongshu_images_from_profile_to_zip(
                                     image_file.write(chunk)
                                     image_size += len(chunk)
                         if image_size < 1024:
-                            raise ValueError(f"小红书图文图片内容异常: {image_name}")
+                            raise ValueError(f"小红书图文媒体内容异常: {image_name}")
         return "application/zip"
     except Exception:
         try:
@@ -363,9 +417,9 @@ def download_xiaohongshu_images(
     profile: dict[str, Any] | None = None,
 ) -> tuple[list[tuple[str, bytes, str]], dict[str, Any]]:
     profile = profile or fetch_xiaohongshu_video_profile(share_url)
-    image_urls = profile.get("images", {}).get("url_list", [])
-    if not image_urls:
-        raise ValueError("无法提取小红书图文图片直链")
+    media_items = _profile_image_media(profile)
+    if not media_items:
+        raise ValueError("无法提取小红书图文媒体直链")
 
     images: list[tuple[str, bytes, str]] = []
     with httpx.Client(
@@ -373,10 +427,80 @@ def download_xiaohongshu_images(
         follow_redirects=True,
         timeout=60,
     ) as client:
-        for index, image_url in enumerate(image_urls, start=1):
-            response = client.get(image_url)
+        for index, item in enumerate(media_items, start=1):
+            video_url = item["video_url"]
+            media_url = video_url or item["image_url"]
+            response = client.get(media_url)
             response.raise_for_status()
-            content_type = response.headers.get("content-type", "image/jpeg")
-            extension = _content_extension(content_type, image_url)
+            content_type = response.headers.get(
+                "content-type",
+                "video/mp4" if video_url else "image/jpeg",
+            )
+            extension = "mp4" if video_url else _content_extension(content_type, media_url)
             images.append((f"{index:02d}.{extension}", response.content, content_type))
     return images, profile
+
+
+class XiaohongshuAdapter(PlatformAdapter):
+    slug = "xiaohongshu"
+    display_name = "小红书"
+    domains = ("xiaohongshu.com", "xhslink.com", "xhslink.cn", "rednote.com")
+    capabilities = PlatformCapabilities(
+        subscriptions=False,
+        direct_media_download=True,
+        animated_image_media=True,
+        single_work_author_complete=True,
+    )
+
+    def extract_user_id(self, url: str) -> str:
+        match = re.search(r"/user/profile/([a-zA-Z0-9]+)", url)
+        if match:
+            return match.group(1)
+        raise ValueError("无法从小红书链接提取用户 ID")
+
+    def fetch_user_profile(self, target: str) -> dict[str, Any]:
+        raise ValueError("小红书暂不支持作者订阅")
+
+    def fetch_all_awemes(
+        self,
+        user_ref: str,
+        latest_create_time: int = 0,
+        count: int = 20,
+        max_fetch: int = 0,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        raise ValueError("小红书暂不支持作者订阅")
+
+    def fetch_work_profile(
+        self,
+        share_url: str,
+        minimal: bool = True,
+        timeout: int = 30,
+    ) -> dict[str, Any]:
+        return fetch_xiaohongshu_video_profile(share_url)
+
+    def download_video_to_file(
+        self,
+        profile: dict[str, Any],
+        output_path: str,
+        fallback_url: str = "",
+    ) -> str:
+        return download_xiaohongshu_video_from_profile_to_file(profile, output_path, fallback_url)
+
+    def download_images(
+        self,
+        share_url: str,
+        profile: dict[str, Any] | None = None,
+    ) -> tuple[list[tuple[str, bytes, str]], dict[str, Any]]:
+        return download_xiaohongshu_images(share_url, profile=profile)
+
+    def has_animated_image_media(self, profile: dict[str, Any]) -> bool:
+        return any(item["video_url"] for item in _profile_image_media(profile))
+
+    def download_images_to_zip(
+        self,
+        profile: dict[str, Any],
+        output_path: str,
+        fallback_url: str = "",
+    ) -> str:
+        return download_xiaohongshu_images_from_profile_to_zip(profile, output_path, fallback_url)

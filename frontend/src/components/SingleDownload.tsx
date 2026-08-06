@@ -171,7 +171,7 @@ export const SingleDownload = ({ onNotify, inline = false }: SingleDownloadProps
                                         </button>
                                     </div>
                                     <p className="text-[9px] text-white/20 italic leading-none">
-                                        * 视频下载为 MP4，图文下载为包含全部图片的 ZIP
+                                        * 视频下载为 MP4，图文下载为 ZIP；抖音/小红书实况图按 MP4 视频保存
                                     </p>
                                 </div>
                             </div>

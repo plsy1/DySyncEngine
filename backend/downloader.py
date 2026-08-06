@@ -2,15 +2,13 @@ import httpx
 import os
 import re
 import time
+import zipfile
+import io
+import shutil
 from pathlib import Path
 from loguru import logger
-from utils import sanitize_filename, get_url_platform
-from kuaishou import download_kuaishou_images, download_kuaishou_video_from_profile_to_file, fetch_kuaishou_video_profile
-from xiaohongshu import (
-    download_xiaohongshu_images,
-    download_xiaohongshu_video_from_profile_to_file,
-    fetch_xiaohongshu_video_profile,
-)
+from platforms import get_adapter_for_url
+from utils import sanitize_filename
 
 from config import config
 
@@ -20,12 +18,30 @@ DOWNLOAD_API = config.DOWNLOAD_API
 Path(SAVE_DIR).mkdir(parents=True, exist_ok=True)
 
 
+def _save_image_media(
+    parent_path: str,
+    filename: str,
+    aweme_id: str,
+    media: list[tuple[str, bytes, str]],
+    platform_name: str,
+) -> str | None:
+    if not media or any(len(content) < 1024 for _, content, _ in media):
+        logger.warning(f"{platform_name}图文媒体内容异常，跳过保存: {aweme_id}")
+        return None
 
+    if os.path.basename(parent_path) == "videos":
+        parent_path = os.path.join(os.path.dirname(parent_path), "notes")
+        Path(parent_path).mkdir(parents=True, exist_ok=True)
 
+    base_name = sanitize_filename(filename)
+    media_folder = os.path.join(parent_path, f"{base_name} [{aweme_id}]")
+    Path(media_folder).mkdir(parents=True, exist_ok=True)
+    for media_name, content, _ in media:
+        with open(os.path.join(media_folder, media_name), "wb") as file:
+            file.write(content)
+    logger.info(f"{platform_name}图文下载完成: {media_folder}")
+    return media_folder
 
-import zipfile
-import io
-import shutil
 
 def download_video(share_url: str, author_folder: str, filename: str, aweme_id: str, aweme_type: int | None = None) -> str | None:
     """
@@ -44,69 +60,47 @@ def download_video(share_url: str, author_folder: str, filename: str, aweme_id: 
     }
 
     try:
-        platform = get_url_platform(share_url)
-        if platform == "kuaishou":
-            images = []
-            if aweme_type in (68, None):
-                try:
-                    images, _ = download_kuaishou_images(share_url)
-                except ValueError:
-                    images = []
+        adapter = get_adapter_for_url(share_url)
 
-            if images:
-                if os.path.basename(parent_path) == "videos":
-                    parent_path = os.path.join(os.path.dirname(parent_path), "notes")
-                    Path(parent_path).mkdir(parents=True, exist_ok=True)
-                base_name = sanitize_filename(filename)
-                image_folder = os.path.join(parent_path, f"{base_name} [{aweme_id}]")
-                Path(image_folder).mkdir(parents=True, exist_ok=True)
-                for image_name, content, _ in images:
-                    if len(content) < 1024:
-                        logger.warning(f"下载的快手图文图片小于1KB，判定为损坏，跳过保存: {aweme_id}/{image_name}")
-                        return None
-                    with open(os.path.join(image_folder, image_name), "wb") as f:
-                        f.write(content)
-                logger.info(f"快手图文下载完成: {image_folder}")
-                return image_folder
+        if adapter.capabilities.animated_image_media:
+            profile = adapter.fetch_work_profile(share_url, minimal=False)
+            if adapter.has_animated_image_media(profile):
+                media, _ = adapter.download_images(share_url, profile=profile)
+                return _save_image_media(
+                    parent_path,
+                    filename,
+                    aweme_id,
+                    media,
+                    adapter.display_name,
+                )
+
+        if adapter.capabilities.direct_media_download:
+            profile = adapter.fetch_work_profile(share_url, minimal=False)
+            image_data = profile.get("images")
+            image_urls = image_data.get("url_list", []) if isinstance(image_data, dict) else []
+            is_image_work = aweme_type == 68 or bool(image_urls)
+
+            if is_image_work:
+                images, _ = adapter.download_images(share_url, profile=profile)
+                return _save_image_media(
+                    parent_path,
+                    filename,
+                    aweme_id,
+                    images,
+                    adapter.display_name,
+                )
 
             base_name = sanitize_filename(filename)
             file_path = os.path.join(parent_path, f"{base_name} [{aweme_id}].mp4")
-            profile = fetch_kuaishou_video_profile(share_url)
-            download_kuaishou_video_from_profile_to_file(profile, file_path, share_url)
+            adapter.download_video_to_file(profile, file_path, share_url)
             if os.path.getsize(file_path) < 1024:
-                logger.warning(f"下载的快手视频文件内容小于1KB，判定为损坏，跳过保存: {aweme_id}")
+                logger.warning(f"下载的{adapter.display_name}视频文件内容小于1KB，判定为损坏，跳过保存: {aweme_id}")
                 try:
                     os.remove(file_path)
                 except Exception:
                     pass
                 return None
-            logger.info(f"快手视频下载完成: {file_path}")
-            return file_path
-
-        if platform == "xiaohongshu":
-            profile = fetch_xiaohongshu_video_profile(share_url)
-            image_urls = profile.get("images", {}).get("url_list", [])
-            if image_urls:
-                images, _ = download_xiaohongshu_images(share_url, profile=profile)
-                if not images or any(len(content) < 1024 for _, content, _ in images):
-                    logger.warning(f"小红书图文图片内容异常，跳过保存: {aweme_id}")
-                    return None
-                if os.path.basename(parent_path) == "videos":
-                    parent_path = os.path.join(os.path.dirname(parent_path), "notes")
-                    Path(parent_path).mkdir(parents=True, exist_ok=True)
-                base_name = sanitize_filename(filename)
-                image_folder = os.path.join(parent_path, f"{base_name} [{aweme_id}]")
-                Path(image_folder).mkdir(parents=True, exist_ok=True)
-                for image_name, content, _ in images:
-                    with open(os.path.join(image_folder, image_name), "wb") as file:
-                        file.write(content)
-                logger.info(f"小红书图文下载完成: {image_folder}")
-                return image_folder
-
-            base_name = sanitize_filename(filename)
-            file_path = os.path.join(parent_path, f"{base_name} [{aweme_id}].mp4")
-            download_xiaohongshu_video_from_profile_to_file(profile, file_path, share_url)
-            logger.info(f"小红书视频下载完成: {file_path}")
+            logger.info(f"{adapter.display_name}视频下载完成: {file_path}")
             return file_path
 
         with httpx.Client(timeout=60) as client:

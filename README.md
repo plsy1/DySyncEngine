@@ -53,8 +53,9 @@
 - 关于抓取引擎的具体配置、Cookie 维护及底层原理，请参考 [Douyin_TikTok_Download_API 项目说明](https://github.com/Evil0ctal/Douyin_TikTok_Download_API/blob/main/README.md)。
 - **Cookie 配置**：容器首次启动会自动初始化 `./config` 下的抓取配置文件。登录 WebUI 后进入「全局配置」页面，直接粘贴并保存抖音/TikTok Cookie 即可，无需手动编辑或挂载 `config.yaml`。抖音 Cookie 可使用 [chrome-cookie-sniffer](https://github.com/Evil0ctal/Douyin_TikTok_Download_API/tree/main/chrome-cookie-sniffer) 获取。
 - **快手支持范围**：当前支持快手单个作品链接解析与下载，包括视频作品和图文作品；快手作者订阅同步目前使用 PC Feed 接口，仅同步视频作品，暂不支持订阅同步中的图文作品。该接口存在较频繁的风控/限流，订阅同步可能需要稍后重试。
-- **小红书支持范围**：当前支持 `xiaohongshu.com`、`xhslink.com` 与 `rednote.com` 单作品链接，视频返回 MP4，图文返回 ZIP，也可保存到服务器。作者订阅暂不支持；建议使用带有最新 `xsec_token` 的公开分享链接。Cookie 可选，可在 WebUI 配置以提高视频画质与解析成功率。作品页解析思路参考了 [XHS-Downloader](https://github.com/JoeanAmier/XHS-Downloader) 的公开实现，代码为独立实现。
-- **快捷指令下载**：`GET /api/download_video?share_url=作品链接&shortcut_token=专用令牌` 支持抖音、TikTok、快手和小红书单个作品。视频直接返回 MP4，图文返回包含全部图片的 ZIP；快手和小红书文件名会自动使用作品标题。专用令牌可通过 WebUI 高级设置或环境变量 `SHORTCUT_TOKEN` 配置。
+- **小红书支持范围**：当前支持 `xiaohongshu.com`、`xhslink.com` 与 `rednote.com` 单作品链接，视频返回 MP4，普通图文和实况图文返回 ZIP，也可保存到服务器。实况图会直接保存对应 MP4，静态图片仍按图片保存。作者订阅暂不支持；建议使用带有最新 `xsec_token` 的公开分享链接。Cookie 可选，可在 WebUI 配置以提高视频画质与解析成功率。作品页解析思路参考了 [XHS-Downloader](https://github.com/JoeanAmier/XHS-Downloader) 的公开实现，代码为独立实现。
+- **抖音动态图**：图文作品中的动态图直接保留为 MP4 视频；如果作品同时包含静态图片，下载到本地或快捷指令下载时会和图片一起放入 ZIP，不封装为 Live Photo。
+- **快捷指令下载**：`GET /api/download_video?share_url=作品链接&shortcut_token=专用令牌` 支持抖音、TikTok、快手和小红书单个作品。视频直接返回 MP4，图文返回包含全部媒体的 ZIP；抖音动态图以 MP4 保存。快手和小红书文件名会自动使用作品标题。专用令牌可通过 WebUI 高级设置或环境变量 `SHORTCUT_TOKEN` 配置。
 
 
 > [!TIP]
@@ -108,7 +109,14 @@ npm run dev
 │   ├── api.py          # 路由定义 (任务/用户/配置/TG)
 │   ├── scheduler.py    # 定时调度逻辑 (自动更新)
 │   ├── downloader.py   # 下载核心实现
-│   ├── fetch.py        # 网络抓取逻辑 (Douyin/TikTok)
+│   ├── fetch.py        # 旧抓取入口的兼容层
+│   ├── platforms/      # 平台适配器与注册表
+│   │   ├── base.py     # 适配器接口和平台能力声明
+│   │   ├── registry.py # URL 识别与适配器注册
+│   │   ├── douyin.py
+│   │   ├── tiktok.py
+│   │   ├── kuaishou.py
+│   │   └── xiaohongshu.py
 │   └── telegram_uploader.py # Telegram 推送服务
 ├── frontend/           # React 前端源码
 │   ├── src/pages/EmbyPlayer.tsx # 核心播放器实现
@@ -119,6 +127,8 @@ npm run dev
 ├── videos/             # 媒体资源存储
 └── docker-compose.yaml # 容器编排定义
 ```
+
+新增平台时，在 `backend/platforms/` 中实现 `PlatformAdapter`，声明订阅、直连下载、游标补抓等能力，再注册到 `registry.py`。通用 API 和下载流程会根据能力选择行为，平台协议与解析代码无需继续堆进 `api.py`。
 
 ---
 
