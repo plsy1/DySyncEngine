@@ -36,7 +36,7 @@
 import asyncio  # 异步I/O
 import os  # 系统操作
 import time  # 时间操作
-from urllib.parse import urlencode, quote  # URL编码
+from urllib.parse import parse_qsl, urlencode, quote  # URL编码
 import yaml  # 配置文件
 
 # 基础爬虫客户端和抖音API端点
@@ -58,6 +58,8 @@ from crawlers.douyin.web.utils import (AwemeIdFetcher,  # Aweme ID获取
                                        WebCastIdFetcher,  # 直播ID获取
                                        extract_valid_urls  # URL提取
                                        )
+from crawlers.douyin.web import websign
+from crawlers.utils.api_exceptions import APIUnauthorizedError
 
 # 配置文件路径
 path = os.path.abspath(os.path.dirname(__file__))
@@ -69,15 +71,57 @@ with open(f"{path}/config.yaml", "r", encoding="utf-8") as f:
 
 class DouyinWebCrawler:
 
+    @staticmethod
+    def _parse_cookie_header(cookie_header: str) -> dict[str, str]:
+        """把 Cookie 请求头转换为签名层需要的键值表。"""
+        cookies: dict[str, str] = {}
+        for part in (cookie_header or "").split(";"):
+            name, separator, value = part.strip().partition("=")
+            if separator and name:
+                cookies[name] = value
+        return cookies
+
+    @classmethod
+    def _signed_endpoint(cls, base_endpoint: str, params: dict, headers: dict) -> str:
+        """生成抖音当前要求的 A-Bogus 与 WebSign 双层签名。"""
+        user_agent = headers["User-Agent"]
+        a_bogus = BogusManager.ab_model_2_endpoint(params, user_agent)
+        encoded_query = f"{urlencode(params)}&a_bogus={a_bogus}"
+
+        cookies = cls._parse_cookie_header(headers.get("Cookie", ""))
+        uifid = websign.pick_uifid(cookies)
+        if not uifid:
+            raise APIUnauthorizedError(
+                "抖音 Cookie 缺少 UIFID_TEMP，无法生成当前接口要求的 WebSign；"
+                "请在设置页更新完整的 www.douyin.com Cookie"
+            )
+
+        pairs = parse_qsl(encoded_query, keep_blank_values=True)
+        verify_fp = cookies.get(websign.VERIFY_FP_COOKIE)
+        if verify_fp:
+            for name in websign.VERIFY_FP_PARAMS:
+                pairs.append((name, verify_fp))
+
+        signed_query, _, signature_headers = websign.sign(pairs, uifid)
+        headers.update(signature_headers)
+        return f"{base_endpoint}?{signed_query}"
+
     # 从配置文件中获取抖音的请求头
     async def get_douyin_headers(self):
-        douyin_config = config["TokenManager"]["douyin"]
+        # 设置页会直接改写运行时 config.yaml；每次请求重新读取，确保用户
+        # 更新 Cookie 后无需重启进程即可生效。
+        try:
+            with open(f"{path}/config.yaml", "r", encoding="utf-8") as file:
+                runtime_config = yaml.safe_load(file) or {}
+            douyin_config = runtime_config["TokenManager"]["douyin"]
+        except (OSError, TypeError, KeyError):
+            douyin_config = config["TokenManager"]["douyin"]
         kwargs = {
             "headers": {
                 "Accept-Language": douyin_config["headers"]["Accept-Language"],
                 "User-Agent": douyin_config["headers"]["User-Agent"],
                 "Referer": douyin_config["headers"]["Referer"],
-                "Cookie": douyin_config["headers"]["Cookie"],
+                "Cookie": douyin_config["headers"].get("Cookie") or "",
             },
             "proxies": {"http://": douyin_config["proxies"]["http"], "https://": douyin_config["proxies"]["https"]},
         }
@@ -89,62 +133,43 @@ class DouyinWebCrawler:
     async def fetch_one_video(self, aweme_id: str):
         # 获取抖音的实时Cookie
         kwargs = await self.get_douyin_headers()
-        # 创建一个基础爬虫
+        params_dict = PostDetail(aweme_id=aweme_id).dict()
+        params_dict["msToken"] = ""
+        endpoint = self._signed_endpoint(
+            DouyinAPIEndpoints.POST_DETAIL, params_dict, kwargs["headers"]
+        )
         base_crawler = BaseCrawler(proxies=kwargs["proxies"], crawler_headers=kwargs["headers"])
         async with base_crawler as crawler:
-            # 创建一个作品详情的BaseModel参数
-            params = PostDetail(aweme_id=aweme_id)
-            # 生成一个作品详情的带有加密参数的Endpoint
-            # 2024年6月12日22:41:44 由于XBogus加密已经失效，所以不再使用XBogus加密参数，转移至a_bogus加密参数。
-            # endpoint = BogusManager.xb_model_2_endpoint(
-            #     DouyinAPIEndpoints.POST_DETAIL, params.dict(), kwargs["headers"]["User-Agent"]
-            # )
-
-            # 生成一个作品详情的带有a_bogus加密参数的Endpoint
-            params_dict = params.dict()
-            params_dict["msToken"] = ''
-            a_bogus = BogusManager.ab_model_2_endpoint(params_dict, kwargs["headers"]["User-Agent"])
-            endpoint = f"{DouyinAPIEndpoints.POST_DETAIL}?{urlencode(params_dict)}&a_bogus={a_bogus}"
-
             response = await crawler.fetch_get_json(endpoint)
         return response
 
     # 获取用户发布作品数据
     async def fetch_user_post_videos(self, sec_user_id: str, max_cursor: int, count: int):
         kwargs = await self.get_douyin_headers()
+        params_dict = UserPost(
+            sec_user_id=sec_user_id, max_cursor=max_cursor, count=count
+        ).dict()
+        params_dict["msToken"] = ""
+        endpoint = self._signed_endpoint(
+            DouyinAPIEndpoints.USER_POST, params_dict, kwargs["headers"]
+        )
         base_crawler = BaseCrawler(proxies=kwargs["proxies"], crawler_headers=kwargs["headers"])
         async with base_crawler as crawler:
-            params = UserPost(sec_user_id=sec_user_id, max_cursor=max_cursor, count=count)
-            # endpoint = BogusManager.xb_model_2_endpoint(
-            #     DouyinAPIEndpoints.USER_POST, params.dict(), kwargs["headers"]["User-Agent"]
-            # )
-            # response = await crawler.fetch_get_json(endpoint)
-
-            # 生成一个用户发布作品数据的带有a_bogus加密参数的Endpoint
-            params_dict = params.dict()
-            params_dict["msToken"] = ''
-            a_bogus = BogusManager.ab_model_2_endpoint(params_dict, kwargs["headers"]["User-Agent"])
-            endpoint = f"{DouyinAPIEndpoints.USER_POST}?{urlencode(params_dict)}&a_bogus={a_bogus}"
-
             response = await crawler.fetch_get_json(endpoint)
         return response
 
     # 获取用户喜欢作品数据
     async def fetch_user_like_videos(self, sec_user_id: str, max_cursor: int, count: int):
         kwargs = await self.get_douyin_headers()
+        params_dict = UserLike(
+            sec_user_id=sec_user_id, max_cursor=max_cursor, count=count
+        ).dict()
+        params_dict["msToken"] = ""
+        endpoint = self._signed_endpoint(
+            DouyinAPIEndpoints.USER_FAVORITE_A, params_dict, kwargs["headers"]
+        )
         base_crawler = BaseCrawler(proxies=kwargs["proxies"], crawler_headers=kwargs["headers"])
         async with base_crawler as crawler:
-            params = UserLike(sec_user_id=sec_user_id, max_cursor=max_cursor, count=count)
-            # endpoint = BogusManager.xb_model_2_endpoint(
-            #     DouyinAPIEndpoints.USER_FAVORITE_A, params.dict(), kwargs["headers"]["User-Agent"]
-            # )
-            # response = await crawler.fetch_get_json(endpoint)
-
-            params_dict = params.dict()
-            params_dict["msToken"] = ''
-            a_bogus = BogusManager.ab_model_2_endpoint(params_dict, kwargs["headers"]["User-Agent"])
-            endpoint = f"{DouyinAPIEndpoints.USER_FAVORITE_A}?{urlencode(params_dict)}&a_bogus={a_bogus}"
-
             response = await crawler.fetch_get_json(endpoint)
         return response
 

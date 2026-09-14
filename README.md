@@ -49,7 +49,7 @@
 
 本项目中的 **抖音和 TikTok 内容抓取** 功能基于开源项目 [Douyin_TikTok_Download_API](https://github.com/Evil0ctal/Douyin_TikTok_Download_API) 实现。
 - 关于抓取引擎的具体配置、Cookie 维护及底层原理，请参考 [Douyin_TikTok_Download_API 项目说明](https://github.com/Evil0ctal/Douyin_TikTok_Download_API/blob/main/README.md)。
-- **Cookie 配置**：容器首次启动会自动初始化 `./config` 下的抓取配置文件。登录 WebUI 后进入「全局配置」页面，直接粘贴并保存抖音/TikTok Cookie 即可，无需手动编辑或挂载 `config.yaml`。抖音 Cookie 可使用 [chrome-cookie-sniffer](https://github.com/Evil0ctal/Douyin_TikTok_Download_API/tree/main/chrome-cookie-sniffer) 获取。
+- **Cookie 配置**：容器首次启动会自动初始化 `./config` 下的抓取配置文件。登录 WebUI 后进入「全局配置」页面，直接粘贴并保存抖音/TikTok Cookie 即可，无需手动编辑或挂载 `config.yaml`。抖音需粘贴完整的 `www.douyin.com` Cookie（必须包含 `UIFID_TEMP`，否则当前 WebSign 校验无法通过），可使用 [chrome-cookie-sniffer](https://github.com/Evil0ctal/Douyin_TikTok_Download_API/tree/main/chrome-cookie-sniffer) 获取。
 - **快手支持范围**：当前支持快手单个作品链接解析与下载，包括视频作品和图文作品；快手作者订阅同步目前使用 PC Feed 接口，仅同步视频作品，暂不支持订阅同步中的图文作品。该接口存在较频繁的风控/限流，订阅同步可能需要稍后重试。
 - **小红书支持范围**：当前支持 `xiaohongshu.com`、`xhslink.com` 与 `rednote.com` 单作品链接，视频返回 MP4，普通图文和实况图文返回 ZIP，也可保存到服务器。实况图会直接保存对应 MP4，静态图片仍按图片保存。作者订阅暂不支持；建议使用带有最新 `xsec_token` 的公开分享链接。Cookie 可选，可在 WebUI 配置以提高视频画质与解析成功率。作品页解析思路参考了 [XHS-Downloader](https://github.com/JoeanAmier/XHS-Downloader) 的公开实现，代码为独立实现。
 - **抖音动态图**：图文作品中的动态图直接保留为 MP4 视频；如果作品同时包含静态图片，下载到本地或快捷指令下载时会和图片一起放入 ZIP，不封装为 Live Photo。

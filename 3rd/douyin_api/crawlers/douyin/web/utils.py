@@ -48,7 +48,7 @@ import qrcode
 import yaml
 
 from crawlers.douyin.web.xbogus import XBogus as XB
-from crawlers.douyin.web.abogus import ABogus as AB
+from crawlers.douyin.web.abogus_v2 import ABogus as AB
 
 from crawlers.utils.api_exceptions import (
     APIError,
@@ -234,14 +234,15 @@ class BogusManager:
     #     except Exception as e:
     #         raise RuntimeError("生成A-Bogus失败: {0})".format(e))
 
-    # 字典方法生成A-Bogus参数，感谢 @JoeanAmier 提供的纯Python版本算法。
+    # 字典方法生成 A-Bogus 参数。抖音在 2026 年更新了 bdms.js，旧版
+    # 签名会得到 HTTP 200 空响应；这里使用与当前网页一致的新算法。
     @classmethod
     def ab_model_2_endpoint(cls, params: dict, user_agent: str) -> str:
         if not isinstance(params, dict):
             raise TypeError("参数必须是字典类型")
 
         try:
-            ab_value = AB().get_value(params, )
+            ab_value = AB(user_agent).get_value(urlencode(params))
         except Exception as e:
             raise RuntimeError("生成A-Bogus失败: {0})".format(e))
 
